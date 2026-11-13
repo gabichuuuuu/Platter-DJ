@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Platter">
+<title>Platter</title>
+<rect width="128" height="128" fill="#111111"/>
+<g transform="translate(16 16)" fill="none" stroke="#ededed" stroke-linecap="round">
+<circle cx="48" cy="48" r="42" stroke-width="4"/>
+<circle cx="48" cy="48" r="32" stroke-width="2"/>
+<circle cx="48" cy="48" r="22" stroke-width="2"/>
+<circle cx="48" cy="48" r="6" fill="#ededed" stroke="none"/>
+<path d="M48 6v24" stroke-width="4"/>
+</g>
+</svg>

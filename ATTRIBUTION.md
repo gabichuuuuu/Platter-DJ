@@ -26,6 +26,7 @@ Licensed like the rest of the repository, `MIT OR Apache-2.0`.
 | `docs/design/icons/icons.toml` | Icons, as shape data |
 | `docs/design/logo/platter-mark.toml` | The Platter mark, as shape data |
 | `docs/design/screens/` | Reference screens, as static HTML |
+| `docs/assets/platter-mark.svg` | The Platter mark drawn from its shape data, for the README |
 
 ## Adapted code
 
