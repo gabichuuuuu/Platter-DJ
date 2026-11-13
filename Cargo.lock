@@ -74,6 +74,14 @@ name = "platter-core"
 version = "0.0.0"
 
 [[package]]
+name = "platter-dsp"
+version = "0.0.0"
+dependencies = [
+ "platter-core",
+ "platter-testkit",
+]
+
+[[package]]
 name = "platter-testkit"
 version = "0.0.0"
 
