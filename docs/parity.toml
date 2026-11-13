@@ -1,0 +1,311 @@
+# Feature inventory.
+#
+# The functions DJs expect from professional DJ software, compiled from public user
+# documentation on 12 November 2026.
+#
+# Each feature has an id (unique in its area), a name, a milestone (M0 to M5, or "later" when
+# it has none), a status (planned, in_progress, done) and, when done, the evidence: the test or
+# command that demonstrates it. The first complete version is everything from M0 to M3.
+#
+# `cargo xtask parity` validates this file and refreshes the summary in ROADMAP.md.
+# What is out of scope is in docs/gaps.md.
+
+[[area]]
+id = "interface"
+title = "Interface"
+features = [
+  { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "planned" },
+  { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "planned" },
+  { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
+  { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
+  { id = "fullscreen", name = "Full screen", milestone = "M3", status = "planned" },
+  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "planned" },
+  { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "planned" },
+  { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "planned" },
+  { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "planned" },
+  { id = "custom-layouts", name = "Custom layouts", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "decks"
+title = "Decks"
+features = [
+  { id = "decks-a-b", name = "Decks A and B", milestone = "M2", status = "planned" },
+  { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "planned" },
+  { id = "track-deck", name = "Track deck", milestone = "M2", status = "planned" },
+  { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "planned" },
+  { id = "remix-deck", name = "Remix deck", milestone = "M5", status = "planned" },
+  { id = "live-input-deck", name = "Live input deck", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "deck-header"
+title = "Deck header"
+features = [
+  { id = "track-info", name = "Title, artist and album", milestone = "M2", status = "planned" },
+  { id = "time", name = "Elapsed and remaining time", milestone = "M2", status = "planned" },
+  { id = "tempo-readouts", name = "Current tempo, tempo fader offset and base tempo", milestone = "M2", status = "planned" },
+  { id = "cover-art", name = "Cover art", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "transport"
+title = "Transport"
+features = [
+  { id = "play-pause", name = "Play and pause", milestone = "M2", status = "planned" },
+  { id = "cue", name = "Floating CUE", milestone = "M2", status = "planned" },
+  { id = "cup", name = "CUP: play from the cue point while held", milestone = "M2", status = "planned" },
+  { id = "tempo-fader", name = "Tempo fader with ranges", milestone = "M2", status = "planned" },
+  { id = "tempo-bend", name = "Tempo bend (nudge)", milestone = "M2", status = "planned" },
+  { id = "flux", name = "Flux mode", milestone = "M3", status = "planned" },
+  { id = "reverse", name = "Reverse", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "waveforms"
+title = "Waveforms"
+features = [
+  { id = "scrolling", name = "Scrolling waveform coloured by frequency", milestone = "M2", status = "planned" },
+  { id = "overview", name = "Overview with click to seek", milestone = "M2", status = "planned" },
+  { id = "zoom", name = "Waveform zoom", milestone = "M2", status = "planned" },
+  { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "planned" },
+  { id = "colour-mode-first", name = "First waveform colour mode", milestone = "M2", status = "planned" },
+  { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "sync"
+title = "Sync"
+features = [
+  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "planned" },
+  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "planned" },
+  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "planned" },
+  { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "planned" },
+  { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "planned" },
+  { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "planned" },
+  { id = "snap", name = "SNAP", milestone = "M3", status = "planned" },
+  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "planned" },
+  { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
+  { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "beatgrid"
+title = "Beatgrid"
+features = [
+  { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "planned" },
+  { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "planned" },
+  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "planned" },
+  { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "planned" },
+  { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "planned" },
+  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },
+  { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "cues"
+title = "Cues"
+features = [
+  { id = "hotcues", name = "Eight hotcues", milestone = "M3", status = "planned" },
+  { id = "cue-page", name = "CUE page: previous and next, list, position, type, delete, rename, MAP and STORE", milestone = "M3", status = "planned" },
+  { id = "cue-types", name = "Cue types: cue, fade-in, fade-out, load, grid and loop", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "loops"
+title = "Loops and jumps"
+features = [
+  { id = "loop-size", name = "Preset loop size with arrows", milestone = "M3", status = "planned" },
+  { id = "loop-in-out", name = "Loop in, loop out and ACTIVE", milestone = "M3", status = "planned" },
+  { id = "loop-indicator", name = "Loop indicator in the waveforms", milestone = "M3", status = "planned" },
+  { id = "stored-loops", name = "Loops stored in hotcues", milestone = "M3", status = "planned" },
+  { id = "beatjump", name = "Beatjump", milestone = "M3", status = "planned" },
+  { id = "move-page", name = "MOVE page: move the loop, move loop in or loop out, size in beats and fine mode", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "key"
+title = "Key"
+features = [
+  { id = "detection", name = "Key detection", milestone = "M3", status = "planned" },
+  { id = "key-lock", name = "Key lock", milestone = "M3", status = "planned" },
+  { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "planned" },
+  { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "planned" },
+  { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "planned" },
+  { id = "musical-notation", name = "Musical key notation with compatible keys highlighted in the browser", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "mixer"
+title = "Mixer"
+features = [
+  { id = "gain", name = "Channel gain", milestone = "M2", status = "planned" },
+  { id = "channel-meter", name = "Channel meter", milestone = "M2", status = "planned" },
+  { id = "eq-three-band", name = "Three-band EQ with full kill", milestone = "M2", status = "planned" },
+  { id = "eq-kill-buttons", name = "Kill button per EQ band", milestone = "M2", status = "planned" },
+  { id = "filter", name = "One-knob channel filter", milestone = "M2", status = "planned" },
+  { id = "pan", name = "PAN", milestone = "M2", status = "planned" },
+  { id = "channel-fader", name = "Channel fader", milestone = "M2", status = "planned" },
+  { id = "crossfader", name = "Crossfader with selectable curve", milestone = "M2", status = "planned" },
+  { id = "cue-monitoring", name = "Channel cue monitoring", milestone = "M2", status = "planned" },
+  { id = "eq-model-first", name = "First EQ model", milestone = "M2", status = "planned" },
+  { id = "filter-model-first", name = "First filter model", milestone = "M2", status = "planned" },
+  { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "planned" },
+  { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "planned" },
+  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "planned" },
+  { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "planned" },
+  { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
+  { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },
+  { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "planned" },
+  { id = "filter-models-rest", name = "Remaining two filter models", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "master"
+title = "Master"
+features = [
+  { id = "volume-limiter-engine", name = "Main volume and safety limiter in the engine", milestone = "M1", status = "planned" },
+  { id = "volume-limiter-ui", name = "Main volume, limiter and master meter in the mixer", milestone = "M2", status = "planned" },
+  { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "stems"
+title = "Stems"
+features = [
+  { id = "generate", name = "Stem generation", milestone = "M4", status = "planned" },
+  { id = "stem-controls", name = "Stem deck: volume, mute, filter and effect send per stem", milestone = "M4", status = "planned" },
+  { id = "mute-buttons", name = "Always visible mute buttons", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "effects"
+title = "Effects"
+features = [
+  { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "planned" },
+  { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "planned" },
+  { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "planned" },
+  { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "planned" },
+  { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, beatmasher, bitcrusher", milestone = "M4", status = "planned" },
+  { id = "catalogue-rest", name = "Rest of the effects and mixer effects catalogue", milestone = "later", status = "planned" },
+  { id = "pattern-sequencer", name = "Pattern sequencer inside a unit (kits, patterns, pitch, decay, ducking) with own sounds", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "recording"
+title = "Recording and output"
+features = [
+  { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "planned" },
+  { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "planned" },
+  { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "planned" },
+  { id = "broadcasting", name = "Broadcasting to a server the user configures", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "browser"
+title = "Browser"
+features = [
+  { id = "collection", name = "Track collection", milestone = "M3", status = "planned" },
+  { id = "folder-import", name = "Folder import", milestone = "M3", status = "planned" },
+  { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "planned" },
+  { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "planned" },
+  { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
+  { id = "search", name = "Live search", milestone = "M3", status = "planned" },
+  { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "planned" },
+  { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "planned" },
+  { id = "preview-deck", name = "Preview deck", milestone = "M3", status = "planned" },
+]
+
+[[area]]
+id = "playlists"
+title = "Playlists"
+features = [
+  { id = "manage", name = "Create, add, sort, folders, rename, delete, remove duplicates and clear", milestone = "M3", status = "planned" },
+  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "planned" },
+  { id = "preparation-list", name = "Preparation list", milestone = "M3", status = "planned" },
+  { id = "history", name = "History", milestone = "M3", status = "planned" },
+  { id = "favourites", name = "Favourites", milestone = "M3", status = "planned" },
+  { id = "played-state", name = "Played state of a track", milestone = "M3", status = "planned" },
+  { id = "smart-playlists", name = "Smart playlists", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "collection"
+title = "Collection"
+features = [
+  { id = "colour-rating-comments", name = "Colour labels, rating and comments", milestone = "M3", status = "planned" },
+  { id = "metadata-edit", name = "Metadata and cover editing", milestone = "M3", status = "planned" },
+  { id = "consistency-check", name = "Consistency check", milestone = "M3", status = "planned" },
+  { id = "relocate", name = "Relocate missing tracks", milestone = "M3", status = "planned" },
+  { id = "backups", name = "Automatic backups", milestone = "M3", status = "planned" },
+  { id = "delete-tracks", name = "Delete tracks", milestone = "M3", status = "planned" },
+  { id = "tag-writing", name = "Writing tempo, key and cues to file tags", milestone = "M3", status = "planned" },
+  { id = "import-collections", name = "Import collections of other programs", milestone = "M4", status = "planned" },
+]
+
+[[area]]
+id = "control"
+title = "Control"
+features = [
+  { id = "keyboard-shortcuts", name = "Customisable keyboard shortcuts", milestone = "M2", status = "planned" },
+  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "planned" },
+  { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "planned" },
+  { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "planned" },
+  { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "planned" },
+  { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "dvs"
+title = "DVS and live input"
+features = [
+  { id = "timecode", name = "Timecode on vinyl and CD, with an own decoder", milestone = "M5", status = "planned" },
+  { id = "modes", name = "Absolute and relative modes, control zones and tracking modes", milestone = "M5", status = "planned" },
+  { id = "microphone-live-input", name = "Microphone and live input deck", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "preferences"
+title = "Preferences"
+features = [
+  { id = "audio", name = "Audio", milestone = "M2", status = "planned" },
+  { id = "language", name = "Language", milestone = "M2", status = "planned" },
+  { id = "output-routing", name = "Output routing", milestone = "M3", status = "planned" },
+  { id = "loading", name = "Loading", milestone = "M3", status = "planned" },
+  { id = "transport", name = "Transport", milestone = "M3", status = "planned" },
+  { id = "mixer", name = "Mixer", milestone = "M3", status = "planned" },
+  { id = "global", name = "Global settings", milestone = "M3", status = "planned" },
+  { id = "browser", name = "Browser", milestone = "M3", status = "planned" },
+  { id = "file-management", name = "File management", milestone = "M3", status = "planned" },
+  { id = "analysis", name = "Analysis", milestone = "M3", status = "planned" },
+  { id = "controllers", name = "Controllers", milestone = "M3", status = "planned" },
+  { id = "effects", name = "Effects", milestone = "M4", status = "planned" },
+  { id = "recorders", name = "Recorders", milestone = "M4", status = "planned" },
+  { id = "layouts", name = "Layouts", milestone = "M4", status = "planned" },
+  { id = "input-routing", name = "Input routing", milestone = "M5", status = "planned" },
+  { id = "external-sync", name = "External sync", milestone = "M5", status = "planned" },
+  { id = "timecode", name = "Timecode", milestone = "M5", status = "planned" },
+  { id = "remix", name = "Remix decks", milestone = "M5", status = "planned" },
+  { id = "broadcasting", name = "Broadcasting", milestone = "M5", status = "planned" },
+]
+
+[[area]]
+id = "formats"
+title = "Audio formats"
+features = [
+  { id = "mp3", name = "MP3", milestone = "M1", status = "planned" },
+  { id = "m4a-aac", name = "M4A (AAC)", milestone = "M1", status = "planned" },
+  { id = "wav", name = "WAV", milestone = "M1", status = "planned" },
+  { id = "aiff", name = "AIFF", milestone = "M1", status = "planned" },
+  { id = "flac", name = "FLAC", milestone = "M1", status = "planned" },
+  { id = "ogg-vorbis", name = "Ogg Vorbis", milestone = "M1", status = "planned" },
+]
+
+[[area]]
+id = "platter"
+title = "Platter's own"
+features = [
+  { id = "deviceless-render", name = "Render without a sound card", milestone = "M1", status = "planned" },
+  { id = "progress-page", name = "Progress page, published when the repository is public", milestone = "M1", status = "planned" },
+  { id = "mcp-server", name = "MCP server", milestone = "M4", status = "planned" },
+]
