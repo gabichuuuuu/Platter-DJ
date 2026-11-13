@@ -1,0 +1,25 @@
+name: PR quality
+
+# Filters pull requests from outside the project. It runs in the context of the base branch and
+# never checks out the code of the pull request.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+jobs:
+  anti-slop:
+    if: >-
+      github.event.pull_request.user.type != 'Bot'
+      && !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check the pull request
+        uses: peakoss/anti-slop@57858eead489d08b255fab2af45a506c2ca6eab2 # v0.3.0
+        with:
+          max-failures: 4

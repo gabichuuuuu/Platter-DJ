@@ -1,0 +1,43 @@
+name: Controller report
+description: Tell the project about a controller you would like Platter to support
+labels: [controller]
+body:
+  - type: input
+    id: make
+    attributes:
+      label: Make
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options:
+        - MIDI
+        - HID
+        - Both
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Public documentation
+      description: Links to the manufacturer's MIDI implementation chart or to community documentation of the protocol. Do not attach mapping files of other products.
+  - type: textarea
+    id: controls
+    attributes:
+      label: Controls
+      description: Decks, jog wheels, faders, pads, displays and anything unusual about the device.
+  - type: checkboxes
+    id: testing
+    attributes:
+      label: Testing
+      options:
+        - label: I own this controller and can test a mapping

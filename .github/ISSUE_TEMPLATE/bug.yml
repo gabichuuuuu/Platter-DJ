@@ -1,0 +1,45 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that shows the problem. If a file triggers it, describe its format, sample rate and length; do not attach copyrighted music.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Platter version or commit
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: audio
+    attributes:
+      label: Audio setup
+      description: Audio API, sample rate and buffer size. For example "WASAPI, 48000 Hz, 256 samples".
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: Remove user names and paths before pasting.
+      render: text

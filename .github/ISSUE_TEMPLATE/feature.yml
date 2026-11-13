@@ -1,0 +1,27 @@
+name: Feature request
+description: A function Platter should have or do differently
+labels: [feature]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Check `docs/parity.toml` and `docs/gaps.md` first: the function may already be planned for
+        a milestone or be out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The situation while mixing or preparing in which the function is missing.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe it in your own words or cite public documentation by URL. Do not paste material from other products.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

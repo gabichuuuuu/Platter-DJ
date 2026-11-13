@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    # While the repository is private, Actions minutes are limited and macOS consumes ten times
+    # more: pushes and pull requests run Linux and Windows, and macOS joins on the weekly
+    # schedule and on manual runs. Once the repository is public, every run uses all three.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: >-
+          ${{ fromJSON(
+            (github.event.repository.private && (github.event_name == 'push' || github.event_name == 'pull_request'))
+            && '["ubuntu-24.04", "windows-latest"]'
+            || '["ubuntu-24.04", "windows-latest", "macos-latest"]'
+          ) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The privacy check reads the whole history.
+          fetch-depth: 0
+
+      - name: Install system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            pkg-config libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Gate
+        run: cargo xtask ci
