@@ -11,15 +11,15 @@ The table is generated from `docs/parity.toml` by `cargo xtask parity`. Do not e
 
 | Milestone | Features | Done | In progress | Planned |
 | --- | ---: | ---: | ---: | ---: |
-| M1 | 9 | 0 | 0 | 9 |
+| M1 | 9 | 3 | 3 | 3 |
 | M2 | 30 | 0 | 0 | 30 |
 | M3 | 76 | 0 | 0 | 76 |
 | M4 | 31 | 0 | 0 | 31 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 0 | 0 | 162 |
+| Total | 162 | 3 | 3 | 156 |
 
-First complete version (M0 to M3): 0 of 115 features done.
+First complete version (M0 to M3): 3 of 115 features done.
 
 <!-- parity:end -->
 

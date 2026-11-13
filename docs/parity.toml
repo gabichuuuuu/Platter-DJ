@@ -293,12 +293,12 @@ features = [
 id = "formats"
 title = "Audio formats"
 features = [
-  { id = "mp3", name = "MP3", milestone = "M1", status = "planned" },
-  { id = "m4a-aac", name = "M4A (AAC)", milestone = "M1", status = "planned" },
-  { id = "wav", name = "WAV", milestone = "M1", status = "planned" },
-  { id = "aiff", name = "AIFF", milestone = "M1", status = "planned" },
-  { id = "flac", name = "FLAC", milestone = "M1", status = "planned" },
-  { id = "ogg-vorbis", name = "Ogg Vorbis", milestone = "M1", status = "planned" },
+  { id = "mp3", name = "MP3", milestone = "M1", status = "in_progress" },
+  { id = "m4a-aac", name = "M4A (AAC)", milestone = "M1", status = "in_progress" },
+  { id = "wav", name = "WAV", milestone = "M1", status = "done", evidence = "cargo test -p platter-decode --test decode decodes_wav" },
+  { id = "aiff", name = "AIFF", milestone = "M1", status = "done", evidence = "cargo test -p platter-decode --test decode decodes_aiff" },
+  { id = "flac", name = "FLAC", milestone = "M1", status = "done", evidence = "cargo test -p platter-decode --test decode decodes_flac" },
+  { id = "ogg-vorbis", name = "Ogg Vorbis", milestone = "M1", status = "in_progress" },
 ]
 
 [[area]]

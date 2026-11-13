@@ -1,0 +1,24 @@
+[package]
+name = "platter-decode"
+description = "Decodes an audio file into f32 PCM in memory, with its basic metadata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["aac"]
+# AAC in an M4A container. It is a feature of its own so a build can leave the decoder out;
+# see docs/legal-notes.md.
+aac = ["symphonia/aac", "symphonia/isomp4"]
+
+[dependencies]
+platter-core = { path = "../core" }
+symphonia = { workspace = true, features = ["mp3", "wav", "aiff", "pcm", "flac", "ogg", "vorbis", "id3v2"] }
+
+[dev-dependencies]
+platter-testkit = { path = "../testkit" }
+proptest.workspace = true
