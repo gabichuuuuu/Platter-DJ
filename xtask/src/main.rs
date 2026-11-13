@@ -21,7 +21,9 @@ commands:
   cleanroom        check for third-party material that must not enter the repository
   privacy          check for traces of the development machine
   parity           validate docs/parity.toml and refresh the summary in ROADMAP.md
-  parity --check   validate docs/parity.toml and fail if ROADMAP.md is out of date";
+  parity --check   validate docs/parity.toml and fail if ROADMAP.md is out of date
+  parity --site <folder>
+                   write the progress page and its badge into a folder";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -44,6 +46,7 @@ fn run(args: &[&str]) -> Result<(), Failure> {
         ["privacy"] => privacy::run(&root),
         ["parity"] => parity::write(&root),
         ["parity", "--check"] => parity::check(&root),
+        ["parity", "--site", folder] => parity::site::write(&root, std::path::Path::new(folder)),
         _ => Err(Failure::message(USAGE)),
     }
 }

@@ -1,5 +1,7 @@
 //! The feature inventory in `docs/parity.toml` and its summary in `ROADMAP.md`.
 
+pub mod site;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -155,10 +157,16 @@ pub fn check(root: &Path) -> Result<(), Failure> {
     }
 }
 
-/// The roadmap as it is and as the inventory says it should be.
-fn load(root: &Path) -> Result<(String, String), Failure> {
+/// Reads the inventory and fails when it breaks its rules.
+fn load_inventory(root: &Path) -> Result<Inventory, Failure> {
     let inventory = parse(&repo::read_text(root, INVENTORY_PATH)?)?;
     Failure::from_findings("parity", problems(&inventory))?;
+    Ok(inventory)
+}
+
+/// The roadmap as it is and as the inventory says it should be.
+fn load(root: &Path) -> Result<(String, String), Failure> {
+    let inventory = load_inventory(root)?;
     let roadmap = repo::read_text(root, ROADMAP_PATH)?;
     let updated = with_summary(&roadmap, &summary(&inventory))?;
     Ok((roadmap, updated))
