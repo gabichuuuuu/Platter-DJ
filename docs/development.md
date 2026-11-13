@@ -9,6 +9,7 @@
 - On Windows, the MSVC build tools. On Linux, the packages the CI workflow installs
   (`.github/workflows/ci.yml`): the ALSA headers for cpal and the windowing libraries for eframe.
   They are needed from M2, when those crates enter.
+- Integration tests write their temporary files under `target/`, never elsewhere.
 
 ## The gate
 
@@ -23,7 +24,7 @@ It runs these steps in order and stops at the first that fails. CI runs the same
 | `cargo fmt --all -- --check` | Formatting |
 | `cargo clippy --workspace --all-targets -- -D warnings` | The workspace lints: no `unsafe`, no `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `unreachable!` or `dbg!` outside tests |
 | `cargo test --workspace` | Unit, integration and documentation tests |
-| `cargo xtask layers` | The layer rules of `docs/architecture.md` and the dependency registry |
+| `cargo xtask layers` | The layer rules of `docs/architecture.md`, the reach of the real-time module of the engine and the dependency registry |
 | `cargo deny check` | Licences, security advisories, unmaintained and duplicated crates, sources (`deny.toml`) |
 | `cargo xtask cleanroom` | No third-party material that must stay out |
 | `cargo xtask privacy` | No trace of the development machine |
@@ -67,8 +68,32 @@ identifier, a name, a milestone (`M0` to `M5`, or `later`), a status (`planned`,
 
 `cargo xtask parity` validates the file and rewrites the progress table in `ROADMAP.md`.
 `cargo xtask parity --check` validates and fails if the table is out of date.
+`cargo xtask parity --site <folder>` writes the public progress page (`index.html`) and a badge
+(`badge.svg`) into a folder; `.github/workflows/pages.yml` publishes them once the repository
+is public.
+
+## The command-line tool
+
+```
+cargo run -p platter-cli -- info <file>
+cargo run -p platter-cli -- render --script <mix.toml> --out <mix.wav> [--log <file>]
+```
+
+`info` prints the format, duration, channels and sample rate of an audio file. `render` runs a
+script through the engine without a sound card and writes the mix as a stereo WAV file with
+32-bit float samples; the same script gives the same file on every run.
+
+A script is a TOML file: `seconds` (length of the mix), an optional `sample_rate` (48000 by
+default) and a list of `[[command]]` entries. Each entry has `at` (seconds from the start),
+`id` (a command identifier from `crates/engine/src/command.rs`) and the parameters of that
+command by name. Paths are relative to the script. `examples/two-deck-mix.toml` is a complete
+example; it needs two audio files next to it, which the repository does not hold.
 
 ## Daily workflow
+
+- Work on a branch. Changes reach `main` through pull requests: one per crate or logical unit,
+  in dependency order, with a Conventional Commit title, the gate green, squash-merged. Push
+  and open them when the maintainer asks.
 
 - One commit per logical unit, Conventional Commits with the crate as scope, the milestone in
   the body. See `AGENTS.md` for the full rules.

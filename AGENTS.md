@@ -37,7 +37,7 @@ Do not reopen these on your own. If one proves unworkable, stop and explain why.
 | Measurement data | Only synthesised signals in the repository and in CI. Real corpora stay in a cache outside the repository; only aggregate results and the citation are committed |
 | Commits and versions | Conventional Commits and SemVer; 0.x until M4 closes |
 | Pull requests | Limited to collaborators for now (`docs/decisions/0001-pull-requests-limited-to-collaborators.md`) |
-| Remote | The repository stays local until the maintainer says otherwise. Never create a remote, push, or change visibility on your own |
+| Remote | A private repository in the maintainer's GitHub account. Push, open a pull request or merge only when the maintainer asks. Never change its visibility |
 
 ## Non-negotiable rules
 
@@ -167,6 +167,10 @@ for any other computer is allowed; a fact that points at this one is not.
 - No `Co-Authored-By` lines and no mention of agents or tools in commits or pull requests.
 - Before each commit: `git status --short`, `git diff --stat`, `git diff --check`. Add explicit
   paths; never `git add -A`.
+- Changes reach `main` through pull requests, never by a direct push. A milestone is split into
+  one pull request per crate or logical unit, opened in dependency order, lower layers first.
+  Each has a Conventional Commit title, passes the gate and is squash-merged. A branch is pushed
+  and a pull request opened only when the maintainer asks.
 - No tags and no rewriting of history.
 - A technical decision the rules leave open is recorded as a short ADR in `docs/decisions/`:
   context, options, choice, how it was measured.

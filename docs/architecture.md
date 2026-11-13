@@ -1,7 +1,7 @@
 # Architecture
 
-This document describes the design the milestones follow. Only `xtask` exists today; a crate is
-created when it has code, in the milestone the table names.
+This document describes the design the milestones follow. The crates of M0 and M1 exist today;
+a crate is created when it has code, in the milestone the table names.
 
 ## Crates
 
@@ -36,8 +36,9 @@ from it fails the check.
   directly or through another dependency.
 - `platter-testkit` appears only as a dev-dependency, and builds on L0 only.
 - No crate depends on `xtask`, and `xtask` depends on no workspace crate.
-- The real-time module of `platter-engine` uses only `platter-core` and `platter-dsp`. This rule
-  concerns a module, not a crate, so its check arrives with the engine in M1.
+- The real-time module of `platter-engine` (`crates/engine/src/rt/`) uses only `platter-core`
+  and `platter-dsp` among the workspace crates, and nothing of the engine outside itself. The
+  check reads the sources of the module, which must stay a flat folder.
 - Every direct external dependency has a row in `docs/dependencies.md`, and every row there
   matches a dependency in use.
 
@@ -71,12 +72,20 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
 - **Beatgrid.** From M3 a beatgrid is a list of markers, each with its own tempo (a flexible
   grid). The type is created when it is first used.
 
+## Engine
+
+`Engine::new` returns the control side (`Engine`) and the real-time side (`Processor`). The
+concrete shapes of commands, queues, track memory and the snapshot, and how each was checked,
+are in `docs/decisions/0009-engine-control-and-snapshot.md`. Three-band waveform peaks are
+written in M2, with the interface that reads them.
+
 ## Commands
 
 Every action visible to the user is a command with a stable identifier such as
 `deck.play_pause`, a label, typed parameters and tests. Keyboard, interface and CLI emit the same
 commands; MIDI and MCP will too. The interface reads a state snapshot and acts through commands;
-it holds no engine state.
+it holds no engine state. The list of commands is the table `SPECS` in
+`crates/engine/src/command.rs`; their behaviour is described in `docs/behavior/`.
 
 ## Mixer (M1 and M2)
 

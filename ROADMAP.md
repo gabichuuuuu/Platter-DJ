@@ -25,12 +25,12 @@ First complete version (M0 to M3): 6 of 115 features done.
 
 ## Milestones
 
-### M0. Foundations (current)
+### M0. Foundations (done)
 
 Workspace, toolchain, lints, the `xtask` gate with its checks, project rules, licences,
 documentation, the feature inventory and the GitHub configuration files.
 
-### M1. Engine without interface
+### M1. Engine without interface (current)
 
 `platter-core`, `platter-dsp`, `platter-decode`, `platter-engine`, `platter-testkit` and
 `platter-cli`. The command line tool reports file information and renders a scripted two-deck mix
