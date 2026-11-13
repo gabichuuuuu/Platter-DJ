@@ -1,0 +1,20 @@
+[package]
+name = "platter-cli"
+description = "Command-line tools of Platter: file information and render without a sound card"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-core = { path = "../../crates/core" }
+platter-decode = { path = "../../crates/decode" }
+platter-engine = { path = "../../crates/engine" }
+serde.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+platter-testkit = { path = "../../crates/testkit" }

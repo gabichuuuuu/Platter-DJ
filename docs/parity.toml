@@ -305,7 +305,7 @@ features = [
 id = "platter"
 title = "Platter's own"
 features = [
-  { id = "deviceless-render", name = "Render without a sound card", milestone = "M1", status = "planned" },
+  { id = "deviceless-render", name = "Render without a sound card", milestone = "M1", status = "done", evidence = "cargo test -p platter-engine --test render; cargo test -p platter-cli --test example" },
   { id = "progress-page", name = "Progress page, published when the repository is public", milestone = "M1", status = "planned" },
   { id = "mcp-server", name = "MCP server", milestone = "M4", status = "planned" },
 ]

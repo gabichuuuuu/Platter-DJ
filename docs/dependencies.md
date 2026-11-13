@@ -14,9 +14,9 @@ dependency has no row or a row has no dependency.
 | `cargo_metadata` | Reads the workspace graph for the layer rules and the dependency registry | MIT | `xtask` (not distributed) | Parse the JSON of `cargo metadata` with project code |
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine | MIT OR Apache-2.0 | Tests of `platter-decode` and `platter-engine` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
-| `serde` | Deserialises the feature inventory | MIT OR Apache-2.0 | `xtask` (not distributed) | A hand-written reader for the few structures involved |
+| `serde` | Deserialises the feature inventory and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A hand-written reader for the few structures involved |
 | `symphonia` | Decodes MP3, AAC in M4A, WAV, AIFF, FLAC and Ogg Vorbis; reads title, artist and album | MPL-2.0 | `platter-decode`, behind its own types and a panic boundary (`docs/decisions/0008-decoder-panic-boundary.md`) | Own decoders from the public specifications |
-| `toml` | Parses `docs/parity.toml` | MIT OR Apache-2.0 | `xtask` (not distributed) | A reader for the TOML subset the project files use |
+| `toml` | Parses `docs/parity.toml` and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A reader for the TOML subset the project files use |
 
 Tools that are not dependencies: `cargo-deny` 0.20.2 (licences and advisories), installed
 separately.

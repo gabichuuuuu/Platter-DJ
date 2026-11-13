@@ -1,0 +1,105 @@
+# A mix of two tracks, rendered without a sound card:
+#
+#   cargo run -p platter-cli -- render --script examples/two-deck-mix.toml --out mix.wav
+#
+# The script expects `deck-a.wav` and `deck-b.wav` next to it; any two audio files of at
+# least 8 seconds will do. The repository holds no audio: the test of this example
+# (`apps/platter-cli/tests/example.rs`) copies the script to a temporary folder and
+# synthesises both tracks there.
+#
+# Each entry names a command of the engine by its identifier, as listed in
+# `crates/engine/src/command.rs`, and gives its parameters by name.
+
+sample_rate = 48000
+seconds = 8.0
+
+[[command]]
+at = 0.0
+id = "deck.load"
+deck = "a"
+path = "deck-a.wav"
+
+[[command]]
+at = 0.0
+id = "deck.load"
+deck = "b"
+path = "deck-b.wav"
+
+# Deck A alone on the master.
+[[command]]
+at = 0.0
+id = "mixer.crossfader.set"
+position = 0.0
+
+[[command]]
+at = 0.0
+id = "deck.play"
+deck = "a"
+
+# Bring deck B in with its bass removed, a little faster than recorded.
+[[command]]
+at = 2.0
+id = "mixer.eq.set"
+deck = "b"
+band = "low"
+position = 0.0
+
+[[command]]
+at = 2.0
+id = "deck.tempo.set"
+deck = "b"
+ratio = 1.02
+
+[[command]]
+at = 2.0
+id = "deck.play"
+deck = "b"
+
+[[command]]
+at = 2.0
+id = "mixer.crossfader.set"
+position = 0.5
+
+# Swap the bass: out of deck A, back into deck B.
+[[command]]
+at = 4.0
+id = "mixer.eq.set"
+deck = "a"
+band = "low"
+position = 0.0
+
+[[command]]
+at = 4.0
+id = "mixer.eq.set"
+deck = "b"
+band = "low"
+position = 0.5
+
+# Sweep deck A away with the filter, then close its fader.
+[[command]]
+at = 5.0
+id = "mixer.filter.set"
+deck = "a"
+position = 0.6
+
+[[command]]
+at = 5.5
+id = "mixer.fader.set"
+deck = "a"
+position = 0.0
+
+# Deck B alone, slightly lower.
+[[command]]
+at = 6.0
+id = "mixer.crossfader.set"
+position = 1.0
+
+[[command]]
+at = 6.0
+id = "deck.pause"
+deck = "a"
+
+[[command]]
+at = 6.0
+id = "master.gain.set"
+db = -3.0
