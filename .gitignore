@@ -1,0 +1,11 @@
+target/
+PROMPT.md
+plan/
+.claude/
+CLAUDE.local.md
+.vscode/
+.idea/
+*.pdb
+*.log
+.env*
+reference/
