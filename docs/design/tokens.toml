@@ -1,0 +1,208 @@
+# Platter design tokens. Single source for the UI crate: no panel may use a colour, size or text
+# style that is not in this table. Sizes are in px at 100% scale. Theme: dark (the only one).
+# An alias is written as "{token-name}" and resolves to that token's value.
+
+[color]
+# Window background and the seams between panels; also the inside of slots, fields and waveform lanes.
+bg-app = "#111111"
+# Deck, mixer and browser panels. Square corners, separated by 2px seams of bg-app.
+surface-panel = "#1b1b1b"
+# Resting fill of keys (buttons), knob caps and pads.
+surface-control = "#272727"
+# Fill of a control under the pointer.
+surface-hover = "#313131"
+# Fill of a control while pressed or dragged.
+surface-pressed = "#3c3c3c"
+# Selected row in track lists and the file selector. Text on it: text-primary (10.5:1) or text-secondary (5.7:1).
+surface-selected = "#383838"
+# 1px rules between list rows and inside panels. Decorative only.
+line-divider = "#2c2c2c"
+# 1px outline of keys (buttons) and pads. Quiet on purpose: a key is identified by its label, its lit state by the LED strip.
+line-key = "#4a4a4a"
+# Outline of fields, knob caps and fader caps, and scale ticks. At least 3.3:1 on panels and controls.
+line-control = "#8a8a8a"
+# Titles, values and key labels. At least 9.4:1 on every surface.
+text-primary = "#ededed"
+# Artist, control names, units. At least 4.9:1 on every surface.
+text-secondary = "#adadad"
+# Labels of disabled controls only. Below 4.5:1 on purpose: never use it for information the user needs.
+text-disabled = "#5e5e5e"
+# Text on a deck-colour, hotcue-colour or status-colour fill.
+text-on-accent = "#111111"
+# 2px keyboard focus ring with a 2px gap. White, so it never reads as deck state.
+focus-ring = "#ffffff"
+# Play position line over the scrolling and overview waveforms.
+playhead = "#ffffff"
+# Deck A: letter badge, lit LED strip of its keys, and the mid band of its waveform. Always shown with the letter A.
+deck-a = "#3d8bff"
+# Low band (bass) of deck A's waveform: the darkest, outermost layer.
+deck-a-low = "#2460d8"
+# High band (treble) of deck A's waveform: the lightest, innermost layer.
+deck-a-high = "#b9d6ff"
+# Deck B: letter badge, lit LED strip of its keys, and the mid band of its waveform. Always shown with the letter B.
+deck-b = "#ff8a3d"
+# Low band (bass) of deck B's waveform: the darkest, outermost layer.
+deck-b-low = "#c2531a"
+# High band (treble) of deck B's waveform: the lightest, innermost layer.
+deck-b-high = "#ffd2b0"
+# Deck C: letter badge, lit LED strip of its keys, and the mid band of its waveform. Always shown with the letter C.
+deck-c = "#7fd6c4"
+# Low band (bass) of deck C's waveform: the darkest, outermost layer.
+deck-c-low = "#2f9c8a"
+# High band (treble) of deck C's waveform: the lightest, innermost layer.
+deck-c-high = "#d4f3ec"
+# Deck D: letter badge, lit LED strip of its keys, and the mid band of its waveform. Always shown with the letter D.
+deck-d = "#e85a9c"
+# Low band (bass) of deck D's waveform: the darkest, outermost layer.
+deck-d-low = "#b8336f"
+# High band (treble) of deck D's waveform: the lightest, innermost layer.
+deck-d-high = "#f8c2da"
+# Healthy state: audio running, file loaded. Always with an icon or label.
+status-ok = "#4cc38a"
+# Attention needed: audio dropouts counted, high CPU load. Always with an icon or label.
+status-warn = "#f2c14e"
+# Failure: no audio device, unreadable file. Always with an icon or label.
+status-error = "#f0524d"
+# Level meter segments below -6 dBFS.
+meter-ok = "{status-ok}"
+# Level meter segments from -6 to 0 dBFS.
+meter-warn = "{status-warn}"
+# Clip indicator and segments above 0 dBFS. Always paired with the CLIP label, never colour alone.
+meter-clip = "{status-error}"
+# Hotcue 1 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 1; text on it in text-on-accent.
+hotcue-1 = "#4f8ff7"
+# Hotcue 2 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 2; text on it in text-on-accent.
+hotcue-2 = "#f28a33"
+# Hotcue 3 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 3; text on it in text-on-accent.
+hotcue-3 = "#3fbf7f"
+# Hotcue 4 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 4; text on it in text-on-accent.
+hotcue-4 = "#e5c040"
+# Hotcue 5 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 5; text on it in text-on-accent.
+hotcue-5 = "#c46ad9"
+# Hotcue 6 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 6; text on it in text-on-accent.
+hotcue-6 = "#4fd0e0"
+# Hotcue 7 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 7; text on it in text-on-accent.
+hotcue-7 = "#ef5b6b"
+# Hotcue 8 (milestone M3): marker on the waveforms and pad fill. Always shown with its number 8; text on it in text-on-accent.
+hotcue-8 = "#9aa6ff"
+# Drums stem (milestone M4): stem lane, level and mute controls. Always shown with the stem name.
+stem-drums = "#e8a33d"
+# Bass stem (milestone M4): stem lane, level and mute controls. Always shown with the stem name.
+stem-bass = "#5b8cf0"
+# Other stem (milestone M4): stem lane, level and mute controls. Always shown with the stem name.
+stem-other = "#86dcc6"
+# Vocals stem (milestone M4): stem lane, level and mute controls. Always shown with the stem name.
+stem-vocals = "#e0609c"
+# Active loop: bracket lines and a 25% overlay on the waveforms, the LOOP pad and the ACTIVE button. Always drawn with its bracket shape and the loop length label.
+loop-region = "#7ee08a"
+# Beatgrid lines on the scrolling waveform.
+grid-beat = "rgba(237, 237, 237, 0.22)"
+# First beat of each bar and grid markers on the waveforms.
+grid-downbeat = "rgba(237, 237, 237, 0.6)"
+# Key column in the browser: tracks in a key compatible with the playing master deck. Always with the key name; colour never stands alone.
+key-match = "#c9a6ff"
+
+[spacing]
+# Gap between meter segments; gap between focus ring and control.
+space-1 = 2
+# Gap between a control and its label.
+space-2 = 4
+# Gap between controls in a row; padding inside buttons.
+space-3 = 8
+# Padding inside panels.
+space-4 = 12
+# Gap between control groups (EQ block, fader block).
+space-5 = 16
+# Gap between major panels.
+space-6 = 24
+
+[radius]
+# Meter segments, slots, waveform lanes.
+radius-sm = 1
+# Keys, fields, fader caps, list selection.
+radius-md = 2
+# Hotcue pads and tooltips. Panels have square corners and use no radius.
+radius-lg = 3
+
+[stroke]
+# Dividers and control outlines.
+stroke-hairline = 1
+# Keyboard focus ring.
+stroke-focus = 2
+# Playhead and cue marker lines.
+stroke-playhead = 2
+# Height of the LED strip along the top edge of a lit key.
+stroke-led = 3
+
+[size]
+# Height of transport and toggle buttons.
+size-button-h = 28
+# Height of the PLAY, CUE and CUP keys.
+size-transport-h = 36
+# Width of the PLAY, CUE and CUP keys.
+size-button-transport = 64
+# Diameter of EQ, gain and filter knobs.
+size-knob = 40
+# Length of channel fader tracks.
+size-fader-track = 120
+# Length of the crossfader track.
+size-crossfader-track = 160
+# Width of a channel level meter.
+size-meter-w = 6
+
+[font]
+# One typeface. Static files, one per weight in use; all four carry tabular figures (tnum).
+family = "Geist"
+regular = "fonts/Geist-Regular.ttf"   # weight 400
+medium = "fonts/Geist-Medium.ttf"     # weight 500
+semibold = "fonts/Geist-SemiBold.ttf" # weight 600
+bold = "fonts/Geist-Bold.ttf"         # weight 700
+
+# Track title in the deck header.
+[text.title]
+size = 14
+line_height = 18
+weight = 600
+tabular = false
+
+# Artist, browser rows, settings text.
+[text.body]
+size = 13
+line_height = 18
+weight = 400
+tabular = false
+
+# Labels inside buttons.
+[text.button]
+size = 12
+line_height = 16
+weight = 600
+tabular = false
+
+# Control names under knobs and faders.
+[text.label]
+size = 11
+line_height = 14
+weight = 500
+tabular = false
+
+# Remaining time in the deck header.
+[text.time]
+size = 22
+line_height = 26
+weight = 600
+tabular = true
+
+# Tempo and BPM readouts.
+[text.tempo]
+size = 18
+line_height = 22
+weight = 600
+tabular = true
+
+# Small numeric values: dB, percent, elapsed time.
+[text.readout]
+size = 11
+line_height = 14
+weight = 500
+tabular = true

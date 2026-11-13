@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preferences, controllers</title>
+<!-- Static reference screen, 880 x 620 px. No scripts. Tokens are inlined from ../tokens.toml; fonts load from ../fonts. -->
+<style>
+@font-face{font-family:"Geist";src:url("../fonts/Geist-Regular.ttf") format("truetype");font-weight:400;}@font-face{font-family:"Geist";src:url("../fonts/Geist-Medium.ttf") format("truetype");font-weight:500;}@font-face{font-family:"Geist";src:url("../fonts/Geist-SemiBold.ttf") format("truetype");font-weight:600;}@font-face{font-family:"Geist";src:url("../fonts/Geist-Bold.ttf") format("truetype");font-weight:700;}
+
+:root, [data-theme="dark"] {
+  --bg-app: #111111;
+  --surface-panel: #1b1b1b;
+  --surface-control: #272727;
+  --surface-hover: #313131;
+  --surface-pressed: #3c3c3c;
+  --surface-selected: #383838;
+  --line-divider: #2c2c2c;
+  --line-key: #4a4a4a;
+  --line-control: #8a8a8a;
+  --text-primary: #ededed;
+  --text-secondary: #adadad;
+  --text-disabled: #5e5e5e;
+  --text-on-accent: #111111;
+  --focus-ring: #ffffff;
+  --playhead: #ffffff;
+  --deck-a: #3d8bff;
+  --deck-a-low: #2460d8;
+  --deck-a-high: #b9d6ff;
+  --deck-b: #ff8a3d;
+  --deck-b-low: #c2531a;
+  --deck-b-high: #ffd2b0;
+  --deck-c: #7fd6c4;
+  --deck-c-low: #2f9c8a;
+  --deck-c-high: #d4f3ec;
+  --deck-d: #e85a9c;
+  --deck-d-low: #b8336f;
+  --deck-d-high: #f8c2da;
+  --status-ok: #4cc38a;
+  --status-warn: #f2c14e;
+  --status-error: #f0524d;
+  --meter-ok: var(--status-ok);
+  --meter-warn: var(--status-warn);
+  --meter-clip: var(--status-error);
+  --hotcue-1: #4f8ff7;
+  --hotcue-2: #f28a33;
+  --hotcue-3: #3fbf7f;
+  --hotcue-4: #e5c040;
+  --hotcue-5: #c46ad9;
+  --hotcue-6: #4fd0e0;
+  --hotcue-7: #ef5b6b;
+  --hotcue-8: #9aa6ff;
+  --stem-drums: #e8a33d;
+  --stem-bass: #5b8cf0;
+  --stem-other: #86dcc6;
+  --stem-vocals: #e0609c;
+  --loop-region: #7ee08a;
+  --grid-beat: rgba(237, 237, 237, 0.22);
+  --grid-downbeat: rgba(237, 237, 237, 0.6);
+  --key-match: #c9a6ff;
+}
+:root {
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --stroke-hairline: 1px;
+  --stroke-focus: 2px;
+  --stroke-playhead: 2px;
+  --stroke-led: 3px;
+  --size-button-h: 28px;
+  --size-transport-h: 36px;
+  --size-button-transport: 64px;
+  --size-knob: 40px;
+  --size-fader-track: 120px;
+  --size-crossfader-track: 160px;
+  --size-meter-w: 6px;
+  --font-sans: "Geist", system-ui, sans-serif;
+  --text-title: 600 14px/18px var(--font-sans);
+  --text-body: 400 13px/18px var(--font-sans);
+  --text-button: 600 12px/16px var(--font-sans);
+  --text-label: 500 11px/14px var(--font-sans);
+  --text-time: 600 22px/26px var(--font-sans);
+  --text-tempo: 600 18px/22px var(--font-sans);
+  --text-readout: 500 11px/14px var(--font-sans);
+}
+.title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.button {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.time {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.tempo {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.readout {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+body{margin:0;background:#111111}button{cursor:default}
+</style>
+</head>
+<body>
+<div style="width:880px;height:620px;box-sizing:border-box;background:var(--bg-app);display:flex;gap:2px;font:400 13px/18px var(--font-sans);color:var(--text-primary);-webkit-font-smoothing:antialiased"><div style="background:var(--surface-panel);box-sizing:border-box;width:200px;padding:12px 8px;display:flex;flex-direction:column;gap:1px;flex:none"><div style="font:600 14px/18px var(--font-sans);padding:4px 10px 12px">Preferences</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">Audio</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">General</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">Decks</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">Mixer</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">Library</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);background:var(--surface-selected);color:var(--text-primary)">Controllers</div><div style="display:flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);color:var(--text-secondary)">Keyboard</div></div><div style="background:var(--surface-panel);box-sizing:border-box;flex:1;min-width:0;display:flex;flex-direction:column"><div style="flex:1;padding:20px 24px;display:flex;flex-direction:column;gap:24px;overflow:hidden"><div style="display:flex;flex-direction:column;gap:10px"><div style="font:600 14px/18px var(--font-sans);padding-bottom:8px;border-bottom:1px solid var(--line-divider)">Device</div><div style="display:flex;gap:16px;align-items:flex-start"><div style="width:168px;flex:none;font:400 13px/18px var(--font-sans);color:var(--text-secondary);padding-top:5px">Mapping</div><div style="flex:1;min-width:0"><div style="display:flex;gap:8px"><button type="button" style="display:flex;align-items:center;gap:8px;box-sizing:border-box;width:280px;height:28px;margin:0;padding:0 8px;text-align:left;background:var(--surface-control);border:1px solid var(--line-key);border-radius:var(--radius-md);color:var(--text-primary);font:400 13px/18px var(--font-sans)"><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Generic two-deck controller</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6 9.5l6 6 6-6"/></svg></button><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Import</button><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Export</button></div></div></div><div style="display:flex;gap:16px;align-items:flex-start"><div style="width:168px;flex:none;font:400 13px/18px var(--font-sans);color:var(--text-secondary);padding-top:5px">Input and output</div><div style="flex:1;min-width:0"><div style="display:flex;gap:8px"><button type="button" style="display:flex;align-items:center;gap:8px;box-sizing:border-box;width:180px;height:28px;margin:0;padding:0 8px;text-align:left;background:var(--surface-control);border:1px solid var(--line-key);border-radius:var(--radius-md);color:var(--text-primary);font:400 13px/18px var(--font-sans)"><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">USB MIDI controller</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6 9.5l6 6 6-6"/></svg></button><button type="button" style="display:flex;align-items:center;gap:8px;box-sizing:border-box;width:180px;height:28px;margin:0;padding:0 8px;text-align:left;background:var(--surface-control);border:1px solid var(--line-key);border-radius:var(--radius-md);color:var(--text-primary);font:400 13px/18px var(--font-sans)"><span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">USB MIDI controller</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6 9.5l6 6 6-6"/></svg></button></div><div style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);margin-top:4px">Mappings are plain data files. Platter ships none copied from other software.</div></div></div></div><div style="display:flex;flex-direction:column;gap:10px"><div style="font:600 14px/18px var(--font-sans);padding-bottom:8px;border-bottom:1px solid var(--line-divider)">Assignments</div><div role="table" aria-label="Assignments"><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Function</span><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Assigned to</span><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Control type</span><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Modifier</span><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">MIDI message</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Play / pause</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Button, toggle</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Note C1, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Cue</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Button, hold</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Note D1, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Tempo fader</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Fader</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CC 14, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;background:var(--surface-selected);border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Loop size</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Encoder, relative</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CC 20, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Beatjump</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Encoder, relative</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Shift held</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CC 20, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Channel fader</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Fader</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">CC 7, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotcue 1</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deck A</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Button, trigger</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Note C2, ch 1</span></div><div role="row" style="display:grid;grid-template-columns:minmax(0,1.6fr) 90px 110px minmax(0,1fr) 90px;column-gap:12px;align-items:center;height:26px;padding:0 8px;border-bottom:1px solid var(--line-divider)"><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Shift</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Global</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Button, hold</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Sets modifier 1</span><span style="font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Note A0, ch 1</span></div></div><div style="display:flex;gap:8px;align-items:center"><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M12 5v14M5 12h14"/></svg>Add</button><button type="button" aria-pressed="true" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-pressed);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><span style="position:absolute;left:-1px;right:-1px;top:-1px;height:3px;border-radius:2px 2px 0 0;background:var(--status-warn)"></span>Learn</button><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);flex:1">Learning: move a control on the device to assign it to Loop size.</span><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Duplicate</button><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Delete</button></div></div></div><div style="display:flex;gap:8px;align-items:center;height:52px;padding:0 16px;border-top:1px solid var(--line-divider);flex:none"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);flex:1">Changes are saved to settings.toml as you make them.</span><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Restore defaults</button><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;width:80px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Close</button></div></div></div>
+</body>
+</html>

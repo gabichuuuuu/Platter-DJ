@@ -1,0 +1,6 @@
+# The Platter mark: a record platter seen from above, in one ink. Original work, licensed with the project.
+# View box 96 x 96, no fill, round caps. Each shape carries its own stroke width; the centre disc is filled.
+# The ink in the shapes is a placeholder: draw the mark in text-primary.
+
+view_box = 96
+shapes = '<circle cx="48" cy="48" r="42" stroke-width="4"/><circle cx="48" cy="48" r="32" stroke-width="2"/><circle cx="48" cy="48" r="22" stroke-width="2"/><circle cx="48" cy="48" r="6" fill="#e8eaed" stroke="none"/><path d="M48 6v24" stroke-width="4"/>'

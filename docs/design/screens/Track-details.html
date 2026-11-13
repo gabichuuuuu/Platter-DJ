@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Edit track details</title>
+<!-- Static reference screen, 760 x 500 px. No scripts. Tokens are inlined from ../tokens.toml; fonts load from ../fonts. -->
+<style>
+@font-face{font-family:"Geist";src:url("../fonts/Geist-Regular.ttf") format("truetype");font-weight:400;}@font-face{font-family:"Geist";src:url("../fonts/Geist-Medium.ttf") format("truetype");font-weight:500;}@font-face{font-family:"Geist";src:url("../fonts/Geist-SemiBold.ttf") format("truetype");font-weight:600;}@font-face{font-family:"Geist";src:url("../fonts/Geist-Bold.ttf") format("truetype");font-weight:700;}
+
+:root, [data-theme="dark"] {
+  --bg-app: #111111;
+  --surface-panel: #1b1b1b;
+  --surface-control: #272727;
+  --surface-hover: #313131;
+  --surface-pressed: #3c3c3c;
+  --surface-selected: #383838;
+  --line-divider: #2c2c2c;
+  --line-key: #4a4a4a;
+  --line-control: #8a8a8a;
+  --text-primary: #ededed;
+  --text-secondary: #adadad;
+  --text-disabled: #5e5e5e;
+  --text-on-accent: #111111;
+  --focus-ring: #ffffff;
+  --playhead: #ffffff;
+  --deck-a: #3d8bff;
+  --deck-a-low: #2460d8;
+  --deck-a-high: #b9d6ff;
+  --deck-b: #ff8a3d;
+  --deck-b-low: #c2531a;
+  --deck-b-high: #ffd2b0;
+  --deck-c: #7fd6c4;
+  --deck-c-low: #2f9c8a;
+  --deck-c-high: #d4f3ec;
+  --deck-d: #e85a9c;
+  --deck-d-low: #b8336f;
+  --deck-d-high: #f8c2da;
+  --status-ok: #4cc38a;
+  --status-warn: #f2c14e;
+  --status-error: #f0524d;
+  --meter-ok: var(--status-ok);
+  --meter-warn: var(--status-warn);
+  --meter-clip: var(--status-error);
+  --hotcue-1: #4f8ff7;
+  --hotcue-2: #f28a33;
+  --hotcue-3: #3fbf7f;
+  --hotcue-4: #e5c040;
+  --hotcue-5: #c46ad9;
+  --hotcue-6: #4fd0e0;
+  --hotcue-7: #ef5b6b;
+  --hotcue-8: #9aa6ff;
+  --stem-drums: #e8a33d;
+  --stem-bass: #5b8cf0;
+  --stem-other: #86dcc6;
+  --stem-vocals: #e0609c;
+  --loop-region: #7ee08a;
+  --grid-beat: rgba(237, 237, 237, 0.22);
+  --grid-downbeat: rgba(237, 237, 237, 0.6);
+  --key-match: #c9a6ff;
+}
+:root {
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --stroke-hairline: 1px;
+  --stroke-focus: 2px;
+  --stroke-playhead: 2px;
+  --stroke-led: 3px;
+  --size-button-h: 28px;
+  --size-transport-h: 36px;
+  --size-button-transport: 64px;
+  --size-knob: 40px;
+  --size-fader-track: 120px;
+  --size-crossfader-track: 160px;
+  --size-meter-w: 6px;
+  --font-sans: "Geist", system-ui, sans-serif;
+  --text-title: 600 14px/18px var(--font-sans);
+  --text-body: 400 13px/18px var(--font-sans);
+  --text-button: 600 12px/16px var(--font-sans);
+  --text-label: 500 11px/14px var(--font-sans);
+  --text-time: 600 22px/26px var(--font-sans);
+  --text-tempo: 600 18px/22px var(--font-sans);
+  --text-readout: 500 11px/14px var(--font-sans);
+}
+.title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.button {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.time {
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.tempo {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.readout {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+body{margin:0;background:#111111}button{cursor:default}
+</style>
+</head>
+<body>
+<div style="width:760px;height:500px;box-sizing:border-box;background:var(--surface-panel);display:flex;flex-direction:column;font:400 13px/18px var(--font-sans);color:var(--text-primary);-webkit-font-smoothing:antialiased"><div style="display:flex;align-items:center;height:44px;padding:0 16px;border-bottom:1px solid var(--line-divider);flex:none"><span style="font:600 14px/18px var(--font-sans);flex:1">Edit track details</span><button type="button" aria-label="Close" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:24px;width:28px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div style="flex:1;display:flex;gap:24px;padding:20px 16px"><div style="display:flex;flex-direction:column;gap:8px;width:168px;flex:none"><div style="width:168px;height:168px;box-sizing:border-box;background:var(--bg-app);border:1px solid var(--line-key);border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--text-disabled)"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2"/></svg></div><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Choose cover</button><div style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);margin-top:8px">FLAC, 44.1 kHz, 16 bit<br>41.8 MB<br>Sets/paper-lanterns.flac</div></div><div style="flex:1;display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px 12px;align-content:start"><div style="grid-column:span 2"><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Title</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);outline:2px solid var(--focus-ring);outline-offset:2px;font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Paper Lanterns</div></div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Artist</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Mirela Costin</div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Album</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Paper Lanterns</div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Genre</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Deep house</div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Label</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Quiet Hours</div></div><div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px;grid-column:span 2"><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">BPM</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">123.00</div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Key</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">A min</div></div><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Year</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">2024</div></div></div><div style="grid-column:span 2"><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Comment</span><div style="display:flex;align-items:center;box-sizing:border-box;width:100%;height:28px;padding:0 8px;background:var(--bg-app);border:1px solid var(--line-control);border-radius:var(--radius-md);font:400 13px/18px var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Long intro, good after a breakdown</div></div></div><div style="grid-column:span 2;display:flex;gap:16px;align-items:center"><div style="display:flex;flex-direction:column;gap:4px"><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);">Rating</span><div style="height:28px;display:flex;align-items:center"><span role="img" aria-label="3 of 5" style="display:inline-flex;gap:1px"><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--text-primary)" stroke="none" aria-hidden="true" style="flex:none"><path d="M12 3.8l2.5 5.3 5.7.7-4.2 4 1.1 5.7-5.1-2.9-5.1 2.9 1.1-5.7-4.2-4 5.7-.7z"/></svg><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--text-primary)" stroke="none" aria-hidden="true" style="flex:none"><path d="M12 3.8l2.5 5.3 5.7.7-4.2 4 1.1 5.7-5.1-2.9-5.1 2.9 1.1-5.7-4.2-4 5.7-.7z"/></svg><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--text-primary)" stroke="none" aria-hidden="true" style="flex:none"><path d="M12 3.8l2.5 5.3 5.7.7-4.2 4 1.1 5.7-5.1-2.9-5.1 2.9 1.1-5.7-4.2-4 5.7-.7z"/></svg><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--line-key)" stroke="none" aria-hidden="true" style="flex:none"><path d="M12 3.8l2.5 5.3 5.7.7-4.2 4 1.1 5.7-5.1-2.9-5.1 2.9 1.1-5.7-4.2-4 5.7-.7z"/></svg><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--line-key)" stroke="none" aria-hidden="true" style="flex:none"><path d="M12 3.8l2.5 5.3 5.7.7-4.2 4 1.1 5.7-5.1-2.9-5.1 2.9 1.1-5.7-4.2-4 5.7-.7z"/></svg></span></div></div><div style="flex:1"></div><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Detect tempo again</button><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;min-width:28px;padding:0 10px;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Detect key again</button></div></div></div><div style="display:flex;gap:8px;align-items:center;height:52px;padding:0 16px;border-top:1px solid var(--line-divider);flex:none"><div style="display:flex;gap:4px"><button type="button" aria-label="Previous track" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;width:28px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M14.5 6l-6 6 6 6"/></svg></button><button type="button" aria-label="Next track" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;width:28px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none"><path d="M9.5 6l6 6-6 6"/></svg></button></div><span style="font:500 11px/14px var(--font-sans);color:var(--text-secondary);flex:1">Track 3 of 48. Saving writes the tags into the file.</span><button type="button" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;width:80px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-control);color:var(--text-primary);font:600 12px/16px var(--font-sans)">Cancel</button><button type="button" aria-pressed="true" style="position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;height:28px;width:96px;padding:0;flex:none;margin:0;border:1px solid var(--line-key);border-radius:var(--radius-md);background:var(--surface-pressed);color:var(--text-primary);font:600 12px/16px var(--font-sans)"><span style="position:absolute;left:-1px;right:-1px;top:-1px;height:3px;border-radius:2px 2px 0 0;background:var(--text-primary)"></span>Save tags</button></div></div>
+</body>
+</html>
