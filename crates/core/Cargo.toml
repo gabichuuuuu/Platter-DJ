@@ -1,0 +1,10 @@
+[package]
+name = "platter-core"
+description = "Shared types of Platter: sample rate, tempo, gain, deck identifiers and the local log"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
