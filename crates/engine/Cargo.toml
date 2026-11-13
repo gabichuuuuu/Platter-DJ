@@ -1,0 +1,20 @@
+[package]
+name = "platter-engine"
+description = "The engine of Platter: decks, mixer, commands, the real-time processor and the deviceless render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-core = { path = "../core" }
+platter-decode = { path = "../decode" }
+platter-dsp = { path = "../dsp" }
+rtrb.workspace = true
+
+[dev-dependencies]
+platter-testkit = { path = "../testkit" }
+proptest.workspace = true

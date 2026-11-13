@@ -164,7 +164,7 @@ features = [
 id = "master"
 title = "Master"
 features = [
-  { id = "volume-limiter-engine", name = "Main volume and safety limiter in the engine", milestone = "M1", status = "planned" },
+  { id = "volume-limiter-engine", name = "Main volume and safety limiter in the engine", milestone = "M1", status = "done", evidence = "cargo test -p platter-engine --test mixer" },
   { id = "volume-limiter-ui", name = "Main volume, limiter and master meter in the mixer", milestone = "M2", status = "planned" },
   { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "planned" },
 ]

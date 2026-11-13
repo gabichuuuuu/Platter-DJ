@@ -76,6 +76,10 @@ const DEVICE_AND_UI_CRATES: &[&str] =
 
 const REGISTRY_PATH: &str = "docs/dependencies.md";
 
+/// The real-time module of the engine and the only workspace crates it may name.
+const REALTIME_MODULE: &str = "crates/engine/src/rt";
+const REALTIME_CRATES: &[&str] = &["platter_core", "platter_dsp"];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
     Normal,
@@ -120,6 +124,7 @@ pub fn run(root: &Path) -> Result<(), Failure> {
         &workspace,
         &documented_crates(&registry),
     ));
+    findings.extend(realtime_violations(&realtime_sources(root)?));
     Failure::from_findings("layers", findings)?;
     println!(
         "layers: {} workspace crate(s) follow the layer rules",
@@ -283,14 +288,122 @@ fn registry_violations(workspace: &Workspace, documented: &BTreeSet<String>) -> 
     missing.chain(stale).collect()
 }
 
+/// Source files of the real-time module, as (path relative to the repository, text). The
+/// module is absent until the engine exists.
+fn realtime_sources(root: &Path) -> Result<Vec<(String, String)>, Failure> {
+    let directory = root.join(REALTIME_MODULE);
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        return Ok(Vec::new());
+    };
+    let mut sources = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative = format!("{REALTIME_MODULE}/{name}");
+        if entry.path().is_dir() {
+            // The check reads one level; a nested module would escape it unnoticed.
+            return Err(Failure::message(format!(
+                "`{relative}` is a folder: the real-time module must stay flat"
+            )));
+        }
+        if name.ends_with(".rs") {
+            sources.push((relative.clone(), repo::read_text(root, &relative)?));
+        }
+    }
+    sources.sort();
+    Ok(sources)
+}
+
+/// The real-time module may name `platter-core` and `platter-dsp` among the workspace
+/// crates, and nothing of its own crate outside itself.
+fn realtime_violations(sources: &[(String, String)]) -> Vec<String> {
+    let mut violations = Vec::new();
+    for (path, text) in sources {
+        for (number, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or(line);
+            let mut words = code
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .peekable();
+            while let Some(word) = words.next() {
+                let outside = if word.starts_with("platter_") {
+                    !REALTIME_CRATES.contains(&word)
+                } else {
+                    word == "crate" && words.peek().is_some_and(|next| *next != "rt")
+                };
+                if outside {
+                    violations.push(format!(
+                        "{path}:{}: the real-time module reaches outside itself,                          `platter-core` and `platter-dsp`",
+                        number + 1
+                    ));
+                    break;
+                }
+            }
+        }
+    }
+    violations
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
     use super::{
         Dependency, Kind, LAYER_TABLE, Member, Workspace, documented_crates, layer_violations,
-        registry_violations,
+        realtime_violations, registry_violations,
     };
+
+    fn realtime(text: &str) -> Vec<String> {
+        realtime_violations(&[("crates/engine/src/rt/deck.rs".to_owned(), text.to_owned())])
+    }
+
+    #[test]
+    fn the_realtime_module_may_use_core_dsp_and_itself() {
+        let text = "use std::sync::Arc;
+use platter_core::SampleRate;
+use platter_dsp::eq::ThreeBandEq;
+use rtrb::Consumer;
+use super::Shared;
+use crate::rt::deck::DeckPlayer;
+// platter_decode is mentioned in a comment only, like crate::control.
+fn crate_count() {}
+";
+        assert_eq!(realtime(text), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_realtime_module_may_not_reach_other_crates_or_modules() {
+        let found = realtime(
+            "use platter_core::DeckId;
+use platter_decode::decode_file;
+",
+        );
+        assert_eq!(found.len(), 1);
+        assert!(found[0].starts_with("crates/engine/src/rt/deck.rs:2:"));
+        assert_eq!(
+            realtime(
+                "fn load() { crate::control::poll(); }
+"
+            )
+            .len(),
+            1
+        );
+        assert_eq!(
+            realtime(
+                "use crate::{control, rt};
+"
+            )
+            .len(),
+            1
+        );
+        assert_eq!(
+            realtime(
+                "let x = platter_engine::Engine::new;
+"
+            )
+            .len(),
+            1
+        );
+    }
 
     fn member(name: &str, dependencies: &[(&str, Kind)], transitive: &[&str]) -> Member {
         Member {
