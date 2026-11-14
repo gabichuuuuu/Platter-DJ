@@ -79,6 +79,22 @@ impl WaveformPeaks {
         }
     }
 
+    /// Builds the peaks from columns computed elsewhere, one every `seconds_per_column`.
+    /// The capture mode of the application uses it to show a waveform without audio.
+    pub fn from_columns(columns: Vec<Column>, seconds_per_column: f64) -> Self {
+        let overview = reduce(&columns, Self::OVERVIEW_COLUMNS);
+        let seconds_per_column = if seconds_per_column.is_finite() && seconds_per_column > 0.0 {
+            seconds_per_column
+        } else {
+            1.0 / COLUMNS_PER_SECOND
+        };
+        Self {
+            columns,
+            overview,
+            seconds_per_column,
+        }
+    }
+
     /// The detailed data: one column every [`Self::seconds_per_column`].
     pub fn columns(&self) -> &[Column] {
         &self.columns
@@ -187,6 +203,21 @@ mod tests {
         let expected = WaveformPeaks::OVERVIEW_COLUMNS * 4 / 6;
         assert!(position.abs_diff(expected) <= 2, "{position}");
         assert!(peaks.overview()[..expected - 8].iter().all(|c| c[1] == 0));
+    }
+
+    #[test]
+    fn peaks_built_from_columns_get_their_overview() {
+        let columns: Vec<[u8; 3]> = (0..4_096u32)
+            .map(|index| [(index % 251) as u8, 7, 0])
+            .collect();
+        let peaks = WaveformPeaks::from_columns(columns.clone(), 0.0025);
+        assert_eq!(peaks.columns(), columns.as_slice());
+        assert_eq!(peaks.seconds_per_column(), 0.0025);
+        assert_eq!(peaks.overview().len(), WaveformPeaks::OVERVIEW_COLUMNS);
+        assert_eq!(peaks.overview()[0], [3, 7, 0]);
+        // A pace that is not a positive number falls back to the pace of computed peaks.
+        let peaks = WaveformPeaks::from_columns(Vec::new(), f64::NAN);
+        assert_eq!(peaks.seconds_per_column(), 1.0 / 400.0);
     }
 
     #[test]

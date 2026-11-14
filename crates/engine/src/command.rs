@@ -133,9 +133,14 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ParamKind {
     Deck,
-    Number { min: f64, max: f64 },
+    Number {
+        min: f64,
+        max: f64,
+    },
     Choice(&'static [&'static str]),
     Path,
+    /// Free text, such as the name of a device.
+    Text,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -622,6 +627,7 @@ mod tests {
                     ParamKind::Number { min, .. } => Value::Number(min),
                     ParamKind::Choice(choices) => Value::Text(choices[0].to_owned()),
                     ParamKind::Path => Value::Text("track.wav".to_owned()),
+                    ParamKind::Text => Value::Text("text".to_owned()),
                 };
                 (param.name.to_owned(), value)
             })
