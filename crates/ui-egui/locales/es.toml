@@ -2,7 +2,7 @@
 # idioma; un test falla si falta alguna. Un nombre entre llaves se rellena al mostrar el texto.
 
 [app]
-name = "Platter"
+name = "Platter DJ"
 
 [language]
 en = "English"
@@ -27,7 +27,7 @@ none = "--"
 
 [notice]
 no_audio_title = "Sin dispositivo de audio"
-no_audio_text = "Platter no puede sonar hasta que elijas una salida. Puedes cargar y preparar pistas."
+no_audio_text = "Platter DJ no puede sonar hasta que elijas una salida. Puedes cargar y preparar pistas."
 device_missing_title = "Dispositivo de audio no conectado"
 device_missing_text = "El dispositivo elegido en las preferencias no está. Conéctalo o elige otro."
 unsupported_title = "Frecuencia de muestreo no admitida"

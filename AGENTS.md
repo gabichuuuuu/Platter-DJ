@@ -20,7 +20,7 @@ Do not reopen these on your own. If one proves unworkable, stop and explain why.
 
 | Topic | Decision |
 | --- | --- |
-| Name | Platter. Crates are named `platter-*` and set `publish = false`. Binaries: `platter` and `platter-cli` |
+| Name | Platter DJ wherever the product is named for its users: the window, the interface texts, the README. Platter for short in prose. Crates are named `platter-*` and set `publish = false`. Binaries: `platter` and `platter-cli`. The folder of the settings keeps the name Platter (`docs/decisions/0017-display-name.md`) |
 | Licence | `MIT OR Apache-2.0`. No GPL, AGPL or LGPL dependency. What exists only under those licences is written by the project |
 | Dependencies | Everything external is temporary and replaceable. Only the dependencies approved by the maintainer enter, each confined to one crate or module and listed in `docs/dependencies.md`. Do not write a replacement for one unless the maintainer asks |
 | Language | Rust, edition 2024, stable toolchain pinned in `rust-toolchain.toml` |
