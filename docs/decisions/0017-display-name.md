@@ -26,8 +26,9 @@ The folder of the settings keeps the name Platter, so the settings and shortcuts
 earlier version are still found. Option 3 would touch every crate and every script that runs
 a binary and give its users nothing they can see.
 
-The repository on GitHub was renamed from `Platter` to `PlatterDJ` when it became public, on
-the maintainer's request; GitHub forwards the old address.
+The repository on GitHub was renamed from `Platter` to `Platter-DJ` when it became public, on
+the maintainer's request: GitHub turns the space of Platter DJ into a hyphen, and forwards the
+old address.
 
 The design system in `docs/design/` writes Platter; it is the maintainer's to update.
 
