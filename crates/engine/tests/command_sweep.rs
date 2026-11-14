@@ -10,8 +10,8 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
-    Band, BpmScale, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output, SizeStep,
-    TEMPO_RANGES,
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
+    SizeStep, SyncMode, TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -132,11 +132,27 @@ fn grid_command() -> impl Strategy<Value = Command> {
     ]
 }
 
+fn sync_command() -> impl Strategy<Value = Command> {
+    let clock_mode = prop::sample::select(vec![ClockMode::Auto, ClockMode::Master]);
+    let sync_mode = prop::sample::select(SyncMode::ALL.to_vec());
+    prop_oneof![
+        3 => deck().prop_map(|deck| Command::DeckSyncToggle { deck }),
+        2 => deck().prop_map(|deck| Command::DeckMasterSet { deck }),
+        2 => clock_mode.prop_map(|mode| Command::ClockModeSet { mode }),
+        1 => (15.0f64..420.0).prop_map(|bpm| Command::ClockTempoSet { bpm }),
+        1 => number().prop_map(|amount| Command::ClockTempoStep { amount }),
+        1 => proptest::strategy::Just(Command::ClockTap),
+        1 => number().prop_map(|amount| Command::ClockBend { amount }),
+        1 => sync_mode.prop_map(|mode| Command::GlobalSyncModeSet { mode }),
+    ]
+}
+
 fn command() -> impl Strategy<Value = Command> {
     let band = band();
     let curve = prop::sample::select(CrossfaderCurve::ALL.to_vec());
     prop_oneof![
         6 => later_command(),
+        4 => sync_command(),
         1 => (deck(), 0usize..3).prop_map(|(deck, file)| Command::DeckLoad {
             deck,
             path: files()[file].clone()
@@ -194,6 +210,9 @@ fn value() -> impl Strategy<Value = Value> {
             "fade_in",
             "fade_out",
             "load",
+            "auto",
+            "tempo",
+            "beat",
         ])
         .prop_map(|text| Value::Text(text.to_owned())),
     ]
@@ -219,6 +238,8 @@ proptest! {
                 assert!(sample.is_finite() && sample.abs() <= 1.0, "{sample}");
             }
         }
+        // An empty block: the processor reports what the last commands left.
+        rig.processor.process(&mut [], 2);
         rig.engine.poll();
         let snapshot = rig.engine.snapshot();
         for deck in &snapshot.decks {
@@ -257,6 +278,20 @@ proptest! {
             // is, so only that span holds here; the range pulls the tempo in when it changes.
             assert!(TEMPO_RANGES.contains(&deck.controls.tempo_range));
             assert!((0.0..=2.0).contains(&deck.controls.tempo_ratio));
+            assert!((0.0..=2.0).contains(&deck.speed), "{}", deck.speed);
+            if let Some(phase) = deck.phase {
+                assert!((-0.5..=0.5).contains(&phase), "{phase}");
+                assert!(deck.grid.bpm().is_some());
+            }
+        }
+        let clock = &snapshot.clock;
+        assert!(clock.bpm.is_finite() && clock.bpm >= 0.0, "{}", clock.bpm);
+        if let Some(master) = clock.master {
+            let deck = &snapshot.decks[master.index()];
+            assert!(deck.grid.bpm().is_some(), "a tempo master without a tempo");
+        } else {
+            // A bend is at most half the tempo either way.
+            assert!((Bpm::MIN * 0.5..=Bpm::MAX * 1.5).contains(&clock.bpm), "{}", clock.bpm);
         }
         assert!(snapshot.master_levels.iter().all(|level| level.is_finite() && *level <= 1.0));
     }

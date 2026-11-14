@@ -8,7 +8,8 @@ mod common;
 use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{
-    Band, BpmScale, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output, SizeStep,
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
+    SizeStep, SyncMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -226,6 +227,37 @@ fn commands() -> Vec<Command> {
             deck: A,
             slot: HotcueSlot::ALL[0],
         },
+        // Sync: deck B follows deck A and moves onto its beat, then follows the clock.
+        Command::DeckPlay { deck: A },
+        Command::DeckGridBpmSet {
+            deck: B,
+            bpm: 100.0,
+        },
+        Command::DeckSyncToggle { deck: B },
+        Command::DeckSeek {
+            deck: B,
+            seconds: 1.13,
+        },
+        Command::GlobalSyncModeSet {
+            mode: SyncMode::Tempo,
+        },
+        Command::GlobalSyncModeSet {
+            mode: SyncMode::Beat,
+        },
+        Command::ClockModeSet {
+            mode: ClockMode::Master,
+        },
+        Command::ClockTempoSet { bpm: 128.0 },
+        Command::ClockTempoStep { amount: -0.5 },
+        Command::ClockBend { amount: 0.1 },
+        Command::ClockBend { amount: 0.0 },
+        Command::ClockTap,
+        Command::DeckMasterSet { deck: B },
+        Command::DeckSyncToggle { deck: A },
+        Command::ClockModeSet {
+            mode: ClockMode::Auto,
+        },
+        Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },
     ]

@@ -10,6 +10,7 @@ use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
 use rtrb::{Consumer, Producer};
 
+use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tone::TestTone;
@@ -33,6 +34,9 @@ pub struct Processor {
     reports: Producer<DeckReport>,
     shared: Arc<Shared>,
     channels: [Channel; 2],
+    clock: Clock,
+    /// Synced decks keep their beats on those of the clock, not only its tempo.
+    keep_beat: bool,
     crossfader_position: f32,
     crossfader_curve: CrossfaderCurve,
     master_gain: Smoothed,
@@ -62,6 +66,8 @@ impl Processor {
             reports: queues.reports,
             shared,
             channels: [channel(left), channel(right)],
+            clock: Clock::new(rate),
+            keep_beat: true,
             crossfader_position: position,
             crossfader_curve: curve,
             master_gain: parameter(1.0),
@@ -81,6 +87,7 @@ impl Processor {
     /// function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
+        self.clock.choose(self.candidates());
         if channels == 0 {
             output.fill(0.0);
             return;
@@ -131,14 +138,40 @@ impl Processor {
             RtCommand::CueButton { deck, pressed } => self.player(deck).cue_button(pressed),
             RtCommand::CupButton { deck, pressed } => self.player(deck).cup_button(pressed),
             RtCommand::Seek { deck, seconds } => self.player(deck).seek_seconds(seconds),
-            RtCommand::Tempo { deck, ratio } => self.player(deck).set_tempo(ratio),
+            RtCommand::Tempo { deck, ratio } => {
+                // The clock sets the speed of a deck that follows it.
+                let follows = self.clock.master() != Some(deck) && self.player(deck).can_follow();
+                if !follows {
+                    self.player(deck).set_tempo(ratio);
+                }
+            }
             RtCommand::Nudge { deck, amount } => self.player(deck).set_nudge(amount),
             RtCommand::Grid { deck, edit } => self.player(deck).edit_grid(edit),
             RtCommand::Loop { deck, edit } => self.player(deck).edit_loop(edit),
             RtCommand::Jump { deck, by } => self.player(deck).jump(by),
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
+            RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
+            RtCommand::Master { deck } => {
+                let candidate = self.player(deck).candidate();
+                self.clock.set_master(deck, candidate);
+            }
+            RtCommand::ClockAuto { on } => {
+                let decks = self.candidates();
+                self.clock.set_auto(on, decks);
+            }
+            RtCommand::ClockTempo { bpm } => self.clock.set_bpm(bpm),
+            RtCommand::ClockStep { amount } => self.clock.step_bpm(amount),
+            RtCommand::ClockBend { amount } => self.clock.set_bend(amount),
+            RtCommand::KeepBeat { on } => self.keep_beat = on,
             mixer => self.apply_mixer(mixer),
         }
+    }
+
+    fn candidates(&self) -> [Candidate; 2] {
+        [
+            self.channels[0].player.candidate(),
+            self.channels[1].player.candidate(),
+        ]
     }
 
     fn apply_mixer(&mut self, command: RtCommand) {
@@ -190,7 +223,13 @@ impl Processor {
     fn next_frame(&mut self, with_headphones: bool) -> (Frame, Frame) {
         let mut mix = [0.0f32; 2];
         let mut pre_listened = [0.0f32; 2];
-        for channel in &mut self.channels {
+        let master = self.clock.master();
+        let lead = master.and_then(|deck| self.channels[deck.index()].player.lead());
+        let pulse = self.clock.tick(lead);
+        for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
+            // The tempo master follows nothing: the clock follows it.
+            let clock = (master != Some(deck)).then_some(pulse);
+            channel.player.follow(clock, self.keep_beat);
             let played = channel.player.next(&mut self.retired);
             let strip = channel.strip.process(played);
             let side = channel.crossfade.advance();
@@ -244,7 +283,16 @@ impl Processor {
                 }
             }
         }
+        let pulse = self.clock.pulse();
+        self.shared.master.set(self.clock.master());
+        self.shared.clock_bpm.set(pulse.bpm);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
+            shared.sync.set(channel.player.is_synced());
+            shared.speed.set(f64::from(channel.player.speed()));
+            let ahead = channel.player.beats_ahead(pulse);
+            shared
+                .phase
+                .set(ahead.map_or(f32::NAN, |beats| beats as f32));
             shared.loaded.set(channel.player.is_loaded());
             shared.playing.set(channel.player.is_playing());
             shared.position.set(channel.player.position_seconds());

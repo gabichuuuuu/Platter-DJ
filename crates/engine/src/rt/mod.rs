@@ -9,8 +9,10 @@
 //! retired queue, so its buffer is always freed by a normal thread. The beatgrid, the
 //! loop and the stored cues of each deck live here, because their edits use the play
 //! position; they go back to
-//! the control side as fixed-size values through a third queue.
+//! the control side as fixed-size values through a third queue. The master clock and the
+//! choice of the tempo master live here too, because they follow what the decks play.
 
+mod clock;
 mod deck;
 mod looper;
 mod processor;
@@ -29,7 +31,7 @@ use platter_dsp::eq::Band;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 pub use processor::Processor;
-pub use shared::{DeckShared, Shared};
+pub use shared::{DeckShared, MasterChoice, Shared};
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
@@ -205,6 +207,32 @@ pub enum RtCommand {
     },
     TestTone {
         output: Output,
+    },
+    SyncToggle {
+        deck: DeckId,
+    },
+    /// Makes a deck the tempo master, while the choice is not automatic.
+    Master {
+        deck: DeckId,
+    },
+    /// Switches the automatic choice of the tempo master on, or makes the clock the tempo
+    /// master.
+    ClockAuto {
+        on: bool,
+    },
+    ClockTempo {
+        bpm: Bpm,
+    },
+    /// Adds beats per minute to the tempo of the clock.
+    ClockStep {
+        amount: f64,
+    },
+    ClockBend {
+        amount: f32,
+    },
+    /// Whether a synced deck keeps its beats on those of the clock, or only its tempo.
+    KeepBeat {
+        on: bool,
     },
 }
 

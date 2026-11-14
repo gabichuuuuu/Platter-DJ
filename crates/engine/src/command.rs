@@ -246,6 +246,32 @@ pub enum Command {
     MasterTestTone {
         output: Output,
     },
+    DeckSyncToggle {
+        deck: DeckId,
+    },
+    /// Makes the deck the tempo master, while the mode of the clock is not automatic.
+    DeckMasterSet {
+        deck: DeckId,
+    },
+    ClockModeSet {
+        mode: ClockMode,
+    },
+    /// Tempo of the clock in beats per minute.
+    ClockTempoSet {
+        bpm: f64,
+    },
+    /// Adds beats per minute to the tempo of the clock.
+    ClockTempoStep {
+        amount: f64,
+    },
+    ClockTap,
+    /// The clock runs this fraction slower or faster until it is set back to zero.
+    ClockBend {
+        amount: f64,
+    },
+    GlobalSyncModeSet {
+        mode: SyncMode,
+    },
 }
 
 /// Kind of a command parameter, for anything that builds commands from untyped input.
@@ -307,6 +333,38 @@ const SIZE_STEPS: &[&str] = &["down", "up"];
 const MOVE_MODES: &[&str] = &["beatjump", "loop", "loop_in", "loop_out"];
 const CUE_STEPS: &[&str] = &["previous", "next"];
 const CUE_TYPES: &[&str] = &["cue", "fade_in", "fade_out", "load", "loop"];
+const CLOCK_MODES: &[&str] = &["auto", "master"];
+const SYNC_MODES: &[&str] = &["tempo", "beat"];
+
+/// Who the tempo master is: `docs/behavior/sync.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockMode {
+    /// The deck that starts to play, chosen by the engine.
+    Auto,
+    /// The clock, until `deck.master.set` names a deck.
+    Master,
+}
+
+/// What the sync of a deck locks to the tempo master.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SyncMode {
+    /// The tempo alone.
+    Tempo,
+    /// The tempo and the place in the beat.
+    #[default]
+    Beat,
+}
+
+impl SyncMode {
+    pub const ALL: [Self; 2] = [Self::Tempo, Self::Beat];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Tempo => "tempo",
+            Self::Beat => "beat",
+        }
+    }
+}
 
 /// Which neighbour of the play position `deck.cue.select` goes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -743,6 +801,52 @@ pub const SPECS: &[CommandSpec] = &[
             kind: ParamKind::Choice(OUTPUTS),
         }],
     },
+    CommandSpec {
+        id: "deck.sync.toggle",
+        label: "Sync",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.master.set",
+        label: "Make tempo master",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "clock.mode.set",
+        label: "Set tempo master mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(CLOCK_MODES),
+        }],
+    },
+    CommandSpec {
+        id: "clock.tempo.set",
+        label: "Set clock tempo",
+        params: &[number("bpm", Bpm::MIN, Bpm::MAX)],
+    },
+    CommandSpec {
+        id: "clock.tempo.step",
+        label: "Step clock tempo",
+        params: &[number("amount", -MAX_BPM_STEP, MAX_BPM_STEP)],
+    },
+    CommandSpec {
+        id: "clock.tap",
+        label: "Tap clock tempo",
+        params: &[],
+    },
+    CommandSpec {
+        id: "clock.bend",
+        label: "Bend clock tempo",
+        params: &[number("amount", -MAX_NUDGE, MAX_NUDGE)],
+    },
+    CommandSpec {
+        id: "global.sync.mode.set",
+        label: "Set sync mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(SYNC_MODES),
+        }],
+    },
 ];
 
 /// An untyped parameter value, as a script, a mapping or a remote caller provides it.
@@ -944,6 +1048,28 @@ impl Reader<'_> {
             })),
         }
     }
+
+    fn clock_mode(&self) -> Result<ClockMode, CommandError> {
+        match self.text("mode")? {
+            "auto" => Ok(ClockMode::Auto),
+            "master" => Ok(ClockMode::Master),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "auto, master",
+            })),
+        }
+    }
+
+    fn sync_mode(&self) -> Result<SyncMode, CommandError> {
+        match self.text("mode")? {
+            "tempo" => Ok(SyncMode::Tempo),
+            "beat" => Ok(SyncMode::Beat),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "tempo, beat",
+            })),
+        }
+    }
 }
 
 impl Command {
@@ -1037,7 +1163,39 @@ impl Command {
                 direction: read.size_step()?,
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
+            sync if sync.starts_with("clock.")
+                || matches!(
+                    sync,
+                    "deck.sync.toggle" | "deck.master.set" | "global.sync.mode.set"
+                ) =>
+            {
+                return Self::sync_from_args(sync, &read);
+            }
             mixer => return Self::mixer_from_args(mixer, &read),
+        })
+    }
+
+    fn sync_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        Ok(match id {
+            "deck.sync.toggle" => Self::DeckSyncToggle { deck: read.deck()? },
+            "deck.master.set" => Self::DeckMasterSet { deck: read.deck()? },
+            "clock.mode.set" => Self::ClockModeSet {
+                mode: read.clock_mode()?,
+            },
+            "clock.tempo.set" => Self::ClockTempoSet {
+                bpm: read.number("bpm")?,
+            },
+            "clock.tempo.step" => Self::ClockTempoStep {
+                amount: read.number("amount")?,
+            },
+            "clock.tap" => Self::ClockTap,
+            "clock.bend" => Self::ClockBend {
+                amount: read.number("amount")?,
+            },
+            "global.sync.mode.set" => Self::GlobalSyncModeSet {
+                mode: read.sync_mode()?,
+            },
+            other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
 
@@ -1210,6 +1368,14 @@ impl Command {
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
+            Self::DeckSyncToggle { .. } => "deck.sync.toggle",
+            Self::DeckMasterSet { .. } => "deck.master.set",
+            Self::ClockModeSet { .. } => "clock.mode.set",
+            Self::ClockTempoSet { .. } => "clock.tempo.set",
+            Self::ClockTempoStep { .. } => "clock.tempo.step",
+            Self::ClockTap => "clock.tap",
+            Self::ClockBend { .. } => "clock.bend",
+            Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
         }
     }
 }
