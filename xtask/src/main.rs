@@ -19,7 +19,7 @@ commands:
   ci               run the whole gate, stopping at the first failure
   layers           check the layer rules and the dependency registry
   cleanroom        check for third-party material that must not enter the repository
-  privacy          check for traces of the development machine
+  privacy          check for traces of the development machine; not part of the gate
   parity           validate docs/parity.toml and refresh the summary in ROADMAP.md
   parity --check   validate docs/parity.toml and fail if ROADMAP.md is out of date
   parity --site <folder>

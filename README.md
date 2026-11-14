@@ -48,7 +48,7 @@ its own code, graphics and sounds.
 - `platter-cli info <file>` and `platter-cli render --script <mix.toml> --out <mix.wav>`: file
   information, and a scripted mix rendered to a WAV file without a sound card.
 - `cargo xtask ci`, the gate that runs formatting, lints, tests, the layer rules, the licence
-  and advisory checks, the clean-room check, the privacy check and the feature inventory check.
+  and advisory checks, the clean-room check and the feature inventory check.
 
 ### What does not work yet
 

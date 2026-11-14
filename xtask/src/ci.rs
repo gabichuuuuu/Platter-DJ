@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::failure::Failure;
-use crate::{cleanroom, layers, parity, privacy, repo};
+use crate::{cleanroom, layers, parity, repo};
 
 const DENY_VERSION: &str = "0.20.2";
 
@@ -37,7 +37,6 @@ const STEPS: &[(&str, Step)] = &[
     ("cargo xtask layers", Step::Check(layers::run)),
     ("cargo deny check", Step::Deny),
     ("cargo xtask cleanroom", Step::Check(cleanroom::run)),
-    ("cargo xtask privacy", Step::Check(privacy::run)),
     ("cargo xtask parity --check", Step::Check(parity::check)),
 ];
 

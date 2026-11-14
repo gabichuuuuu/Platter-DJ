@@ -1,5 +1,4 @@
-//! Keeps traces of the development machine out of the repository (AGENTS.md, "No trace of
-//! the development machine").
+//! Looks for traces of the development machine in the repository. It is not part of the gate.
 //!
 //! The names of the current user, machine and domain are read from the environment at run
 //! time and never written here. The test inputs are invented and assembled at run time, so

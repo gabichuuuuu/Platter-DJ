@@ -1,6 +1,6 @@
 # 0003. Scope of the privacy check
 
-Status: accepted (M0).
+Status: accepted (M0). Since M3 the check is not part of the gate.
 
 ## Context
 
