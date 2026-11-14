@@ -1,6 +1,6 @@
 [package]
 name = "platter"
-description = "Platter, the desktop application"
+description = "Platter DJ, the desktop application"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

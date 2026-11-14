@@ -2,7 +2,7 @@
 # fails when one is missing. A name in braces is filled in when the text is shown.
 
 [app]
-name = "Platter"
+name = "Platter DJ"
 
 [language]
 en = "English"
@@ -27,7 +27,7 @@ none = "--"
 
 [notice]
 no_audio_title = "No audio device"
-no_audio_text = "Platter cannot play until an output is selected. Tracks can still be loaded and prepared."
+no_audio_text = "Platter DJ cannot play until an output is selected. Tracks can still be loaded and prepared."
 device_missing_title = "Audio device not connected"
 device_missing_text = "The device chosen in the preferences is not there. Connect it or choose another one."
 unsupported_title = "Sample rate not supported"
