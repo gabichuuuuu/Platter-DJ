@@ -1,0 +1,13 @@
+[package]
+name = "platter-analysis"
+description = "Analysis of Platter: tempo, beatgrid and key of a track"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-core = { path = "../core" }
