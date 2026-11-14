@@ -20,6 +20,22 @@ and the feature inventory. A pull request is reviewed once the gate passes.
 
 Do not weaken a test or a rule to make the gate pass. If a rule seems wrong, open an issue.
 
+## Testing on your machine
+
+The gate runs without a sound card, a controller or anyone listening. What depends on them is
+tested by the author:
+
+- Run `cargo xtask ci` before opening the pull request.
+- A change to audio output, the engine, controller support or the interface is also run in the
+  application, on the hardware it concerns.
+- Say what was run and on what under "How it was tested" in the pull request template. "Not
+  tested on hardware" is a valid answer; a reviewer may ask for a run before merging.
+- Describe the setup: operating system and architecture, audio API, sample rate, buffer size,
+  the kind of controller.
+- Report what was measured or checked. Do not write that something sounds good.
+
+The reasons are recorded in `docs/decisions/0019-contributors-test-on-their-machine.md`.
+
 ## Commits and pull requests
 
 - [Conventional Commits](https://www.conventionalcommits.org/), with the crate as scope:
@@ -35,8 +51,9 @@ Do not weaken a test or a rule to make the gate pass. If a rule seems wrong, ope
 
 ## Clean-room rules
 
-Platter matches the functions of a commercial product without using any of its material. A
-contribution must respect the clean-room rules in `AGENTS.md`. In short:
+Platter offers the functions DJs expect from professional DJ software and uses no code or
+resources of any other product. A contribution must respect the clean-room rules in
+`AGENTS.md`. In short:
 
 - Behaviour comes from public documentation, public specifications and scientific papers. The
   reference manual is cited by page and section; other sources by URL.
