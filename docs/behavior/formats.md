@@ -50,5 +50,7 @@ No input makes decoding panic or return samples that are not finite numbers.
 `crates/decode/tests/decode.rs`. WAV, AIFF and FLAC files are synthesised in the test and
 compared with the signal they were made from. MP3, AAC and Ogg Vorbis need an encoder to
 produce a valid file, and the project has none: for those three the tests cover damaged input
-only, and their rows in `docs/parity.toml` stay `in_progress` until a real file has been
-checked by hand or an encoder exists.
+only. A file of each was checked by hand on 13 November 2026 against the WAV of the same
+signal (`docs/maintainers/m2-manual-check.md`): MP3 and Ogg Vorbis differ from it by what the
+lossy codec removes, about -37 dB and -35 dB, and M4A starts on the same frame once its edit
+list is applied. The parsing of the edit list has its own tests in `platter-decode`.

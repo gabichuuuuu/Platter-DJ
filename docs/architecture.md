@@ -1,7 +1,7 @@
 # Architecture
 
-This document describes the design the milestones follow. The crates of M0 and M1 exist today;
-a crate is created when it has code, in the milestone the table names.
+This document describes the design the milestones follow. The crates of M0, M1 and M2 exist
+today; a crate is created when it has code, in the milestone the table names.
 
 ## Crates
 
@@ -76,8 +76,20 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
 
 `Engine::new` returns the control side (`Engine`) and the real-time side (`Processor`). The
 concrete shapes of commands, queues, track memory and the snapshot, and how each was checked,
-are in `docs/decisions/0009-engine-control-and-snapshot.md`. Three-band waveform peaks are
-written in M2, with the interface that reads them.
+are in `docs/decisions/0009-engine-control-and-snapshot.md`. The snapshot carries where every
+control stands, so the interface draws its knobs and faders from it and keeps no copy. The
+worker thread that decodes a track also computes its waveform peaks in three bands
+(`docs/behavior/waveform.md`).
+
+## Audio output
+
+`platter-audio-io` runs a source of audio, which in the application is the processor, from
+the callback of a device opened through `cpal`, or from a clock when the system has no device.
+One driver serves both: it asks the source for the master and, when the routing gives them
+outputs of their own, the headphones, and measures load and dropouts. A stream hands its
+source back when it closes, so the device can change while the engine keeps its tracks; only a
+change of sample rate builds the engine again. Details and what was measured:
+`docs/decisions/0010-audio-output.md`.
 
 ## Commands
 
@@ -101,3 +113,12 @@ interface says so.
 DJ expects in this order: status header, global section, waveforms, decks, mixer, browser. The
 look comes from `docs/design/`: `tokens.toml` is the single source of colours, sizes and text
 styles.
+
+Each frame the application (`apps/platter`) builds a view from the snapshot of the engine, the
+state of the audio output, the settings and the file list. `platter-ui-egui` draws it and
+answers with actions: commands of the engine and commands of the application. The application
+carries each one out in one place. The widgets are the project's own, drawn with the painter
+from the tokens; the icons and the mark are read from their shape data; every text comes from
+a translation file. Reading folders and file headers for the file selector happens on worker
+threads. The shape of all this and how it is tested without a display:
+`docs/decisions/0013-interface.md`, with `0011-icons.md` and `0012-translations.md`.

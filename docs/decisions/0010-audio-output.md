@@ -56,9 +56,20 @@ On Windows x64 with WASAPI in shared mode, `cargo run -p platter-audio-io --exam
 opens the default device at 48 kHz, asks for 256 frames and gets 480: the stream reports
 10.0 ms per buffer. The backend of `cpal` 0.18.2 states the reason in its source: in shared
 mode the callback period is the device period whatever is asked for. A smaller period on
-Windows needs exclusive mode or ASIO, and `AGENTS.md` keeps the `asio` feature off. The buffer
-size setting therefore has no effect below the device period on Windows; it is passed on for
-the systems where it has one.
+Windows needs exclusive mode, ASIO, or the low-latency shared mode of Windows 10 and later
+(`IAudioClient3`, <https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/low-latency-audio>),
+which `cpal` does not offer. `AGENTS.md` keeps the `asio` feature off. The buffer size setting
+therefore has no effect below the device period on Windows; it is passed on for the systems
+where it has one.
+
+## Pending
+
+The limit of 10 ms on Windows is provisional. The maintainer wants the lowest latency the
+system allows, with open-source code only, which rules out the ASIO SDK. The planned way is
+the low-latency shared mode: a crate of its own that calls the audio service of Windows
+through the `windows` crate, which needs the first exception to the ban on `unsafe` written in
+`AGENTS.md` and the approval of that dependency before it exists. It is the first task of M3,
+and it is measured on Windows x64 like the figures above.
 
 With a source that writes silence the load reading stays under 1 % and no dropout is counted
 over the half second the example runs.

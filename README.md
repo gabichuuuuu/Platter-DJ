@@ -7,7 +7,7 @@
 <p align="center">An open-source DJ application written in Rust.</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-milestone%20M1-272727?style=flat-square&labelColor=111111" alt="Status: milestone M1">
+  <img src="https://img.shields.io/badge/status-M2%20done-272727?style=flat-square&labelColor=111111" alt="Status: M2 done">
   <img src="https://img.shields.io/badge/rust-edition%202024-272727?style=flat-square&labelColor=111111" alt="Rust, edition 2024">
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-272727?style=flat-square&labelColor=111111" alt="Platforms: Linux, macOS and Windows">
   <img src="https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-272727?style=flat-square&labelColor=111111" alt="Licence: MIT or Apache-2.0">
@@ -30,28 +30,39 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Nothing plays through a sound card yet.** The repository is at milestone M1: the engine
-> exists and can be driven from the command line, without an interface and without live audio.
+> **Milestone M2 is complete; M3 has not started.** The desktop application opens, loads
+> tracks and plays them through a sound card, its tests pass, and the maintainer has listened
+> to it. It is not yet a tool to play a set with: there is no sync, no loops and no library.
 
 ### What exists today
 
-
-- The engine: two decks, a mixer (gain, three-band equaliser with full kill, one-knob filter,
-  fader, crossfader with three curves) and a master section with a safety limiter.
-- `platter-cli info <file>`: format, duration, channels and sample rate of an audio file.
-- `platter-cli render --script <mix.toml> --out <mix.wav>`: runs a script of timed commands
-  through the engine and writes the mix as a WAV file, without a sound card.
+- The desktop application, `platter`: two decks with scrolling and overview waveforms coloured
+  by frequency, play, CUE, CUP, a tempo fader with three ranges and tempo bend; a mixer with
+  gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three
+  curves, meters and a master with a safety limiter; pre-listening on a second output pair;
+  a file selector; audio and general preferences; keyboard shortcuts in a file the user
+  edits; English and Spanish.
+- `platter-cli info <file>` and `platter-cli render --script <mix.toml> --out <mix.wav>`: file
+  information, and a scripted mix rendered to a WAV file without a sound card.
 - `cargo xtask ci`, the gate that runs formatting, lints, tests, the layer rules, the licence
   and advisory checks, the clean-room check, the privacy check and the feature inventory check.
 
 ### What does not work yet
 
-- No live audio and no desktop application; both are milestone M2.
-- Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. Decoding of
-  MP3, M4A (AAC) and Ogg Vorbis is wired in but has no test with a valid file.
-- No key lock: changing the tempo changes the pitch.
-- Nobody has listened to the output. The tests measure levels, frequencies, distortion and
-  the absence of clicks; they do not judge sound.
+- The manual check of M2 rests on the window, measured renders and the listening of the
+  maintainer; the hour of playing with its dropout count has not been recorded. The tests measure levels, frequencies,
+  distortion and the absence of clicks; they do not judge sound.
+- On Windows the audio runs in the shared mode of WASAPI at the period of the device, about
+  10 ms; the buffer size setting cannot go below it. Going lower through the low-latency
+  shared mode of Windows is pending and planned first in M3.
+- The clock of the status header is not shown, and screen readers get no information.
+- The file selector does not list the drives of a Windows machine by itself; a drive is named
+  in the settings file.
+- Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
+  and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
+  damaged input only, as the project has no encoder for them.
+- No sync, no beatgrid, no loops, no hotcues, no key lock, no collection, no MIDI: those are
+  milestone M3. Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 
@@ -62,6 +73,7 @@ use) and `cargo-deny` 0.20.2. Details are in [`docs/development.md`](docs/develo
 
 ```sh
 cargo xtask ci
+cargo run --release -p platter
 cargo run -p platter-cli -- --help
 ```
 

@@ -1,0 +1,22 @@
+[package]
+name = "platter"
+description = "Platter, the desktop application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+eframe.workspace = true
+platter-audio-io = { path = "../../crates/audio-io" }
+platter-core = { path = "../../crates/core" }
+platter-engine = { path = "../../crates/engine" }
+platter-ui-egui = { path = "../../crates/ui-egui" }
+toml.workspace = true
+
+[[bin]]
+name = "platter"
+path = "src/main.rs"

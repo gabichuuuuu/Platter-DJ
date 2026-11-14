@@ -8,7 +8,6 @@
 - `cargo-deny` 0.20.2: `cargo install cargo-deny --version 0.20.2 --locked`.
 - On Windows, the MSVC build tools. On Linux, the packages the CI workflow installs
   (`.github/workflows/ci.yml`): the ALSA headers for cpal and the windowing libraries for eframe.
-  They are needed from M2, when those crates enter.
 - Integration tests write their temporary files under `target/`, never elsewhere.
 
 ## The gate
@@ -88,6 +87,28 @@ default) and a list of `[[command]]` entries. Each entry has `at` (seconds from 
 `id` (a command identifier from `crates/engine/src/command.rs`) and the parameters of that
 command by name. Paths are relative to the script. `examples/two-deck-mix.toml` is a complete
 example; it needs two audio files next to it, which the repository does not hold.
+
+## The application
+
+```
+cargo run --release -p platter
+cargo run -p platter -- --capture <state> <file.png>
+cargo run -p platter-audio-io --example probe
+```
+
+The first opens the application. It keeps its settings, its shortcut file and its log in a
+folder of its own inside the configuration folder of the user (`docs/behavior/settings.md`).
+
+`--capture` draws one state of the interface from invented data, with no engine and no audio
+device, at 1440 by 900 pixels, and saves it as a PNG. The states are `main`, `startup`,
+`preferences-audio` and `preferences-general`, one per reference screen of M2 in
+`docs/design/screens/`. Write the pictures to `target/screenshots/`, which is not tracked, and
+compare them with the screens side by side.
+
+`probe` opens the default audio device, plays half a second of silence and prints what the
+stream runs at. It is the manual check of the device backend, which no test covers.
+
+What no test can check, listening above all, is in `docs/maintainers/m2-manual-check.md`.
 
 ## Daily workflow
 

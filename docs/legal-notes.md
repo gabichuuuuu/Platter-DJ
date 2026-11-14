@@ -47,6 +47,9 @@ What the licence asks of Platter:
 - The fonts are not sold by themselves.
 - The fonts stay under the OFL; bundling them does not change the licence of Platter, and the
   licence of Platter does not apply to them.
+- From M2 the application embeds the four files in its binary, unmodified. A binary that is
+  distributed must come with the copyright notice and the text of the licence; the release
+  workflow of M3 has to ship `OFL.txt` beside it.
 - The files are used unmodified. A modified version would have to respect any reserved font
   name.
 

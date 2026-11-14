@@ -11,15 +11,15 @@ The table is generated from `docs/parity.toml` by `cargo xtask parity`. Do not e
 
 | Milestone | Features | Done | In progress | Planned |
 | --- | ---: | ---: | ---: | ---: |
-| M1 | 9 | 6 | 3 | 0 |
-| M2 | 30 | 0 | 0 | 30 |
+| M1 | 9 | 9 | 0 | 0 |
+| M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 0 | 0 | 76 |
 | M4 | 31 | 0 | 0 | 31 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 6 | 3 | 153 |
+| Total | 162 | 39 | 0 | 123 |
 
-First complete version (M0 to M3): 6 of 115 features done.
+First complete version (M0 to M3): 39 of 115 features done.
 
 <!-- parity:end -->
 
@@ -30,14 +30,14 @@ First complete version (M0 to M3): 6 of 115 features done.
 Workspace, toolchain, lints, the `xtask` gate with its checks, project rules, licences,
 documentation, the feature inventory and the GitHub configuration files.
 
-### M1. Engine without interface (current)
+### M1. Engine without interface (done)
 
 `platter-core`, `platter-dsp`, `platter-decode`, `platter-engine`, `platter-testkit` and
 `platter-cli`. The command line tool reports file information and renders a scripted two-deck mix
 to a WAV file with the same processor the live audio will use. Decoding of MP3, M4A (AAC), WAV,
 AIFF, FLAC and Ogg Vorbis. A static progress page generated from the inventory.
 
-### M2. Live sound
+### M2. Live sound (done)
 
 `platter-audio-io`, `platter-ui-egui` and the `platter` desktop application: two decks with
 frequency-coloured waveforms, the mixer (gain, three-band EQ with kill, filter, pan, faders,
@@ -61,6 +61,13 @@ Decisions already taken for this milestone:
 - Platter writes tempo, key and cues to file tags by default, with a setting to turn it off.
   Writes are atomic (temporary file and rename) and never touch a file that could not be read
   completely.
+
+Pending from M2, to do first:
+
+- Audio latency below 10 ms on Windows through the low-latency shared mode of WASAPI, in open
+  source code only (`docs/decisions/0010-audio-output.md`, section Pending).
+- The clock of the status header, once the local time zone can be read
+  (`docs/behavior/interface.md`, Differences).
 
 ### M4. Full feature level
 
