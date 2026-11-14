@@ -4,6 +4,7 @@
 //!
 //! A frame is `[f32; 2]`: left and right.
 
+pub mod balance;
 pub mod biquad;
 pub mod crossfade;
 pub mod eq;
