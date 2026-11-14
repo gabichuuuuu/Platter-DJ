@@ -1,0 +1,64 @@
+name: PR intake
+
+# An author with no pull request merged into main may have one open pull request at a time; from
+# the first merge on there is no limit (docs/decisions/0018-pull-requests-open-to-everyone.md).
+# It runs in the context of the base branch, never checks out the code of the pull request and
+# passes every value from the event through the environment, never into the script itself.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened]
+
+permissions: {}
+
+jobs:
+  open-limit:
+    if: >-
+      github.event.pull_request.user.type != 'Bot'
+      && !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.pull_request.number }}
+      AUTHOR: ${{ github.event.pull_request.user.login }}
+      SENDER: ${{ github.event.sender.login }}
+      ACTION: ${{ github.event.action }}
+    steps:
+      - name: Apply the open pull request limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A maintainer who reopens a closed pull request lifts the limit for it.
+          if [ "$ACTION" = "reopened" ]; then
+            permission=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq .permission)
+            case "$permission" in
+              admin|maintain|write) exit 0 ;;
+            esac
+          fi
+          merged=$(gh api -X GET search/issues \
+            -f q="repo:$REPO is:pr is:merged base:main author:$AUTHOR" --jq .total_count)
+          if [ "$merged" -ge 1 ]; then
+            exit 0
+          fi
+          # On opening, only the pull requests opened before this one count, so two opened at the
+          # same moment do not close each other. NUMBER comes from the event and is an integer.
+          case "$NUMBER" in
+            ''|*[!0-9]*) echo "unexpected pull request number" >&2; exit 1 ;;
+          esac
+          if [ "$ACTION" = "opened" ]; then
+            filter="map(select(.number < $NUMBER)) | length"
+          else
+            filter="map(select(.number != $NUMBER)) | length"
+          fi
+          others=$(gh pr list --repo "$REPO" --base main --state open --author "$AUTHOR" \
+            --limit 100 --json number --jq "$filter")
+          if [ "$others" -eq 0 ]; then
+            exit 0
+          fi
+          gh pr comment "$NUMBER" --repo "$REPO" --body "Thank you for the contribution. Until a first pull request of yours is merged into \`main\`, you can have one open at a time; after that there is no limit. This one has been closed because another of yours is still open. Open it again when that one is merged or closed."
+          gh pr close "$NUMBER" --repo "$REPO"

@@ -64,6 +64,9 @@ AI tools are allowed. The responsibility is not transferable:
   quality filter (`.github/workflows/pr-quality.yml`) before a person looks at them. Generated
   descriptions that do not match the diff, bulk changes without a stated purpose, invented APIs
   and filler code are reasons to close without review.
+- **One open pull request until the first is merged.** An author with no pull request merged into
+  `main` may have one open at a time; a second one is closed automatically
+  (`.github/workflows/pr-intake.yml`). From the first merge on there is no limit.
 - Commits and pull requests carry no tool attribution, such as `Co-Authored-By` lines naming an
   assistant. The author of the commit is the person who answers for it.
 

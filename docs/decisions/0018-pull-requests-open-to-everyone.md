@@ -22,6 +22,10 @@ it and accepted it by hand; nothing merges it automatically.
 
 - `.github/workflows/pr-quality.yml` filters the pull requests of authors who are not owners,
   members or collaborators before the maintainer reads them.
+- `.github/workflows/pr-intake.yml` lets an author with no pull request merged into `main` have
+  one open at a time and closes the next with a comment; from the first merge on there is no
+  limit. The limit that GitHub offers in its settings applies to every author without write
+  access, even after a merge, so the project applies its own.
 - `CONTRIBUTING.md` no longer carries the notice that external pull requests are not accepted.
 - The steps that remain to be applied in the settings are listed in
   `docs/maintainers/github-setup.md`.
