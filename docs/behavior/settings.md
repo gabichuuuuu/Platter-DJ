@@ -39,8 +39,8 @@ shortcuts of the decks and the mixer rest.
   where they stand and the tracks are loaded again, from their start and paused.
 - The device decides the buffer it really uses. When that is not the size asked for, the
   page says which size is in use. On Windows the shared mode of WASAPI always uses the period
-  of the device, 10 ms on most; see `docs/decisions/0010-audio-output.md`. Going below it is
-  pending work, planned as the first task of M3.
+  of the device, 10 ms on most; see `docs/decisions/0010-audio-output.md`. Going below it needs
+  the exclusive mode of WASAPI, left for a later version.
 - With a device of two outputs the headphone routing and the headphone test tone are
   disabled and the page says why.
 

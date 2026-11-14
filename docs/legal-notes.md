@@ -60,6 +60,6 @@ What the licence asks of Platter:
 | Point | Status |
 | --- | --- |
 | AAC decoding in distributed binaries | AAC decoding sits behind its own cargo feature, on by default. Distribution of binaries that include an AAC decoder is pending review by the maintainer; no binary is distributed before that review |
-| ASIO on Windows | The `asio` feature of cpal stays off: the ASIO SDK is available under GPL-3 or under an agreement with Steinberg. The decision is revisited after measuring WASAPI latency in M2 |
+| ASIO on Windows | The `asio` feature of cpal stays off: the ASIO SDK is available under GPL-3 or under an agreement with Steinberg. WASAPI was measured at the start of M3 and ASIO stays off; lower latency on Windows goes through the exclusive mode of WASAPI later (`docs/decisions/0010-audio-output.md`) |
 | Stem separation model (M4) | The candidate is the 4-stem Spleeter model. Its authors' paper states the MIT licence (<https://doi.org/10.21105/joss.02154>), but there is no confirmation from the publisher for the weights. Unless that is confirmed, Platter neither hosts nor packages the model: the user downloads it from the original publication with an explicit action, and the application states the doubt |
 | Annotated corpora for measurement | Annotations under share-alike licences (for example GiantSteps Key, CC BY-SA 4.0, <https://zenodo.org/records/1101082>) and any audio stay outside the repository. Only aggregate percentages and the citation are committed |
