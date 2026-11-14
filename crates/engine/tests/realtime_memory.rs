@@ -127,9 +127,18 @@ fn commands() -> Vec<Command> {
         Command::DeckPlay { deck: A },
         Command::DeckGridBpmSet {
             deck: A,
-            bpm: 174.0,
+            bpm: 400.0,
         },
-        // A loop of an eighth of a beat returns to its start several times per block.
+        // A loop of 1/32 of a beat at 400 BPM is 225 frames: it returns to its start
+        // twice in each block of 512.
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
         Command::DeckLoopSizeStep {
             deck: A,
             direction: SizeStep::Down,

@@ -227,6 +227,32 @@ fn a_beatjump_keeps_the_time_while_the_deck_plays() {
 }
 
 #[test]
+fn beats_and_fine_steps_are_counted_at_the_rate_of_the_track() {
+    // A file at 44.1 kHz on an engine at 48 kHz.
+    let mut rig = Rig::with_deck_a(sine_file("jump-other-rate", 440.0, 4.0, 0.5, 44_100));
+    rig.send(Command::DeckGridBpmSet {
+        deck: A,
+        bpm: 120.0,
+    });
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(1.0);
+    jump(&mut rig, Direction::Forward);
+    rig.send(Command::DeckLoopToggle { deck: A });
+    let (start, end) = region(&mut rig).unwrap();
+    assert!((start - 1.5).abs() < 2.0 * FRAME && close(end - start, 2.0));
+    rig.run(2.25);
+    let position = position(&mut rig);
+    assert!(
+        (position - (start + 0.25)).abs() < 2.0 * FRAME,
+        "{position}"
+    );
+    rig.send(Command::DeckMoveFineToggle { deck: A });
+    move_by(&mut rig, MoveMode::LoopOut, Direction::Back);
+    let (_, trimmed) = region(&mut rig).unwrap();
+    assert!(close(end - trimmed, FINE_MOVE_SECONDS));
+}
+
+#[test]
 fn a_beatjump_does_not_click() {
     // A beat at 125 BPM is not a whole number of periods of the tone.
     let mut rig = bare("jump-click");

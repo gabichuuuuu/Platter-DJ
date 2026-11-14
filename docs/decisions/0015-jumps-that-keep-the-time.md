@@ -57,5 +57,5 @@ control side, which sends the processor what they amount to with each command.
   through the returns of a loop and through a beatjump, where the tone itself has a slope of
   0.029 per sample. Without the crossfade both tests fail.
 
-`crates/engine/tests/realtime_memory.rs` runs a loop that returns several times per block,
+`crates/engine/tests/realtime_memory.rs` runs a loop that returns twice per block,
 jumps and moves, and counts no allocation.
