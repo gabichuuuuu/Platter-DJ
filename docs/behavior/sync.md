@@ -208,7 +208,7 @@ unit.
 | Snap on and a position exactly between two beats | The later beat |
 | Quantize on and a hotcue near the start of the track with the deck late in its beat | The beat after the cue, so it stays in the track |
 | Quantize on and a cue on a marker that is off the beat of the run before it, with the deck early in its beat | The deck lands before the marker, in the run before, so off the beats of the cue's run |
-| Metronome on and a tempo master deck in a loop shorter than a beat | A click only when the loop crosses the start of a beat going forward |
+| Metronome on and a tempo master deck in a loop that is not a whole number of beats | A click on every beat: the clock counts on at its tempo meanwhile |
 | Metronome on and a tempo of 0 BPM | No click: the clock does not move |
 | Metronome on at 400 BPM | A click every 150 ms; each one ends before the next |
 | A change of sample rate of the audio device | Mode, sync mode, Snap, Quantize, the metronome, tempo of the clock and the sync of each deck are kept; the tempo master is chosen again |

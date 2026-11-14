@@ -5,7 +5,7 @@ mod common;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
-use platter_engine::{Command, Engine};
+use platter_engine::{Command, Engine, SizeStep};
 use platter_testkit::measure::{max_step, peak};
 use platter_testkit::signal::channel;
 
@@ -219,4 +219,28 @@ fn a_new_processor_keeps_the_metronome_on() {
     assert_eq!(onsets(&channel(&output, 4, 2)).len(), 2);
     engine.dispatch(Command::ClockMetronomeToggle).unwrap();
     assert!(!engine.snapshot().clock.metronome);
+}
+
+#[test]
+fn a_tempo_master_in_a_loop_shorter_than_a_beat_leaves_the_clock_clicking_on_its_beats() {
+    let mut rig = leading_deck("metronome-loop");
+    rig.run_channels(1.0, 4);
+    for _ in 0..3 {
+        rig.send(Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        });
+    }
+    rig.send(Command::DeckLoopToggle { deck: A });
+    rig.run_channels(0.1, 4);
+    rig.engine.poll();
+    let looping = rig.engine.snapshot().decks[0].looping.region;
+    assert!(looping.is_some_and(|region| region.end - region.start < 0.6));
+    // The clock counts on at 100 BPM: a click every 0.6 s.
+    let clicks = onsets(&headphones(&mut rig, 2.5));
+    assert_eq!(clicks.len(), 4, "{clicks:?}");
+    assert!(
+        spacing(&clicks).iter().all(|gap| *gap == 28_800),
+        "{clicks:?}"
+    );
 }
