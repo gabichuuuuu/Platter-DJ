@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/platter-cli", "crates/audio-io", "crates/core", "crates/decode", "crates/dsp", "crates/engine", "crates/testkit", "xtask"]
+members = ["apps/platter-cli", "crates/audio-io", "crates/core", "crates/decode", "crates/dsp", "crates/engine", "crates/testkit", "crates/ui-egui", "xtask"]
 
 [workspace.package]
 version = "0.0.0"
@@ -26,6 +26,7 @@ too_many_arguments = "deny"
 [workspace.dependencies]
 cargo_metadata = "0.23.1"
 cpal = "0.18.2"
+egui = { version = "0.37.0", default-features = false }
 proptest = "1.12.0"
 rtrb = "0.4.1"
 serde = { version = "1.0.229", features = ["derive"] }

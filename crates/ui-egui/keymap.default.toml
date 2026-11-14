@@ -1,0 +1,160 @@
+# Keyboard shortcuts of Platter.
+#
+# Each [[binding]] gives a key chord and the command it triggers. Every other key of the
+# binding is a parameter of that command. The commands and their parameters are listed in
+# docs/behavior/keyboard.md.
+#
+# keys     A key, alone or with Shift, Ctrl or Alt: "Z", "Shift + Left", "Ctrl + Comma".
+#          Keys are named in English: letters, digits, F1 to F12, Space, Enter, Left, Right,
+#          Up, Down, Comma, Period, Minus, Plus.
+# command  The identifier of the command.
+# release  Optional: the parameters to send when the key comes up. Commands that act while
+#          a key is held (deck.cue, deck.cup) need nothing here.
+#
+# Platter reads this file when it starts. A mistake in it is reported in the log and the
+# default shortcuts are used instead.
+
+# Deck A
+
+[[binding]]
+keys = "Z"
+command = "deck.play_pause"
+deck = "a"
+
+[[binding]]
+keys = "X"
+command = "deck.cue"
+deck = "a"
+
+[[binding]]
+keys = "C"
+command = "deck.cup"
+deck = "a"
+
+[[binding]]
+keys = "Q"
+command = "deck.nudge"
+deck = "a"
+amount = -0.04
+release = { deck = "a", amount = 0.0 }
+
+[[binding]]
+keys = "W"
+command = "deck.nudge"
+deck = "a"
+amount = 0.04
+release = { deck = "a", amount = 0.0 }
+
+[[binding]]
+keys = "1"
+command = "mixer.eq.kill.toggle"
+deck = "a"
+band = "low"
+
+[[binding]]
+keys = "2"
+command = "mixer.eq.kill.toggle"
+deck = "a"
+band = "mid"
+
+[[binding]]
+keys = "3"
+command = "mixer.eq.kill.toggle"
+deck = "a"
+band = "high"
+
+[[binding]]
+keys = "4"
+command = "mixer.cue.toggle"
+deck = "a"
+
+[[binding]]
+keys = "Shift + Left"
+command = "browser.load_selected"
+deck = "a"
+
+[[binding]]
+keys = "F1"
+command = "waveform.zoom.out"
+deck = "a"
+
+[[binding]]
+keys = "F2"
+command = "waveform.zoom.in"
+deck = "a"
+
+# Deck B
+
+[[binding]]
+keys = "N"
+command = "deck.play_pause"
+deck = "b"
+
+[[binding]]
+keys = "M"
+command = "deck.cue"
+deck = "b"
+
+[[binding]]
+keys = "Comma"
+command = "deck.cup"
+deck = "b"
+
+[[binding]]
+keys = "O"
+command = "deck.nudge"
+deck = "b"
+amount = -0.04
+release = { deck = "b", amount = 0.0 }
+
+[[binding]]
+keys = "P"
+command = "deck.nudge"
+deck = "b"
+amount = 0.04
+release = { deck = "b", amount = 0.0 }
+
+[[binding]]
+keys = "8"
+command = "mixer.eq.kill.toggle"
+deck = "b"
+band = "low"
+
+[[binding]]
+keys = "9"
+command = "mixer.eq.kill.toggle"
+deck = "b"
+band = "mid"
+
+[[binding]]
+keys = "0"
+command = "mixer.eq.kill.toggle"
+deck = "b"
+band = "high"
+
+[[binding]]
+keys = "7"
+command = "mixer.cue.toggle"
+deck = "b"
+
+[[binding]]
+keys = "Shift + Right"
+command = "browser.load_selected"
+deck = "b"
+
+[[binding]]
+keys = "F3"
+command = "waveform.zoom.out"
+deck = "b"
+
+[[binding]]
+keys = "F4"
+command = "waveform.zoom.in"
+deck = "b"
+
+# Application
+
+[[binding]]
+keys = "Ctrl + Comma"
+command = "app.settings.open"
+page = "audio"

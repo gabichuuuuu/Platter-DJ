@@ -1,0 +1,18 @@
+[package]
+name = "platter-ui-egui"
+description = "The interface of Platter: design tokens, widgets, panels, keyboard shortcuts and translations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+egui.workspace = true
+platter-core = { path = "../core" }
+platter-decode = { path = "../decode" }
+platter-dsp = { path = "../dsp" }
+platter-engine = { path = "../engine" }
+toml.workspace = true
