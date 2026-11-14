@@ -12,6 +12,7 @@ dependency has no row or a row has no dependency.
 | Crate | Use | Licence | Confined to | Possible replacement |
 | --- | --- | --- | --- | --- |
 | `cargo_metadata` | Reads the workspace graph for the layer rules and the dependency registry | MIT | `xtask` (not distributed) | Parse the JSON of `cargo metadata` with project code |
+| `cpal` | Lists the output devices and runs the output stream: WASAPI, CoreAudio, ALSA | Apache-2.0 | `platter-audio-io`, module `device`; none of its types is public (`docs/decisions/0010-audio-output.md`) | Own bindings to each system API, which would need `unsafe` |
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine | MIT OR Apache-2.0 | Tests of `platter-decode` and `platter-engine` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
 | `serde` | Deserialises the feature inventory and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A hand-written reader for the few structures involved |

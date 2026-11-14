@@ -1,0 +1,13 @@
+[package]
+name = "platter-audio-io"
+description = "Audio output of Platter: devices and the output stream, with a deviceless backend for tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cpal.workspace = true
