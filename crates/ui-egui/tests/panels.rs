@@ -416,8 +416,7 @@ fn the_type_list_of_a_cue_picks_its_last_option() {
     let list = stage
         .controls()
         .into_iter()
-        .filter(|control| control.command == "deck.cue.type.set")
-        .next_back()
+        .rfind(|control| control.command == "deck.cue.type.set")
         .unwrap();
     assert!(stage.click(list.rect.center()).is_empty());
     // The fifth row of the list that hangs below the field.
