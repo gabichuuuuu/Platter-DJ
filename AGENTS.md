@@ -36,8 +36,8 @@ Do not reopen these on your own. If one proves unworkable, stop and explain why.
 | Privacy | No telemetry and no automatic reports. The application opens no network connection without an explicit user action. Crash logs stay local |
 | Measurement data | Only synthesised signals in the repository and in CI. Real corpora stay in a cache outside the repository; only aggregate results and the citation are committed |
 | Commits and versions | Conventional Commits and SemVer; 0.x until M4 closes |
-| Pull requests | Limited to collaborators for now (`docs/decisions/0001-pull-requests-limited-to-collaborators.md`) |
-| Remote | A private repository in the maintainer's GitHub account. Push, open a pull request or merge only when the maintainer asks. Never change its visibility |
+| Pull requests | Anyone may open one; only the maintainer merges, after review (`docs/decisions/0018-pull-requests-open-to-everyone.md`) |
+| Remote | The public repository `Platter-DJ` in the maintainer's GitHub account. Push, open a pull request or merge only when the maintainer asks. Never change its visibility |
 
 ## Non-negotiable rules
 

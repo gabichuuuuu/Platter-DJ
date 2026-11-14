@@ -1,6 +1,6 @@
 # 0001. Pull requests limited to collaborators
 
-Status: accepted (M0).
+Status: superseded by `0018-pull-requests-open-to-everyone.md` (M3).
 
 ## Context
 

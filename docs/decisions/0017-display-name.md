@@ -12,7 +12,7 @@ maintainer asked for a name that says what the product is.
 
 1. Keep Platter.
 2. Call the product Platter DJ where its users see the name, and keep Platter in the code: the
-   crates, the binaries, the repository and the folder of the settings.
+   crates, the binaries and the folder of the settings.
 3. Rename everything to Platter DJ, crates and binaries included.
 
 ## Choice
@@ -25,6 +25,10 @@ the identifier of the application `platter`.
 The folder of the settings keeps the name Platter, so the settings and shortcuts saved by an
 earlier version are still found. Option 3 would touch every crate and every script that runs
 a binary and give its users nothing they can see.
+
+The repository on GitHub was renamed from `Platter` to `Platter-DJ` when it became public, on
+the maintainer's request: GitHub turns the space of Platter DJ into a hyphen, and forwards the
+old address.
 
 The design system in `docs/design/` writes Platter; it is the maintainer's to update.
 

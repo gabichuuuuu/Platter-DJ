@@ -1,17 +1,5 @@
 # Contributing to Platter
 
-<!-- external-prs-notice:start -->
-> **Status: external pull requests are not accepted for now.** Platter is in its first
-> milestones and has a single maintainer. Pull requests are limited to collaborators.
->
-> You can still help:
->
-> - Report a bug in an issue, with the steps to reproduce it.
-> - Propose an idea in Discussions.
-> - Send a controller report through its issue template: make, model, and whether it speaks
->   MIDI or HID.
-<!-- external-prs-notice:end -->
-
 This guide describes how contributions work. Read `AGENTS.md` first: its rules apply to every
 change, whoever or whatever writes it.
 
@@ -76,6 +64,9 @@ AI tools are allowed. The responsibility is not transferable:
   quality filter (`.github/workflows/pr-quality.yml`) before a person looks at them. Generated
   descriptions that do not match the diff, bulk changes without a stated purpose, invented APIs
   and filler code are reasons to close without review.
+- **One open pull request until the first is merged.** An author with no pull request merged into
+  `main` may have one open at a time; a second one is closed automatically
+  (`.github/workflows/pr-intake.yml`). From the first merge on there is no limit.
 - Commits and pull requests carry no tool attribution, such as `Co-Authored-By` lines naming an
   assistant. The author of the commit is the person who answers for it.
 
