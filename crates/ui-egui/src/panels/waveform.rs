@@ -3,7 +3,8 @@
 //!
 //! Component: `Waveform` in `docs/design/DESIGN.md`. Behaviour note:
 //! `docs/behavior/waveform.md`. Both views draw the three-band peaks the engine computed
-//! when the track loaded; nothing here looks at audio.
+//! when the track loaded; nothing here looks at audio. The scrolling lane also draws the
+//! beatgrid (`docs/behavior/beatgrid.md`).
 
 use egui::{Color32, CornerRadius, Mesh, Pos2, Rect, Role, Sense, Shape, Stroke, WidgetInfo};
 use platter_core::DeckId;
@@ -127,6 +128,22 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
     let first = ((position - window / 2.0) * pixels_per_second).floor() as i64;
     let last = ((position + window / 2.0) * pixels_per_second).ceil() as i64;
     let colors = super::waveform::band_colors(cx.theme, deck);
+    let x_of = |seconds: f64| (centre + (seconds - position) * pixels_per_second) as f32;
+    // Beats go behind the waveform; downbeats and markers over it.
+    let mut over = Vec::new();
+    snapshot
+        .grid
+        .for_each_beat(position - window / 2.0, position + window / 2.0, |beat| {
+            if beat.downbeat || beat.marker {
+                over.push(x_of(beat.seconds));
+            } else {
+                painter.vline(
+                    x_of(beat.seconds),
+                    lane.y_range(),
+                    Stroke::new(1.0, color.grid_beat),
+                );
+            }
+        });
     let mut mesh = Mesh::default();
     for bar in first.max(0)..last {
         let from = (bar as f64 * columns_per_pixel).floor() as usize;
@@ -145,6 +162,9 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
         );
     }
     painter.add(mesh);
+    for x in over {
+        painter.vline(x, lane.y_range(), Stroke::new(1.0, color.grid_downbeat));
+    }
     playhead(cx, lane, lane.center().x);
 }
 

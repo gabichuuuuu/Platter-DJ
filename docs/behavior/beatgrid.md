@@ -57,6 +57,25 @@ Several tempos along one track are M4.
 - While the grid is locked every grid command except the lock itself and the jumps to markers
   changes nothing.
 
+### In the interface
+
+- The scrolling waveform draws each beat as a faint line behind the waveform and each downbeat
+  and marker as a brighter line over it. A marker is a downbeat and every fourth beat after it
+  is the next one; before the first marker the bars count back from it. The overview shows no
+  grid.
+- Each deck has two rows of the GRID page above its transport keys. The first: the tempo
+  field, halve, double, tap, move the marker earlier or later by 5 ms, and the lock at its
+  end, lit while the grid is locked. The second: lower and raise the tempo by 0.01 BPM, then
+  the previous marker, set a marker, the next marker and delete.
+- The tempo field shows the tempo of the grid, or `--.--` without one. Dragging it up or down
+  sets the tempo, 0.05 BPM per pixel, a tenth of that with Shift; with the focus the arrows
+  step it by 0.01 BPM and Page Up and Page Down by 1 BPM. Without a tempo in the grid the
+  field starts from the tempo of the tag, or 120 BPM.
+- The tempo in the deck header is the tempo of the grid; until the grid has one, the tempo of
+  the tag.
+- Controls that would change nothing are disabled: the edits while the grid is locked, the
+  tempo keys without a tempo, the marker keys without markers.
+
 ### Tap
 
 Each tap is timed on the control side when the command arrives. From the fourth tap on, the
@@ -71,6 +90,10 @@ that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
   The tempo buttons act on the whole track, not on the zone of the play position.
 - The step buttons of the reference product add or remove one beat in a closed zone; with a
   single tempo Platter steps the tempo by the amount the command carries.
+- The tempo field cannot be typed into yet: it is dragged or stepped. Typing comes with the
+  text field of the browser search, later in M3.
+- The GRID page is always shown; the MOVE and CUE pages, and the switch between the three,
+  come with loops and hotcues. The reset buttons and the beat tick come with the analysis.
 - The selected marker is the one on or before the play position, as the reference product
   selects it. Platter has no separate selection.
 - The grid lives with the loaded track and is lost when the track is loaded again, which a
@@ -91,5 +114,7 @@ that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
 
 ## Tests
 
-`crates/core/src/grid.rs` for the grid itself; `crates/engine/tests/beatgrid.rs` for the
-commands; the tap in `crates/engine/src/tap.rs`.
+`crates/core/src/grid.rs` for the grid itself and its beats; `crates/engine/tests/beatgrid.rs`
+for the commands; the tap in `crates/engine/src/tap.rs`; the GRID page in
+`crates/ui-egui/tests/panels.rs`, which operates each of its controls and checks that every
+grid command has one.

@@ -92,7 +92,7 @@ macro_rules! token_group {
 }
 
 token_group! {
-    /// The colours the panels of M2 use. The file holds more, for later milestones.
+    /// The colours the panels use so far. The file holds more, for later milestones.
     Palette: Color32, color {
         bg_app => "bg-app",
         surface_panel => "surface-panel",
@@ -121,6 +121,8 @@ token_group! {
         meter_ok => "meter-ok",
         meter_warn => "meter-warn",
         meter_clip => "meter-clip",
+        grid_beat => "grid-beat",
+        grid_downbeat => "grid-downbeat",
     }
 }
 

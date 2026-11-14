@@ -25,7 +25,7 @@ const CIRCLE_SEGMENTS: usize = 32;
 const MAX_SHAPES: usize = 32;
 const MAX_POINTS: usize = 4_096;
 
-/// The icons the interface of M2 draws. Each name is a key of the icon file.
+/// The icons the interface draws so far. Each name is a key of the icon file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Glyph {
     Play,
@@ -42,10 +42,13 @@ pub enum Glyph {
     Headphones,
     Plus,
     Minus,
+    ChevronLeft,
+    Lock,
+    Trash,
 }
 
 impl Glyph {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 17] = [
         Self::Play,
         Self::Pause,
         Self::Settings,
@@ -60,6 +63,9 @@ impl Glyph {
         Self::Headphones,
         Self::Plus,
         Self::Minus,
+        Self::ChevronLeft,
+        Self::Lock,
+        Self::Trash,
     ];
 
     pub fn key(self) -> &'static str {
@@ -78,6 +84,9 @@ impl Glyph {
             Self::Headphones => "headphones",
             Self::Plus => "plus",
             Self::Minus => "minus",
+            Self::ChevronLeft => "chevron-left",
+            Self::Lock => "lock",
+            Self::Trash => "trash",
         }
     }
 }
