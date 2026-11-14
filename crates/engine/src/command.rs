@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-use platter_core::{Bpm, DeckId, ValueError};
+use platter_core::{Bpm, DeckId, LoopSize, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
@@ -111,6 +111,45 @@ pub enum Command {
         deck: DeckId,
     },
     DeckGridLockToggle {
+        deck: DeckId,
+    },
+    /// Switches the loop off, or starts one of the selected size at the play position.
+    DeckLoopToggle {
+        deck: DeckId,
+    },
+    /// Sets the in point of a loop at the play position.
+    DeckLoopIn {
+        deck: DeckId,
+    },
+    /// Ends the loop at the play position and switches it on.
+    DeckLoopOut {
+        deck: DeckId,
+    },
+    /// Selects the loop size before or after; a loop that is on takes it.
+    DeckLoopSizeStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Moves the play position by the move size.
+    DeckBeatjump {
+        deck: DeckId,
+        direction: Direction,
+    },
+    /// Moves what the move mode says by the move size.
+    DeckMove {
+        deck: DeckId,
+        direction: Direction,
+    },
+    DeckMoveModeSet {
+        deck: DeckId,
+        mode: MoveMode,
+    },
+    DeckMoveSizeStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Switches the fine steps of the moves on or off.
+    DeckMoveFineToggle {
         deck: DeckId,
     },
     MixerGainSet {
@@ -225,6 +264,86 @@ const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
 const BPM_SCALES: &[&str] = &["double", "half"];
+const DIRECTIONS: &[&str] = &["back", "forward"];
+const SIZE_STEPS: &[&str] = &["down", "up"];
+const MOVE_MODES: &[&str] = &["beatjump", "loop", "loop_in", "loop_out"];
+
+/// Which way a jump or a move goes along the track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Back,
+    Forward,
+}
+
+impl Direction {
+    pub fn sign(self) -> f64 {
+        match self {
+            Self::Back => -1.0,
+            Self::Forward => 1.0,
+        }
+    }
+}
+
+/// Which way a step through a list of sizes goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SizeStep {
+    Down,
+    Up,
+}
+
+/// What `deck.move` moves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MoveMode {
+    /// The play position.
+    #[default]
+    Beatjump,
+    /// Both ends of the loop.
+    Loop,
+    LoopIn,
+    LoopOut,
+}
+
+impl MoveMode {
+    pub const ALL: [Self; 4] = [Self::Beatjump, Self::Loop, Self::LoopIn, Self::LoopOut];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Beatjump => "beatjump",
+            Self::Loop => "loop",
+            Self::LoopIn => "loop_in",
+            Self::LoopOut => "loop_out",
+        }
+    }
+}
+
+/// How far a jump or a move goes: one of the preset sizes or the length of the loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveSize {
+    Beats(LoopSize),
+    /// The length of the loop that is on, or the selected loop size without one. It is the
+    /// entry after the largest preset size.
+    Loop,
+}
+
+impl Default for MoveSize {
+    fn default() -> Self {
+        Self::Beats(LoopSize::ONE_BEAT)
+    }
+}
+
+impl MoveSize {
+    /// The entry before or after this one, when there is one.
+    pub fn stepped(self, direction: SizeStep) -> Option<Self> {
+        match (self, direction) {
+            (Self::Beats(size), SizeStep::Down) => size.smaller().map(Self::Beats),
+            (Self::Beats(size), SizeStep::Up) => {
+                Some(size.larger().map_or(Self::Loop, Self::Beats))
+            }
+            (Self::Loop, SizeStep::Down) => Some(Self::Beats(LoopSize::LARGEST)),
+            (Self::Loop, SizeStep::Up) => None,
+        }
+    }
+}
 
 /// How `deck.grid.bpm.scale` changes the tempo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -245,6 +364,16 @@ impl BpmScale {
 const BAND: ParamSpec = ParamSpec {
     name: "band",
     kind: ParamKind::Choice(BANDS),
+};
+
+const DIRECTION: ParamSpec = ParamSpec {
+    name: "direction",
+    kind: ParamKind::Choice(DIRECTIONS),
+};
+
+const SIZE_STEP: ParamSpec = ParamSpec {
+    name: "direction",
+    kind: ParamKind::Choice(SIZE_STEPS),
 };
 
 /// Whether a button that acts while held is being pressed or released.
@@ -383,6 +512,57 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "deck.grid.lock.toggle",
         label: "Lock beatgrid",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.toggle",
+        label: "Loop",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.in",
+        label: "Loop in",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.out",
+        label: "Loop out",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.size.step",
+        label: "Halve or double loop size",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.beatjump",
+        label: "Beatjump",
+        params: &[DECK, DIRECTION],
+    },
+    CommandSpec {
+        id: "deck.move",
+        label: "Move",
+        params: &[DECK, DIRECTION],
+    },
+    CommandSpec {
+        id: "deck.move.mode.set",
+        label: "Set move mode",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice(MOVE_MODES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.move.size.step",
+        label: "Step move size",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.move.fine.toggle",
+        label: "Fine move steps",
         params: &[DECK],
     },
     CommandSpec {
@@ -588,6 +768,39 @@ impl Reader<'_> {
         }
     }
 
+    fn direction(&self) -> Result<Direction, CommandError> {
+        match self.text("direction")? {
+            "back" => Ok(Direction::Back),
+            "forward" => Ok(Direction::Forward),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "back, forward",
+            })),
+        }
+    }
+
+    fn size_step(&self) -> Result<SizeStep, CommandError> {
+        match self.text("direction")? {
+            "down" => Ok(SizeStep::Down),
+            "up" => Ok(SizeStep::Up),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "down, up",
+            })),
+        }
+    }
+
+    fn move_mode(&self) -> Result<MoveMode, CommandError> {
+        let name = self.text("mode")?;
+        MoveMode::ALL
+            .into_iter()
+            .find(|mode| mode.name() == name)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "beatjump, loop, loop_in, loop_out",
+            }))
+    }
+
     fn output(&self) -> Result<Output, CommandError> {
         match self.text("output")? {
             "master" => Ok(Output::Master),
@@ -654,6 +867,30 @@ impl Command {
             },
             "deck.tempo.range.cycle" => Self::DeckTempoRangeCycle { deck: read.deck()? },
             grid if grid.starts_with("deck.grid.") => return Self::grid_from_args(grid, &read),
+            "deck.loop.toggle" => Self::DeckLoopToggle { deck: read.deck()? },
+            "deck.loop.in" => Self::DeckLoopIn { deck: read.deck()? },
+            "deck.loop.out" => Self::DeckLoopOut { deck: read.deck()? },
+            "deck.loop.size.step" => Self::DeckLoopSizeStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.beatjump" => Self::DeckBeatjump {
+                deck: read.deck()?,
+                direction: read.direction()?,
+            },
+            "deck.move" => Self::DeckMove {
+                deck: read.deck()?,
+                direction: read.direction()?,
+            },
+            "deck.move.mode.set" => Self::DeckMoveModeSet {
+                deck: read.deck()?,
+                mode: read.move_mode()?,
+            },
+            "deck.move.size.step" => Self::DeckMoveSizeStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             mixer => return Self::mixer_from_args(mixer, &read),
         })
     }
@@ -763,6 +1000,15 @@ impl Command {
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
             Self::DeckGridLockToggle { .. } => "deck.grid.lock.toggle",
+            Self::DeckLoopToggle { .. } => "deck.loop.toggle",
+            Self::DeckLoopIn { .. } => "deck.loop.in",
+            Self::DeckLoopOut { .. } => "deck.loop.out",
+            Self::DeckLoopSizeStep { .. } => "deck.loop.size.step",
+            Self::DeckBeatjump { .. } => "deck.beatjump",
+            Self::DeckMove { .. } => "deck.move",
+            Self::DeckMoveModeSet { .. } => "deck.move.mode.set",
+            Self::DeckMoveSizeStep { .. } => "deck.move.size.step",
+            Self::DeckMoveFineToggle { .. } => "deck.move.fine.toggle",
             Self::MixerGainSet { .. } => "mixer.gain.set",
             Self::MixerEqSet { .. } => "mixer.eq.set",
             Self::MixerEqKillToggle { .. } => "mixer.eq.kill.toggle",

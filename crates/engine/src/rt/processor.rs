@@ -13,7 +13,7 @@ use rtrb::{Consumer, Producer};
 use super::deck::DeckPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tone::TestTone;
-use super::{COMMAND_CAPACITY, GridReport, Output, Queues, Retired, RtCommand, Shared};
+use super::{COMMAND_CAPACITY, DeckReport, Output, Queues, Retired, RtCommand, Shared};
 
 /// Channels a device needs for the headphones to have their own pair.
 const CHANNELS_WITH_HEADPHONES: usize = 4;
@@ -30,7 +30,7 @@ struct Channel {
 pub struct Processor {
     commands: Consumer<RtCommand>,
     retired: Producer<Retired>,
-    grids: Producer<GridReport>,
+    reports: Producer<DeckReport>,
     shared: Arc<Shared>,
     channels: [Channel; 2],
     crossfader_position: f32,
@@ -59,7 +59,7 @@ impl Processor {
         Self {
             commands: queues.commands,
             retired: queues.retired,
-            grids: queues.grids,
+            reports: queues.reports,
             shared,
             channels: [channel(left), channel(right)],
             crossfader_position: position,
@@ -134,6 +134,8 @@ impl Processor {
             RtCommand::Tempo { deck, ratio } => self.player(deck).set_tempo(ratio),
             RtCommand::Nudge { deck, amount } => self.player(deck).set_nudge(amount),
             RtCommand::Grid { deck, edit } => self.player(deck).edit_grid(edit),
+            RtCommand::Loop { deck, edit } => self.player(deck).edit_loop(edit),
+            RtCommand::Jump { deck, by } => self.player(deck).jump(by),
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -220,11 +222,19 @@ impl Processor {
 
     fn publish(&mut self) {
         for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
-            if let Some(grid) = channel.player.unreported_grid() {
-                let report = GridReport { deck, grid: *grid };
-                // A full queue keeps the report for the next block.
-                if self.grids.push(report).is_ok() {
+            let report = DeckReport {
+                deck,
+                grid: channel.player.unreported_grid().copied(),
+                looping: channel.player.unreported_loop(),
+            };
+            let (grid, looping) = (report.grid.is_some(), report.looping.is_some());
+            // A full queue keeps what changed for the next block.
+            if (grid || looping) && self.reports.push(report).is_ok() {
+                if grid {
                     channel.player.grid_reported();
+                }
+                if looping {
+                    channel.player.loop_reported();
                 }
             }
         }

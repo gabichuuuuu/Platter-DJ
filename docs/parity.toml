@@ -115,12 +115,12 @@ features = [
 id = "loops"
 title = "Loops and jumps"
 features = [
-  { id = "loop-size", name = "Preset loop size with arrows", milestone = "M3", status = "planned" },
-  { id = "loop-in-out", name = "Loop in, loop out and ACTIVE", milestone = "M3", status = "planned" },
+  { id = "loop-size", name = "Preset loop size with arrows", milestone = "M3", status = "in_progress" },
+  { id = "loop-in-out", name = "Loop in, loop out and ACTIVE", milestone = "M3", status = "in_progress" },
   { id = "loop-indicator", name = "Loop indicator in the waveforms", milestone = "M3", status = "planned" },
   { id = "stored-loops", name = "Loops stored in hotcues", milestone = "M3", status = "planned" },
-  { id = "beatjump", name = "Beatjump", milestone = "M3", status = "planned" },
-  { id = "move-page", name = "MOVE page: move the loop, move loop in or loop out, size in beats and fine mode", milestone = "M3", status = "planned" },
+  { id = "beatjump", name = "Beatjump", milestone = "M3", status = "in_progress" },
+  { id = "move-page", name = "MOVE page: move the loop, move loop in or loop out, size in beats and fine mode", milestone = "M3", status = "in_progress" },
 ]
 
 [[area]]

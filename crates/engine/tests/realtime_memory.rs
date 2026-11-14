@@ -7,7 +7,9 @@ mod common;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
-use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output};
+use platter_engine::{
+    Band, BpmScale, Command, CrossfaderCurve, Direction, MoveMode, Output, SizeStep,
+};
 use platter_testkit::alloc::{CountingAllocator, count};
 
 #[global_allocator]
@@ -123,6 +125,65 @@ fn commands() -> Vec<Command> {
         Command::DeckGridLockToggle { deck: A },
         Command::DeckGridTap { deck: B },
         Command::DeckPlay { deck: A },
+        Command::DeckGridBpmSet {
+            deck: A,
+            bpm: 174.0,
+        },
+        // A loop of an eighth of a beat returns to its start several times per block.
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Up,
+        },
+        Command::DeckBeatjump {
+            deck: A,
+            direction: Direction::Back,
+        },
+        Command::DeckMoveModeSet {
+            deck: A,
+            mode: MoveMode::Loop,
+        },
+        Command::DeckMove {
+            deck: A,
+            direction: Direction::Forward,
+        },
+        Command::DeckMoveFineToggle { deck: A },
+        Command::DeckMoveModeSet {
+            deck: A,
+            mode: MoveMode::LoopOut,
+        },
+        Command::DeckMove {
+            deck: A,
+            direction: Direction::Back,
+        },
+        Command::DeckMoveSizeStep {
+            deck: A,
+            direction: SizeStep::Up,
+        },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopIn { deck: A },
+        Command::DeckLoopOut { deck: A },
+        Command::DeckLoopToggle { deck: A },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },
     ]
