@@ -16,6 +16,8 @@ use crate::{AudioError, DeviceKind, Output, Routing, Running, Source, StreamInfo
 /// Frames per tick of the clocked output.
 const CLOCK_FRAMES: u32 = 512;
 const CLOCK_CHANNELS: u16 = 2;
+/// How far the clock may fall behind before it starts over instead of making up the blocks.
+const MAX_LAG: Duration = Duration::from_millis(250);
 
 /// A stream that produces audio only when asked, into a buffer the caller can read.
 pub struct ManualStream {
@@ -88,17 +90,21 @@ pub fn silent(source: Source, sample_rate: u32) -> Result<Output, AudioError> {
         .name("platter-silent-output".to_owned())
         .spawn(move || {
             let mut block = vec![0.0f32; CLOCK_FRAMES as usize * usize::from(CLOCK_CHANNELS)];
-            let mut next = Instant::now() + tick;
+            // When the next block is due. A sleep may last longer than asked, by a lot on a
+            // coarse system timer, so the blocks it owes are made up at once.
+            let mut next = Instant::now();
             while !stopped.load(Ordering::Relaxed) {
-                driver.fill(&mut block, usize::from(CLOCK_CHANNELS));
                 let now = Instant::now();
                 if next > now {
                     std::thread::sleep(next - now);
-                    next += tick;
-                } else {
-                    // The machine was busy or asleep: start over instead of catching up.
-                    next = now + tick;
+                    continue;
                 }
+                if now - next > MAX_LAG {
+                    // The machine was busy or asleep: start over instead of catching up.
+                    next = now;
+                }
+                driver.fill(&mut block, usize::from(CLOCK_CHANNELS));
+                next += tick;
             }
             driver
         })
