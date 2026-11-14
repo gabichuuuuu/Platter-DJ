@@ -1,10 +1,12 @@
-//! Controls that set a value: the knob, the vertical fader and the crossfader.
+//! Controls that set a value: the knob, the vertical fader, the crossfader and the number
+//! field.
 //!
-//! All three work on a position from 0 to 1 and emit a command with the new position; the
+//! All of them work on a position from 0 to 1 and emit a command with the new position; the
 //! caller maps it to the units of its command. None of them keeps the value: it comes from
 //! the state snapshot every frame.
 //!
-//! Components: `Knob`, `Fader`, `Crossfader` and `TempoControl` in `docs/design/DESIGN.md`.
+//! Components: `Knob`, `Fader`, `Crossfader`, `TempoControl` and the BPM field of
+//! `GridEditor` in `docs/design/DESIGN.md`.
 
 use std::f32::consts::PI;
 
@@ -19,6 +21,8 @@ use crate::paint;
 
 /// Pixels of drag that take a knob across its whole travel.
 const KNOB_DRAG_TRAVEL: f32 = 160.0;
+/// Pixels of drag that take a number field across its whole travel.
+const FIELD_DRAG_TRAVEL: f32 = 7_600.0;
 /// How much slower a control moves with Shift held.
 const FINE_FACTOR: f64 = 0.1;
 
@@ -55,6 +59,8 @@ pub struct ValueSpec<'a> {
 enum Axis {
     /// A knob: every arrow key works, and dragging up raises the value.
     Rotary,
+    /// A number field: like a knob, with a much longer drag.
+    Field,
     Vertical,
     Horizontal,
 }
@@ -85,10 +91,15 @@ fn interact(
 
     if response.double_clicked() {
         position = Some(spec.default);
-    } else if axis == Axis::Rotary {
+    } else if matches!(axis, Axis::Rotary | Axis::Field) {
         if response.dragged() {
             let scale = if fine { FINE_FACTOR } else { 1.0 };
-            let delta = f64::from(-response.drag_delta().y / KNOB_DRAG_TRAVEL) * scale;
+            let travel = if axis == Axis::Field {
+                FIELD_DRAG_TRAVEL
+            } else {
+                KNOB_DRAG_TRAVEL
+            };
+            let delta = f64::from(-response.drag_delta().y / travel) * scale;
             position = Some(spec.position + delta);
         }
     } else if (response.dragged() || response.clicked())
@@ -112,7 +123,7 @@ fn interact(
         cx.ui
             .memory_mut(|memory| memory.set_focus_lock_filter(id, filter));
         let (up_keys, down_keys): (&[Key], &[Key]) = match axis {
-            Axis::Rotary => (
+            Axis::Rotary | Axis::Field => (
                 &[Key::ArrowUp, Key::ArrowRight],
                 &[Key::ArrowDown, Key::ArrowLeft],
             ),
@@ -252,6 +263,58 @@ pub fn knob(
             cap_radius + tokens.space.s1 + tokens.stroke.focus / 2.0,
             Stroke::new(tokens.stroke.focus, color.focus_ring),
         );
+    }
+    response
+}
+
+/// Draws a number field showing `text` in `rect` and emits `make(position)` when it is
+/// dragged or stepped with the keys.
+pub fn field(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: ValueSpec<'_>,
+    text: &str,
+    make: impl FnOnce(f64) -> Action,
+) -> Response {
+    let (response, moved) = interact(cx, rect, rect, id, &spec, Axis::Field);
+    let action = make(moved.unwrap_or(spec.position));
+    cx.record(action.id(), rect, ControlKind::Value, spec.enabled);
+    if moved.is_some() {
+        cx.out.emit(action);
+    }
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let painter = cx.painter();
+    let border = if response.hovered() && spec.enabled {
+        color.text_secondary
+    } else {
+        color.line_control
+    };
+    painter.rect(
+        rect,
+        paint::radius(tokens.radius.md),
+        color.bg_app,
+        paint::hairline(theme, border),
+        StrokeKind::Inside,
+    );
+    let ink = if spec.enabled {
+        color.text_primary
+    } else {
+        color.text_disabled
+    };
+    paint::text(
+        painter,
+        theme,
+        rect.shrink2(egui::vec2(tokens.space.s3, 0.0)),
+        egui::Align2::RIGHT_CENTER,
+        text,
+        tokens.text.readout,
+        ink,
+    );
+    if response.has_focus() {
+        paint::focus_ring(painter, theme, rect, tokens.radius.md);
     }
     response
 }

@@ -30,7 +30,7 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has started with the beatgrid in the engine.** The desktop
+> **Milestone M2 is complete; M3 has started with the beatgrid.** The desktop
 > application opens, loads tracks and plays them through a sound card, its tests pass, and
 > the maintainer has listened to it. It is not yet a tool to play a set with: there is no
 > sync, no loops and no library.
@@ -62,9 +62,8 @@ its own code, graphics and sounds.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
   and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
   damaged input only, as the project has no encoder for them.
-- The beatgrid is edited through engine commands only: tempo, tap, markers and lock. The
-  interface does not show it yet, nothing detects the tempo, and the grid is lost when the
-  track is loaded again.
+- The beatgrid is set by hand on the GRID page of each deck: nothing detects the tempo yet,
+  the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
 - No sync, no loops, no hotcues, no key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 

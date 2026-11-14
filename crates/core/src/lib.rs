@@ -12,6 +12,6 @@ mod tempo;
 pub use deck::DeckId;
 pub use error::ValueError;
 pub use gain::Gain;
-pub use grid::{BeatGrid, Bpm, MAX_MARKERS};
+pub use grid::{BEATS_PER_BAR, Beat, BeatGrid, Bpm, MAX_BEATS_VISITED, MAX_MARKERS};
 pub use rate::SampleRate;
 pub use tempo::Tempo;

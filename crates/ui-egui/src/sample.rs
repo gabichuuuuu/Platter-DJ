@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use platter_core::{DeckId, SampleRate};
+use platter_core::{Bpm, DeckId, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{DeckSnapshot, Snapshot, TrackInfo, WaveformPeaks};
 
@@ -200,6 +200,12 @@ fn loaded_deck(index: usize, position: f64, tempo_ratio: f64, levels: [f32; 2]) 
         ..DeckSnapshot::default()
     };
     deck.controls.tempo_ratio = tempo_ratio;
+    // A grid on the beats the invented peaks put at whole beats from the start; the second
+    // track has its grid locked, so both states of the GRID page are drawn.
+    if let Ok(bpm) = Bpm::new(bpm) {
+        deck.grid.set_bpm(bpm);
+    }
+    deck.grid.set_locked(index == 1);
     deck
 }
 

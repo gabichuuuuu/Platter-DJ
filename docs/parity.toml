@@ -68,7 +68,7 @@ features = [
   { id = "scrolling", name = "Scrolling waveform coloured by frequency", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --lib peaks; cargo test -p platter-ui-egui --test panels" },
   { id = "overview", name = "Overview with click to seek", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels the_controls_carry_the_values" },
   { id = "zoom", name = "Waveform zoom", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels every_control_emits_its_command" },
-  { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "planned" },
+  { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "in_progress" },
   { id = "colour-mode-first", name = "First waveform colour mode", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels no_panel_paints_a_colour_outside_the_design_tokens" },
   { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "planned" },
 ]
@@ -94,8 +94,8 @@ id = "beatgrid"
 title = "Beatgrid"
 features = [
   { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "planned" },
-  { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "in_progress" },
-  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "in_progress" },
+  { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-ui-egui --test panels" },
+  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "planned" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },

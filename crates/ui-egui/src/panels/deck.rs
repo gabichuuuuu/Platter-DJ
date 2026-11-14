@@ -1,14 +1,15 @@
 //! A deck: its header, the overview of its track, the transport keys and the tempo control.
 //!
-//! Components: `DeckHeader`, `TransportButton`, `TempoControl` and `Notice` in
-//! `docs/design/DESIGN.md`; placement from `docs/design/screens/M2-main.html`. Behaviour
-//! note: `docs/behavior/transport.md`.
+//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `GridEditor` and `Notice` in
+//! `docs/design/DESIGN.md`; placement from `docs/design/screens/M2-main.html` and, for the
+//! grid row, `docs/design/screens/First-version.html`. Behaviour notes:
+//! `docs/behavior/transport.md` and `docs/behavior/beatgrid.md`.
 
 use std::path::PathBuf;
 
 use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
-use platter_core::DeckId;
-use platter_engine::{Command, DeckSnapshot};
+use platter_core::{Bpm, DeckId};
+use platter_engine::{BpmScale, Command, DeckSnapshot};
 
 use crate::command::AppCommand;
 use crate::cx::{ControlKind, Cx, id};
@@ -25,6 +26,15 @@ use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, Steps, ValueSpec};
 pub const NUDGE_AMOUNT: f64 = 0.04;
 /// Seconds left below which the remaining time turns to the warning colour.
 const ENDING_SECONDS: f64 = 30.0;
+/// Beats per minute the tempo keys and the arrows of the tempo field add or take away.
+pub const BPM_STEP: f64 = 0.01;
+/// Seconds the marker keys move a grid marker.
+pub const MARKER_STEP_SECONDS: f64 = 0.005;
+/// Where the tempo field starts when neither the grid nor the tag has a tempo.
+const DEFAULT_FIELD_BPM: f64 = 120.0;
+const GRID_ROW_HEIGHT: f32 = 24.0;
+const GRID_KEY_WIDTH: f32 = 24.0;
+const BPM_FIELD_WIDTH: f32 = 64.0;
 
 /// The name a track is shown by: its title tag, or the name of its file.
 fn title_of(snapshot: &DeckSnapshot) -> Option<String> {
@@ -103,7 +113,234 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         deck_notice(cx, area, deck, notice);
     }
     transport(cx, left, deck, snapshot);
+    grid_page(cx, left, deck, snapshot);
     tempo(cx, tempo_column, deck, snapshot);
+}
+
+/// Places keys one after another along a row.
+struct Row {
+    x: f32,
+    top: f32,
+    height: f32,
+    gap: f32,
+}
+
+impl Row {
+    fn place(&mut self, width: f32) -> Rect {
+        let rect =
+            Rect::from_min_size(egui::pos2(self.x, self.top), egui::vec2(width, self.height));
+        self.x += width + self.gap;
+        rect
+    }
+}
+
+/// The two rows of the GRID page, above the transport keys at the bottom of `area`: the
+/// tempo, its tap and scale keys, the marker nudge and the lock; then the tempo steps and the
+/// marker keys.
+fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let letter = deck.letter().to_string();
+    let grid = &snapshot.grid;
+    let loaded = is_ready(snapshot);
+    let editable = loaded && !grid.is_locked();
+    let has_tempo = grid.bpm().is_some();
+    let has_markers = !grid.markers().is_empty();
+    let height = GRID_ROW_HEIGHT;
+    let second_top = area.bottom() - tokens.size.transport_h - tokens.space.s3 - height;
+    let first_top = second_top - tokens.space.s2 - height;
+    let gap = tokens.space.s2;
+    let named = |key: &str| texts.format(key, &[("deck", &letter)]);
+
+    // The tempo field starts from the tempo of the grid, or of the tag, or 120 BPM.
+    let shown = grid.bpm().map(|bpm| bpm.value());
+    let start = shown
+        .or_else(|| snapshot.track.as_ref().and_then(|track| track.tags.bpm))
+        .filter(|bpm| (Bpm::MIN..=Bpm::MAX).contains(bpm))
+        .unwrap_or(DEFAULT_FIELD_BPM);
+    let span = Bpm::MAX - Bpm::MIN;
+    let field_rect = Rect::from_min_size(
+        egui::pos2(area.left(), first_top),
+        egui::vec2(BPM_FIELD_WIDTH, height),
+    );
+    let field_text = shown.map_or_else(|| texts.get("deck.no_tempo").to_owned(), format::bpm);
+    let name = named("deck.grid_bpm_name");
+    value::field(
+        cx,
+        field_rect,
+        id(("deck-grid-bpm", deck.index())),
+        ValueSpec {
+            name: &name,
+            position: (start - Bpm::MIN) / span,
+            default: (start - Bpm::MIN) / span,
+            steps: Steps {
+                small: BPM_STEP / span,
+                fine: BPM_STEP / 10.0 / span,
+                large: 1.0 / span,
+            },
+            enabled: editable,
+        },
+        &field_text,
+        |position| {
+            Command::DeckGridBpmSet {
+                deck,
+                bpm: Bpm::MIN + position * span,
+            }
+            .into()
+        },
+    );
+
+    let mut row = Row {
+        x: field_rect.right() + gap,
+        top: first_top,
+        height,
+        gap,
+    };
+    let text_keys = [
+        (
+            "deck.grid_half",
+            "deck.grid_half_name",
+            Command::DeckGridBpmScale {
+                deck,
+                factor: BpmScale::Half,
+            },
+            editable && has_tempo,
+        ),
+        (
+            "deck.grid_double",
+            "deck.grid_double_name",
+            Command::DeckGridBpmScale {
+                deck,
+                factor: BpmScale::Double,
+            },
+            editable && has_tempo,
+        ),
+        (
+            "deck.grid_tap",
+            "deck.grid_tap_name",
+            Command::DeckGridTap { deck },
+            editable,
+        ),
+    ];
+    for (index, (label, name, command, enabled)) in text_keys.into_iter().enumerate() {
+        let label = texts.get(label);
+        let rect = row.place(key::width_for(cx, label, GRID_KEY_WIDTH));
+        let name = named(name);
+        let mut spec = KeySpec::text(label).enabled(enabled);
+        spec.name = &name;
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-key", deck.index(), index)),
+            spec,
+            Press::Click(command.into()),
+        );
+    }
+    let nudges = [
+        (
+            Glyph::ChevronLeft,
+            "deck.grid_earlier_name",
+            -MARKER_STEP_SECONDS,
+        ),
+        (
+            Glyph::ChevronRight,
+            "deck.grid_later_name",
+            MARKER_STEP_SECONDS,
+        ),
+    ];
+    for (index, (glyph, name, seconds)) in nudges.into_iter().enumerate() {
+        let rect = row.place(GRID_KEY_WIDTH);
+        let name = named(name);
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-nudge", deck.index(), index)),
+            KeySpec::icon(glyph, 14.0, &name).enabled(editable && has_markers),
+            Press::Click(Command::DeckGridMarkerMove { deck, seconds }.into()),
+        );
+    }
+    let lock = Rect::from_min_size(
+        egui::pos2(area.right() - GRID_KEY_WIDTH, first_top),
+        egui::vec2(GRID_KEY_WIDTH, height),
+    );
+    let name = named("deck.grid_lock_name");
+    let mut spec = KeySpec::icon(Glyph::Lock, 14.0, &name).enabled(loaded);
+    spec.lit = grid.is_locked().then_some(deck_color(theme, deck));
+    key::key(
+        cx,
+        lock,
+        id(("deck-grid-lock", deck.index())),
+        spec,
+        Press::Click(Command::DeckGridLockToggle { deck }.into()),
+    );
+
+    // Second row: the tempo steps, then the markers.
+    let mut row = Row {
+        x: area.left(),
+        top: second_top,
+        height,
+        gap,
+    };
+    let steps = [
+        (Glyph::Minus, "deck.grid_slower_name", -BPM_STEP),
+        (Glyph::Plus, "deck.grid_faster_name", BPM_STEP),
+    ];
+    for (index, (glyph, name, amount)) in steps.into_iter().enumerate() {
+        let rect = row.place(GRID_KEY_WIDTH);
+        let name = named(name);
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-step", deck.index(), index)),
+            KeySpec::icon(glyph, 14.0, &name).enabled(editable && has_tempo),
+            Press::Click(Command::DeckGridBpmStep { deck, amount }.into()),
+        );
+    }
+    row.x += tokens.space.s4;
+    let markers = [
+        (
+            "deck.grid_previous",
+            "deck.grid_previous_name",
+            Command::DeckGridMarkerPrevious { deck },
+            loaded && has_markers,
+        ),
+        (
+            "deck.grid_set",
+            "deck.grid_set_name",
+            Command::DeckGridMarkerSet { deck },
+            editable,
+        ),
+        (
+            "deck.grid_next",
+            "deck.grid_next_name",
+            Command::DeckGridMarkerNext { deck },
+            loaded && has_markers,
+        ),
+    ];
+    for (index, (label, name, command, enabled)) in markers.into_iter().enumerate() {
+        let label = texts.get(label);
+        let rect = row.place(key::width_for(cx, label, GRID_KEY_WIDTH));
+        let name = named(name);
+        let mut spec = KeySpec::text(label).enabled(enabled);
+        spec.name = &name;
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-marker", deck.index(), index)),
+            spec,
+            Press::Click(command.into()),
+        );
+    }
+    let rect = row.place(GRID_KEY_WIDTH);
+    let name = named("deck.grid_delete_name");
+    key::key(
+        cx,
+        rect,
+        id(("deck-grid-delete", deck.index())),
+        KeySpec::icon(Glyph::Trash, 14.0, &name).enabled(editable && has_markers),
+        Press::Click(Command::DeckGridMarkerDelete { deck }.into()),
+    );
 }
 
 fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
@@ -234,7 +471,13 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
     // Tempo: the current tempo, and the fader offset with the base tempo.
     let controls = &snapshot.controls;
     let offset = format::signed_percent(controls.tempo_ratio - 1.0);
-    let base = track.and_then(|track| track.tags.bpm).filter(|_| loaded);
+    // The tempo of the grid; until there is one, the tempo the tag gives.
+    let base = snapshot
+        .grid
+        .bpm()
+        .map(|bpm| bpm.value())
+        .or_else(|| track.and_then(|track| track.tags.bpm))
+        .filter(|_| loaded);
     let ink = |loaded_ink| {
         if loaded {
             loaded_ink
