@@ -69,8 +69,10 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
   `tempo * (track_rate / engine_rate)` with interpolation; it is not resampled on load. The
   interpolation is chosen by measurement (distortion and aliasing of a sine) and recorded in an
   ADR. There is no key lock until M3: pitch follows tempo.
-- **Beatgrid.** From M3 a beatgrid is a list of markers, each with its own tempo (a flexible
-  grid). The type is created when it is first used.
+- **Beatgrid.** `BeatGrid` in `platter-core`: a tempo, up to 128 markers and a lock, in a
+  fixed-size value. In M3 the markers share the one tempo; M4 gives each marker its own (a
+  flexible grid). The processor holds the grid of each deck and reports it to the control side
+  after each change (`docs/decisions/0014-beatgrid-in-the-processor.md`).
 
 ## Engine
 

@@ -10,9 +10,10 @@ mod control;
 mod peaks;
 mod render;
 pub mod rt;
+mod tap;
 mod wav;
 
-pub use command::{Command, CommandError};
+pub use command::{BpmScale, Command, CommandError};
 pub use control::{
     DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY, MixerControls, Snapshot,
     TEMPO_RANGES, TrackInfo,
