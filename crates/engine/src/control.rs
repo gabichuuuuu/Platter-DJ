@@ -10,17 +10,21 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
-use platter_core::{BeatGrid, Bpm, DeckId, Gain, SampleRate, Tempo, ValueError};
+use platter_core::{BeatGrid, Bpm, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError};
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::command::{
-    Command, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS,
-    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS,
+    Command, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB,
+    MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MoveMode, MoveSize,
+    SizeStep,
 };
 use crate::peaks::WaveformPeaks;
-use crate::rt::{self, COMMAND_CAPACITY, ControlEnds, GridEdit, Processor, RtCommand, TrackAudio};
+use crate::rt::{
+    self, COMMAND_CAPACITY, ControlEnds, GridEdit, LoopEdit, LoopPart, LoopState, Processor,
+    RtCommand, Span, TrackAudio,
+};
 use crate::tap::TapTempo;
 
 /// Ranges of the tempo fader, as a fraction of the original speed either way.
@@ -28,6 +32,9 @@ pub const TEMPO_RANGES: [f64; 3] = [0.08, 0.16, 0.5];
 
 /// Fader position that leaves the level untouched. The travel above it adds gain.
 pub const FADER_UNITY: f64 = 0.75;
+
+/// Step of a jump or a move while the fine steps are on, in seconds.
+pub const FINE_MOVE_SECONDS: f64 = 0.005;
 
 /// What the interface shows about a loaded track.
 #[derive(Clone, Debug, PartialEq)]
@@ -93,6 +100,12 @@ pub struct DeckControls {
     pub fader: f64,
     /// The deck is sent to the headphones.
     pub pre_listen: bool,
+    /// Size a new loop gets.
+    pub loop_size: LoopSize,
+    pub move_mode: MoveMode,
+    pub move_size: MoveSize,
+    /// Jumps and moves go by [`FINE_MOVE_SECONDS`] instead of the move size.
+    pub move_fine: bool,
 }
 
 impl Default for DeckControls {
@@ -107,6 +120,10 @@ impl Default for DeckControls {
             pan: 0.0,
             fader: FADER_UNITY,
             pre_listen: false,
+            loop_size: LoopSize::FOUR_BEATS,
+            move_mode: MoveMode::default(),
+            move_size: MoveSize::default(),
+            move_fine: false,
         }
     }
 }
@@ -146,6 +163,8 @@ pub struct DeckSnapshot {
     pub cue_seconds: f64,
     /// Beatgrid of the loaded track, as of the last [`Engine::poll`].
     pub grid: BeatGrid,
+    /// Loop of the loaded track, as of the last [`Engine::poll`].
+    pub looping: LoopState,
     pub controls: DeckControls,
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [f32; 2],
@@ -170,8 +189,9 @@ struct DeckControl {
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     controls: DeckControls,
-    /// The grid as the processor last reported it.
+    /// The grid and the loop as the processor last reported them.
     grid: BeatGrid,
+    looping: LoopState,
     tap: TapTempo,
 }
 
@@ -259,7 +279,84 @@ impl Engine {
                 self.send(RtCommand::Nudge { deck, amount })
             }
             Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
-            mixer => self.dispatch_grid(mixer),
+            other => self.dispatch_loop(other),
+        }
+    }
+
+    /// The commands of loops, jumps and moves. The selections of size and mode are kept
+    /// here; the processor gets what they amount to with each loop, jump or move.
+    fn dispatch_loop(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, edit) = match command {
+            Command::DeckLoopToggle { deck } => {
+                let beats = self.decks[deck.index()].controls.loop_size.beats();
+                (deck, LoopEdit::Toggle { beats })
+            }
+            Command::DeckLoopIn { deck } => (deck, LoopEdit::In),
+            Command::DeckLoopOut { deck } => (deck, LoopEdit::Out),
+            Command::DeckLoopSizeStep { deck, direction } => {
+                let size = self.decks[deck.index()].controls.loop_size;
+                let stepped = match direction {
+                    SizeStep::Down => size.smaller(),
+                    SizeStep::Up => size.larger(),
+                };
+                let Some(size) = stepped else {
+                    return Ok(());
+                };
+                let beats = size.beats();
+                self.send(RtCommand::Loop {
+                    deck,
+                    edit: LoopEdit::Resize { beats },
+                })?;
+                self.decks[deck.index()].controls.loop_size = size;
+                return Ok(());
+            }
+            Command::DeckBeatjump { deck, direction } => {
+                let by = self.move_span(deck, direction);
+                return self.send(RtCommand::Jump { deck, by });
+            }
+            Command::DeckMove { deck, direction } => {
+                let by = self.move_span(deck, direction);
+                let part = match self.decks[deck.index()].controls.move_mode {
+                    MoveMode::Beatjump => return self.send(RtCommand::Jump { deck, by }),
+                    MoveMode::Loop => LoopPart::Whole,
+                    MoveMode::LoopIn => LoopPart::In,
+                    MoveMode::LoopOut => LoopPart::Out,
+                };
+                (deck, LoopEdit::Move { part, by })
+            }
+            Command::DeckMoveModeSet { deck, mode } => {
+                self.decks[deck.index()].controls.move_mode = mode;
+                return Ok(());
+            }
+            Command::DeckMoveSizeStep { deck, direction } => {
+                let controls = &mut self.decks[deck.index()].controls;
+                if let Some(size) = controls.move_size.stepped(direction) {
+                    controls.move_size = size;
+                }
+                return Ok(());
+            }
+            Command::DeckMoveFineToggle { deck } => {
+                let controls = &mut self.decks[deck.index()].controls;
+                controls.move_fine = !controls.move_fine;
+                return Ok(());
+            }
+            other => return self.dispatch_grid(other),
+        };
+        self.send(RtCommand::Loop { deck, edit })
+    }
+
+    /// How far one jump or move of a deck goes, as its move size and fine steps stand.
+    fn move_span(&self, deck: DeckId, direction: Direction) -> Span {
+        let controls = &self.decks[deck.index()].controls;
+        if controls.move_fine {
+            return Span::Seconds(direction.sign() * FINE_MOVE_SECONDS);
+        }
+        match controls.move_size {
+            MoveSize::Beats(size) => Span::Beats(direction.sign() * size.beats()),
+            MoveSize::Loop => Span::Loop {
+                forward: direction == Direction::Forward,
+                beats: controls.loop_size.beats(),
+            },
         }
     }
 
@@ -479,8 +576,14 @@ impl Engine {
     /// what frees the audio of replaced tracks.
     pub fn poll(&mut self) -> Vec<Event> {
         self.collect_retired();
-        while let Ok(report) = self.ends.grids.pop() {
-            self.decks[report.deck.index()].grid = report.grid;
+        while let Ok(report) = self.ends.reports.pop() {
+            let deck = &mut self.decks[report.deck.index()];
+            if let Some(grid) = report.grid {
+                deck.grid = grid;
+            }
+            if let Some(looping) = report.looping {
+                deck.looping = looping;
+            }
         }
         let mut events = Vec::new();
         while let Ok(finished) = self.finished_loads.try_recv() {
@@ -539,6 +642,7 @@ impl Engine {
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
                 grid: control.grid,
+                looping: control.looping,
                 controls: control.controls.clone(),
                 levels: [published.levels[0].get(), published.levels[1].get()],
             }

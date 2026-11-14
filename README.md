@@ -30,10 +30,10 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has started with the beatgrid.** The desktop
+> **Milestone M2 is complete; M3 has started with the beatgrid and the loops.** The desktop
 > application opens, loads tracks and plays them through a sound card, its tests pass, and
 > the maintainer has listened to it. It is not yet a tool to play a set with: there is no
-> sync, no loops and no library.
+> sync and no library, and the loops have no controls in the window yet.
 
 ### What exists today
 
@@ -64,7 +64,9 @@ its own code, graphics and sounds.
   damaged input only, as the project has no encoder for them.
 - The beatgrid is set by hand on the GRID page of each deck: nothing detects the tempo yet,
   the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
-- No sync, no loops, no hotcues, no key lock, no collection, no MIDI: those are milestone M3.
+- Loops, beatjumps and the moves of a loop exist as commands of the engine, for the render
+  scripts; the window has no controls for them yet, and nobody has listened to them.
+- No sync, no hotcues, no key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.

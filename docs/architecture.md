@@ -73,6 +73,10 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
   fixed-size value. In M3 the markers share the one tempo; M4 gives each marker its own (a
   flexible grid). The processor holds the grid of each deck and reports it to the control side
   after each change (`docs/decisions/0014-beatgrid-in-the-processor.md`).
+- **Loops and jumps.** The processor holds the loop of each deck too. The return of a loop to
+  its start and a beatjump move the deck at once, to the frame, and crossfade from what it was
+  playing; a seek fades out and in instead
+  (`docs/decisions/0015-jumps-that-keep-the-time.md`).
 
 ## Engine
 

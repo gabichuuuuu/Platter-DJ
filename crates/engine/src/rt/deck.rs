@@ -1,6 +1,7 @@
 //! One deck: reads its track at the current speed and handles the transport.
 //!
-//! Behaviour notes: `docs/behavior/transport.md` and, for the grid, `docs/behavior/beatgrid.md`.
+//! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
+//! for loops and jumps, `docs/behavior/loops.md`.
 
 use platter_core::{BeatGrid, SampleRate};
 use platter_dsp::Frame;
@@ -8,11 +9,35 @@ use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
-use super::{GridEdit, Retired, TrackAudio};
+use super::looper::{Looper, Track};
+use super::{GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
 const SPEED_RAMP_MS: f32 = 20.0;
+/// Length of the crossfade at a jump that keeps the time: a beatjump or the return of a
+/// loop to its start.
+const SPLICE_SECONDS: f64 = 0.005;
+
+/// What the deck was playing before a jump that keeps the time. It goes on from where it
+/// was while it fades out under what the deck plays now.
+struct Tail {
+    position: f64,
+    level: f32,
+    /// What the level loses per frame.
+    decay: f32,
+}
+
+impl Tail {
+    /// A tail that fades over `frames` frames of output, when that is long enough to fade.
+    fn over(position: f64, frames: f64) -> Option<Self> {
+        (frames >= 1.0).then_some(Self {
+            position,
+            level: 1.0,
+            decay: (1.0 / frames) as f32,
+        })
+    }
+}
 
 /// Where a seek lands. A position given in seconds is resolved when the seek is applied,
 /// because by then the deck may hold another track with another sample rate.
@@ -47,6 +72,9 @@ pub(super) struct DeckPlayer {
     arriving_grid: Option<BeatGrid>,
     /// The grid changed since the control side last got it.
     grid_unreported: bool,
+    /// The loop of the track the deck holds once the pending swap is applied.
+    looper: Looper,
+    tail: Option<Tail>,
 }
 
 impl DeckPlayer {
@@ -68,6 +96,8 @@ impl DeckPlayer {
             grid: BeatGrid::default(),
             arriving_grid: None,
             grid_unreported: false,
+            looper: Looper::default(),
+            tail: None,
         }
     }
 
@@ -84,6 +114,7 @@ impl DeckPlayer {
         self.pending_seek = None;
         self.arriving_cue = None;
         self.arriving_grid = None;
+        self.looper.clear();
         self.pending_swap = Some(audio);
     }
 
@@ -234,6 +265,79 @@ impl DeckPlayer {
         }
     }
 
+    /// What the loop needs to know about the track the deck holds once the pending swap is
+    /// applied.
+    fn settled_track(&self) -> Option<Track> {
+        let audio = self.settled_audio()?;
+        let rate = audio.rate().as_f64();
+        let grid = if self.pending_swap.is_some() {
+            self.arriving_grid.as_ref()
+        } else {
+            Some(&self.grid)
+        };
+        Some(Track {
+            rate,
+            frames: audio.frames() as f64,
+            beat: grid
+                .and_then(BeatGrid::bpm)
+                .map(|bpm| bpm.beat_seconds() * rate),
+        })
+    }
+
+    /// Applies an edit to the loop, at the play position the deck has once the pending
+    /// changes are applied.
+    pub(super) fn edit_loop(&mut self, edit: LoopEdit) {
+        let Some(track) = self.settled_track() else {
+            return;
+        };
+        let at = self.settled_position().clamp(0.0, track.frames);
+        if let Some(target) = self.looper.edit(edit, at, track) {
+            self.jump_to(target);
+        }
+    }
+
+    /// Moves the play position by a span. A jump that would leave the track does nothing.
+    pub(super) fn jump(&mut self, by: Span) {
+        let Some(track) = self.settled_track() else {
+            return;
+        };
+        let at = self.settled_position().clamp(0.0, track.frames);
+        let Some(target) = self.looper.frames_of(by, track).map(|by| at + by) else {
+            return;
+        };
+        if target != at && (0.0..=track.frames).contains(&target) {
+            self.jump_to(target);
+        }
+    }
+
+    /// Goes to a frame of the settled track without losing time: a seek that still waits
+    /// takes the new target, and otherwise the deck is there from the next frame on, with
+    /// what it was playing fading out under it.
+    fn jump_to(&mut self, frame: f64) {
+        if self.pending_swap.is_some() || self.pending_seek.is_some() {
+            self.pending_seek = Some(SeekTarget::Frame(frame));
+        } else {
+            self.tail = Tail::over(self.position, SPLICE_SECONDS * self.engine_rate);
+            self.position = frame;
+        }
+    }
+
+    /// The loop, once, after each change.
+    pub(super) fn unreported_loop(&self) -> Option<LoopState> {
+        if !self.looper.is_unreported() {
+            return None;
+        }
+        // An empty deck has no loop: the swap that emptied it cleared it.
+        let rate = self
+            .settled_audio()
+            .map_or(1.0, |audio| audio.rate().as_f64());
+        Some(self.looper.state(rate))
+    }
+
+    pub(super) fn loop_reported(&mut self) {
+        self.looper.reported();
+    }
+
     /// The grid, once, after each change.
     pub(super) fn unreported_grid(&self) -> Option<&BeatGrid> {
         self.grid_unreported.then_some(&self.grid)
@@ -257,15 +361,37 @@ impl DeckPlayer {
         self.fade.set(if audible { 1.0 } else { 0.0 });
         let gain = self.fade.advance();
         if gain == 0.0 {
+            self.tail = None;
             self.apply_pending(retired);
             return [0.0; 2];
         }
         let Some(audio) = &self.audio else {
             return [0.0; 2];
         };
-        let frame = read(audio, self.position);
+        let mut frame = read(audio, self.position);
         let speed = f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance()));
-        self.position += speed * audio.rate().as_f64() / self.engine_rate;
+        let step = speed * audio.rate().as_f64() / self.engine_rate;
+        if let Some(tail) = &mut self.tail {
+            tail.level -= tail.decay;
+            if tail.level > 0.0 {
+                let old = read(audio, tail.position);
+                frame = [0, 1].map(|side| frame[side] + (old[side] - frame[side]) * tail.level);
+                tail.position += step;
+            } else {
+                self.tail = None;
+            }
+        }
+        let before = self.position;
+        self.position += step;
+        // The loop belongs to the track that arrives while a swap waits.
+        if self.pending_swap.is_none()
+            && let Some((start, length)) = self.looper.wrap(before, self.position)
+        {
+            // At most half a pass of the loop, so one crossfade ends before the next.
+            let frames = (SPLICE_SECONDS * self.engine_rate).min(length / (2.0 * step));
+            self.tail = Tail::over(self.position, frames);
+            self.position = start;
+        }
         let end = audio.frames() as f64;
         if self.position >= end {
             self.position = end;

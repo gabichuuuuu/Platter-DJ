@@ -10,7 +10,9 @@ use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
 use platter_core::{Bpm, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
-use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output, TEMPO_RANGES};
+use platter_engine::{
+    Band, BpmScale, Command, CrossfaderCurve, Direction, MoveMode, Output, SizeStep, TEMPO_RANGES,
+};
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
 /// Three files to load: two tracks and one that does not exist.
@@ -66,6 +68,28 @@ fn later_command() -> impl Strategy<Value = Command> {
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),
         grid_command(),
+        loop_command(),
+    ]
+}
+
+/// The commands of loops, jumps and moves, added in M3.
+fn loop_command() -> impl Strategy<Value = Command> {
+    let direction = || prop::sample::select(vec![Direction::Back, Direction::Forward]);
+    let size_step = || prop::sample::select(vec![SizeStep::Down, SizeStep::Up]);
+    let mode = prop::sample::select(MoveMode::ALL.to_vec());
+    prop_oneof![
+        2 => deck().prop_map(|deck| Command::DeckLoopToggle { deck }),
+        1 => deck().prop_map(|deck| Command::DeckLoopIn { deck }),
+        1 => deck().prop_map(|deck| Command::DeckLoopOut { deck }),
+        2 => (deck(), size_step())
+            .prop_map(|(deck, direction)| Command::DeckLoopSizeStep { deck, direction }),
+        1 => (deck(), direction())
+            .prop_map(|(deck, direction)| Command::DeckBeatjump { deck, direction }),
+        2 => (deck(), direction()).prop_map(|(deck, direction)| Command::DeckMove { deck, direction }),
+        1 => (deck(), mode).prop_map(|(deck, mode)| Command::DeckMoveModeSet { deck, mode }),
+        1 => (deck(), size_step())
+            .prop_map(|(deck, direction)| Command::DeckMoveSizeStep { deck, direction }),
+        1 => deck().prop_map(|deck| Command::DeckMoveFineToggle { deck }),
     ]
 }
 
@@ -136,6 +160,14 @@ fn value() -> impl Strategy<Value = Value> {
             "headphones",
             "double",
             "half",
+            "back",
+            "forward",
+            "down",
+            "up",
+            "beatjump",
+            "loop",
+            "loop_in",
+            "loop_out",
         ])
         .prop_map(|text| Value::Text(text.to_owned())),
     ]
@@ -172,6 +204,16 @@ proptest! {
                 assert!((Bpm::MIN..=Bpm::MAX).contains(&bpm.value()));
             }
             assert!(deck.position_seconds.is_finite() && deck.position_seconds >= 0.0);
+            let seconds = deck.track.as_ref().map_or(0.0, |track| track.seconds);
+            if let Some(region) = deck.looping.region {
+                assert!(deck.looping.in_point.is_none());
+                assert!(region.start >= 0.0 && region.start < region.end, "{region:?}");
+                // A frame of slack: the length of the file is rounded to its frames.
+                assert!(region.end <= seconds + 1e-4, "{region:?} in {seconds}");
+            }
+            if let Some(at) = deck.looping.in_point {
+                assert!((0.0..=seconds + 1e-4).contains(&at), "{at} in {seconds}");
+            }
             assert!(deck.cue_seconds.is_finite());
             assert!(deck.levels.iter().all(|level| level.is_finite()));
             // deck.tempo.set takes the whole span of a tempo whatever the range of the fader

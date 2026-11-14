@@ -6,6 +6,7 @@ mod error;
 mod gain;
 mod grid;
 pub mod log;
+mod loops;
 mod rate;
 mod tempo;
 
@@ -13,5 +14,6 @@ pub use deck::DeckId;
 pub use error::ValueError;
 pub use gain::Gain;
 pub use grid::{BEATS_PER_BAR, Beat, BeatGrid, Bpm, MAX_BEATS_VISITED, MAX_MARKERS};
+pub use loops::{LoopRegion, LoopSize};
 pub use rate::SampleRate;
 pub use tempo::Tempo;
