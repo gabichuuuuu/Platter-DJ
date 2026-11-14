@@ -2,8 +2,7 @@
 
 ## How it was tested
 
-<!-- What you ran, and on what. Describe the setup generically: no device names as the system
-shows them, no machine model, no local paths. "Not tested on hardware" is a valid answer. -->
+<!-- What you ran, and on what. "Not tested on hardware" is a valid answer. -->
 
 - `cargo xtask ci`: <!-- passes, or the step that fails -->
 - Operating system: <!-- for example Windows x64 -->
@@ -18,6 +17,9 @@ shows them, no machine model, no local paths. "Not tested on hardware" is a vali
 - [ ] Clean-room: behaviour comes from public documentation, cited by URL; nothing copied from the
       reference product or from GPL or AGPL code.
 - [ ] Every new resource has a row in `ATTRIBUTION.md`.
-- [ ] `docs/parity.toml` is updated if the status of a function changes.
+- [ ] A bug fix comes with a test that failed before the fix.
+- [ ] No new dependency, or the maintainer agreed to it in an issue first.
+- [ ] Nothing in the audio callback allocates, locks, logs or does I/O.
+- [ ] A function of `docs/parity.toml` has its note in `docs/behavior/` and its status updated.
 - [ ] Depends on: <!-- #N of the pull request that goes first, or none -->
 - [ ] Fixes: <!-- Fixes #N for the issue it closes, or none -->

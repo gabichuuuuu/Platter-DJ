@@ -172,7 +172,7 @@ for any other computer is allowed; a fact that points at this one is not.
   Each has a Conventional Commit title, passes the gate and is squash-merged. A branch is pushed
   and a pull request opened only when the maintainer asks.
 - Pull request body: copy `.github/pull_request_template.md` and keep every line. Fill "What
-  changes and why", "How it was tested" (what was run and on what, described generically as
+  changes and why", "How it was tested" (what was run and on what, as
   `CONTRIBUTING.md` asks; "Not tested on hardware" is a valid answer) and the `Depends on`
   (#N or none) and `Fixes` (Fixes #N or none) lines. Tick a box only when it holds; a box that
   does not hold stays empty and the description says why.

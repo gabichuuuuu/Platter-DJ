@@ -42,13 +42,11 @@ tested by the author:
   application, on the hardware it concerns.
 - Say what was run and on what under "How it was tested" in the pull request template. "Not
   tested on hardware" is a valid answer; a reviewer may ask for a run before merging.
-- Describe the setup generically: operating system and architecture, audio API, sample rate,
-  buffer size, the kind of controller. A pull request description can reach the history through
-  the squash merge, so it follows the privacy rules of `AGENTS.md`: no device names as the
-  system shows them, no machine model, no local paths.
+- Describe the setup: operating system and architecture, audio API, sample rate, buffer size,
+  the kind of controller.
 - Report what was measured or checked. Do not write that something sounds good.
 
-The reasons are recorded in `docs/decisions/0016-contributors-test-on-their-machine.md`.
+The reasons are recorded in `docs/decisions/0019-contributors-test-on-their-machine.md`.
 
 ## Commits and pull requests
 
@@ -65,8 +63,9 @@ The reasons are recorded in `docs/decisions/0016-contributors-test-on-their-mach
 
 ## Clean-room rules
 
-Platter matches the functions of a commercial product without using any of its material. A
-contribution must respect the clean-room rules in `AGENTS.md`. In short:
+Platter offers the functions DJs expect from professional DJ software and uses no code or
+resources of any other product. A contribution must respect the clean-room rules in
+`AGENTS.md`. In short:
 
 - Behaviour comes from public documentation, public specifications and scientific papers. The
   reference manual is cited by page and section; other sources by URL.
