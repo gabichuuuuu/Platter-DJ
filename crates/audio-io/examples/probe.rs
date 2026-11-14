@@ -21,7 +21,9 @@ fn main() {
         routing: Routing::default(),
     };
     let silence: Source = Box::new(|output, _| output.fill(0.0));
-    let output = match prepare(&request).and_then(|prepared| prepared.start(silence)) {
+    let started = prepare(&request)
+        .and_then(|prepared| prepared.start(silence).map_err(|failed| failed.error));
+    let output = match started {
         Ok(output) => output,
         Err(error) => {
             println!("no stream: {error}");

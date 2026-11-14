@@ -9,8 +9,8 @@ use cpal::{BufferSize, ErrorKind, InterfaceType, SampleFormat, StreamConfig};
 
 use crate::driver::{OutputDriver, OutputSample};
 use crate::{
-    AudioError, DeviceInfo, DeviceKind, Output, Routing, Running, SAMPLE_RATES, Source, StreamInfo,
-    StreamRequest,
+    AudioError, DeviceInfo, DeviceKind, Output, Routing, Running, SAMPLE_RATES, Source, StartError,
+    StreamInfo, StreamRequest,
 };
 
 /// Most channels a stream is opened with. The engine uses four at most; a device with more
@@ -159,7 +159,7 @@ impl Prepared {
 
     /// Opens the stream and starts it. The device may refuse the buffer size asked for;
     /// then the stream runs with the size the device prefers.
-    pub fn start(self, source: Source) -> Result<Output, AudioError> {
+    pub fn start(self, source: Source) -> Result<Output, StartError> {
         let driver = OutputDriver::new(
             source,
             self.info.sample_rate,
@@ -170,13 +170,14 @@ impl Prepared {
             SampleFormat::F32 => self.run::<f32>(driver),
             SampleFormat::I32 => self.run::<i32>(driver),
             SampleFormat::I16 => self.run::<i16>(driver),
-            other => Err(AudioError::Unsupported(format!(
-                "the sample format {other}"
-            ))),
+            other => Err(StartError {
+                error: AudioError::Unsupported(format!("the sample format {other}")),
+                source: Some(driver.into_source()),
+            }),
         }
     }
 
-    fn run<S>(self, driver: OutputDriver) -> Result<Output, AudioError>
+    fn run<S>(self, driver: OutputDriver) -> Result<Output, StartError>
     where
         S: OutputSample + cpal::SizedSample + Send + 'static,
     {
@@ -203,17 +204,34 @@ impl Prepared {
                 None,
             )
         };
+        // A stream that is refused or dropped lets go of its callback, which sends the
+        // driver back; that is how the source survives a failure.
+        let take_back = || {
+            returns
+                .recv_timeout(RETURN_TIMEOUT)
+                .ok()
+                .map(OutputDriver::into_source)
+        };
+        let failed = |error: cpal::Error, source: Option<Source>| StartError {
+            error: error.into(),
+            source,
+        };
         let stream = match open(driver, BufferSize::Fixed(self.info.buffer_frames)) {
             Ok(stream) => stream,
             Err(refused) => {
-                // The refused stream dropped its callback, which sent the driver back.
-                let driver = returns
-                    .recv_timeout(RETURN_TIMEOUT)
-                    .map_err(|_| AudioError::from(refused))?;
-                open(driver, BufferSize::Default)?
+                let Ok(driver) = returns.recv_timeout(RETURN_TIMEOUT) else {
+                    return Err(failed(refused, None));
+                };
+                match open(driver, BufferSize::Default) {
+                    Ok(stream) => stream,
+                    Err(refused) => return Err(failed(refused, take_back())),
+                }
             }
         };
-        stream.play()?;
+        if let Err(error) = stream.play() {
+            drop(stream);
+            return Err(failed(error, take_back()));
+        }
         let mut info = self.info;
         if let Ok(frames) = stream.buffer_size() {
             info.buffer_frames = frames;

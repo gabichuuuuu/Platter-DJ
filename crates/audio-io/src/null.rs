@@ -76,7 +76,8 @@ impl Drop for ClockThread {
     }
 }
 
-/// Starts an output that runs `source` at `sample_rate` without a device.
+/// Starts an output that runs `source` at `sample_rate` without a device. It fails only
+/// when the system refuses a thread, and then the source is lost with it.
 pub fn silent(source: Source, sample_rate: u32) -> Result<Output, AudioError> {
     let mut driver = OutputDriver::new(source, sample_rate, CLOCK_CHANNELS, Routing::default());
     let stats = driver.stats();

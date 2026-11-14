@@ -140,6 +140,22 @@ impl fmt::Display for AudioError {
 
 impl std::error::Error for AudioError {}
 
+/// A stream that could not be started. It hands the source back, so the caller can run it
+/// on another output; the source is missing only if the audio system kept hold of it.
+pub struct StartError {
+    pub error: AudioError,
+    pub source: Option<Source>,
+}
+
+impl fmt::Debug for StartError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StartError")
+            .field("error", &self.error)
+            .field("source_returned", &self.source.is_some())
+            .finish()
+    }
+}
+
 /// A running output. The audio stops when it is dropped.
 pub struct Output {
     info: StreamInfo,
