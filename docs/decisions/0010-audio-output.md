@@ -62,14 +62,23 @@ which `cpal` does not offer. `AGENTS.md` keeps the `asio` feature off. The buffe
 therefore has no effect below the device period on Windows; it is passed on for the systems
 where it has one.
 
-## Pending
+## Deferred: latency below the device period on Windows
 
-The limit of 10 ms on Windows is provisional. The maintainer wants the lowest latency the
-system allows, with open-source code only, which rules out the ASIO SDK. The planned way is
-the low-latency shared mode: a crate of its own that calls the audio service of Windows
-through the `windows` crate, which needs the first exception to the ban on `unsafe` written in
-`AGENTS.md` and the approval of that dependency before it exists. It is the first task of M3,
-and it is measured on Windows x64 like the figures above.
+The maintainer wants the lowest latency the system allows, with open-source code only, which
+rules out the ASIO SDK. At the start of M3 a throwaway program outside the repository measured
+the two ways open to project code, on Windows x64 at 48 kHz:
+
+- The low-latency shared mode (`IAudioClient3`) reported a default, minimum and maximum
+  engine period of 480 frames, 10 ms. It gives nothing below the device period when the driver
+  offers no shorter period, as here.
+- The exclusive mode, driven by events, ran with a period of 144 frames, 3 ms, and no gap
+  longer than two periods over 3 s of silence. It accepts integer PCM only, not `f32`, and
+  leaves every other application without sound while it runs.
+
+Either way needs code that `cpal` 0.18.2 does not have: the `windows` crate with an exception
+to the ban on `unsafe`, or another dependency that wraps it. The maintainer decided to keep
+`cpal` and its 10 ms on Windows for now. Exclusive mode comes back as a later improvement, when
+the external pieces of the project are replaced by its own code.
 
 With a source that writes silence the load reading stays under 1 % and no dropout is counted
 over the half second the example runs.

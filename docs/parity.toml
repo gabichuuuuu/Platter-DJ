@@ -268,7 +268,7 @@ features = [
 id = "preferences"
 title = "Preferences"
 features = [
-  { id = "audio", name = "Audio", milestone = "M2", status = "done", evidence = "cargo test -p platter-audio-io; cargo test -p platter-ui-egui --test panels; latency below 10 ms on Windows pending, see docs/decisions/0010-audio-output.md" },
+  { id = "audio", name = "Audio", milestone = "M2", status = "done", evidence = "cargo test -p platter-audio-io; cargo test -p platter-ui-egui --test panels; latency below the device period on Windows deferred, see docs/decisions/0010-audio-output.md" },
   { id = "language", name = "Language", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --lib i18n; cargo test -p platter-ui-egui --test panels no_panel_paints_a_text_that_is_not_translated" },
   { id = "output-routing", name = "Output routing", milestone = "M3", status = "planned" },
   { id = "loading", name = "Loading", milestone = "M3", status = "planned" },

@@ -62,10 +62,8 @@ Decisions already taken for this milestone:
   Writes are atomic (temporary file and rename) and never touch a file that could not be read
   completely.
 
-Pending from M2, to do first:
+Pending from M2:
 
-- Audio latency below 10 ms on Windows through the low-latency shared mode of WASAPI, in open
-  source code only (`docs/decisions/0010-audio-output.md`, section Pending).
 - The clock of the status header, once the local time zone can be read
   (`docs/behavior/interface.md`, Differences).
 
@@ -91,3 +89,7 @@ microphone, broadcasting to a server the user configures.
 ### After M5
 
 Hosting third-party CLAP plugins.
+
+Replacing external dependencies with project code, piece by piece, as the maintainer decides
+(`docs/dependencies.md`). With it, audio output below the device period on Windows through
+the exclusive mode of WASAPI (`docs/decisions/0010-audio-output.md`, section Deferred).

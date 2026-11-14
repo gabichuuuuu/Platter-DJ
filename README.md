@@ -53,8 +53,8 @@ its own code, graphics and sounds.
   maintainer; the hour of playing with its dropout count has not been recorded. The tests measure levels, frequencies,
   distortion and the absence of clicks; they do not judge sound.
 - On Windows the audio runs in the shared mode of WASAPI at the period of the device, about
-  10 ms; the buffer size setting cannot go below it. Going lower through the low-latency
-  shared mode of Windows is pending and planned first in M3.
+  10 ms; the buffer size setting cannot go below it. Going lower needs the exclusive mode of
+  WASAPI, which is left for a later version (`docs/decisions/0010-audio-output.md`).
 - The clock of the status header is not shown, and screen readers get no information.
 - The file selector does not list the drives of a Windows machine by itself; a drive is named
   in the settings file.
