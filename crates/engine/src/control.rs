@@ -10,17 +10,23 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
-use platter_core::{BeatGrid, Bpm, DeckId, Gain, SampleRate, Tempo, ValueError};
+use platter_core::{
+    BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
+};
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::command::{
-    Command, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS,
-    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS,
+    ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
+    MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
+    MAX_SEEK_SECONDS, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 use crate::peaks::WaveformPeaks;
-use crate::rt::{self, COMMAND_CAPACITY, ControlEnds, GridEdit, Processor, RtCommand, TrackAudio};
+use crate::rt::{
+    self, COMMAND_CAPACITY, ControlEnds, CueEdit, GridEdit, LoopEdit, LoopPart, LoopState,
+    Processor, RtCommand, Span, TrackAudio,
+};
 use crate::tap::TapTempo;
 
 /// Ranges of the tempo fader, as a fraction of the original speed either way.
@@ -28,6 +34,9 @@ pub const TEMPO_RANGES: [f64; 3] = [0.08, 0.16, 0.5];
 
 /// Fader position that leaves the level untouched. The travel above it adds gain.
 pub const FADER_UNITY: f64 = 0.75;
+
+/// Step of a jump or a move while the fine steps are on, in seconds.
+pub const FINE_MOVE_SECONDS: f64 = 0.005;
 
 /// What the interface shows about a loaded track.
 #[derive(Clone, Debug, PartialEq)]
@@ -93,6 +102,12 @@ pub struct DeckControls {
     pub fader: f64,
     /// The deck is sent to the headphones.
     pub pre_listen: bool,
+    /// Size a new loop gets.
+    pub loop_size: LoopSize,
+    pub move_mode: MoveMode,
+    pub move_size: MoveSize,
+    /// Jumps and moves go by [`FINE_MOVE_SECONDS`] instead of the move size.
+    pub move_fine: bool,
 }
 
 impl Default for DeckControls {
@@ -107,6 +122,10 @@ impl Default for DeckControls {
             pan: 0.0,
             fader: FADER_UNITY,
             pre_listen: false,
+            loop_size: LoopSize::FOUR_BEATS,
+            move_mode: MoveMode::default(),
+            move_size: MoveSize::default(),
+            move_fine: false,
         }
     }
 }
@@ -134,7 +153,31 @@ impl Default for MixerControls {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+/// The master clock and the tempo master: `docs/behavior/sync.md`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClockSnapshot {
+    /// The tempo master is chosen automatically.
+    pub auto: bool,
+    pub sync_mode: SyncMode,
+    /// The deck that is the tempo master; without one, the clock is.
+    pub master: Option<DeckId>,
+    /// Tempo the synced decks follow, in beats per minute.
+    pub bpm: f64,
+}
+
+impl Default for ClockSnapshot {
+    fn default() -> Self {
+        let published = rt::Shared::default();
+        Self {
+            auto: true,
+            sync_mode: SyncMode::default(),
+            master: None,
+            bpm: published.clock_bpm.get(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct DeckSnapshot {
     pub track: Option<TrackInfo>,
     /// Waveform data of the loaded track.
@@ -146,9 +189,41 @@ pub struct DeckSnapshot {
     pub cue_seconds: f64,
     /// Beatgrid of the loaded track, as of the last [`Engine::poll`].
     pub grid: BeatGrid,
+    /// Loop of the loaded track, as of the last [`Engine::poll`].
+    pub looping: LoopState,
+    /// Stored cues of the loaded track, as of the last [`Engine::poll`].
+    pub cues: Cues,
     pub controls: DeckControls,
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [f32; 2],
+    pub sync: bool,
+    /// Speed the deck is set to, as a ratio of the original. It is `controls.tempo_ratio`
+    /// until sync sets it.
+    pub speed: f64,
+    /// How far the beat of the deck is from that of the clock, in beats: negative behind,
+    /// positive ahead. A deck without a tempo in its grid has none.
+    pub phase: Option<f32>,
+}
+
+impl Default for DeckSnapshot {
+    fn default() -> Self {
+        Self {
+            track: None,
+            peaks: None,
+            loading: false,
+            playing: false,
+            position_seconds: 0.0,
+            cue_seconds: 0.0,
+            grid: BeatGrid::default(),
+            looping: LoopState::default(),
+            cues: Cues::default(),
+            controls: DeckControls::default(),
+            levels: [0.0; 2],
+            sync: false,
+            speed: 1.0,
+            phase: None,
+        }
+    }
 }
 
 /// State of the engine at one moment, for the interface to draw.
@@ -156,6 +231,7 @@ pub struct DeckSnapshot {
 pub struct Snapshot {
     pub decks: [DeckSnapshot; 2],
     pub mixer: MixerControls,
+    pub clock: ClockSnapshot,
     /// Peak level of the left and the right side of the master output, linear.
     pub master_levels: [f32; 2],
     /// Gain the safety limiter is applying; below one while it works.
@@ -170,8 +246,10 @@ struct DeckControl {
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     controls: DeckControls,
-    /// The grid as the processor last reported it.
+    /// The grid, the loop and the stored cues as the processor last reported them.
     grid: BeatGrid,
+    looping: LoopState,
+    cues: Cues,
     tap: TapTempo,
 }
 
@@ -191,6 +269,10 @@ pub struct Engine {
     ends: ControlEnds,
     decks: [DeckControl; 2],
     mixer: MixerControls,
+    /// The tempo master is chosen automatically.
+    clock_auto: bool,
+    sync_mode: SyncMode,
+    clock_tap: TapTempo,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
     loads_running: usize,
@@ -208,6 +290,9 @@ impl Engine {
             ends,
             decks: Default::default(),
             mixer: MixerControls::default(),
+            clock_auto: true,
+            sync_mode: SyncMode::default(),
+            clock_tap: TapTempo::default(),
             swaps_in_flight: 0,
             loads_running: 0,
             finished_loads,
@@ -218,8 +303,9 @@ impl Engine {
 
     /// Builds an engine at `rate` whose controls stand where those of `previous` stood, and
     /// its processor. The audio device changes its sample rate by replacing the processor;
-    /// this keeps the mixer as the user left it. Tracks are not carried over: they are
-    /// loaded again by whoever calls this.
+    /// this keeps the mixer, the clock and the sync of each deck as the user left them.
+    /// Tracks are not carried over: they are loaded again by whoever calls this, and the
+    /// tempo master is chosen again.
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
         let (mut engine, processor) = Self::new(rate);
         // A fresh queue holds every one of these commands, so none can be refused.
@@ -234,6 +320,30 @@ impl Engine {
             let _ = engine.send(command);
         }
         engine.mixer = previous.mixer.clone();
+        let published = &previous.ends.shared;
+        let mut clock = vec![
+            RtCommand::ClockAuto {
+                on: previous.clock_auto,
+            },
+            RtCommand::KeepBeat {
+                on: previous.sync_mode == SyncMode::Beat,
+            },
+        ];
+        // The tempo of a deck that was the tempo master may be one a clock does not take.
+        clock.extend(
+            Bpm::new(published.clock_bpm.get())
+                .ok()
+                .map(|bpm| RtCommand::ClockTempo { bpm }),
+        );
+        let synced = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].sync.get());
+        clock.extend(synced.map(|deck| RtCommand::SyncToggle { deck }));
+        for command in clock {
+            let _ = engine.send(command);
+        }
+        engine.clock_auto = previous.clock_auto;
+        engine.sync_mode = previous.sync_mode;
         (engine, processor)
     }
 
@@ -259,7 +369,111 @@ impl Engine {
                 self.send(RtCommand::Nudge { deck, amount })
             }
             Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
-            mixer => self.dispatch_grid(mixer),
+            other => self.dispatch_cues(other),
+        }
+    }
+
+    /// The commands of the stored cues. The slots and the selection are kept by the
+    /// processor, so commands in a row act on what the ones before left.
+    fn dispatch_cues(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, edit) = match command {
+            Command::DeckHotcueTrigger {
+                deck,
+                slot,
+                pressed,
+            } => (deck, CueEdit::Hotcue { slot, pressed }),
+            Command::DeckHotcueDelete { deck, slot } => (deck, CueEdit::Delete(slot)),
+            Command::DeckHotcueMap { deck, slot } => (deck, CueEdit::Map(slot)),
+            Command::DeckCueStore { deck } => (deck, CueEdit::Store),
+            Command::DeckCueSelect { deck, direction } => {
+                let forward = direction == CueStep::Next;
+                (deck, CueEdit::Step { forward })
+            }
+            Command::DeckCueRename { deck, name } => (deck, CueEdit::Rename(CueName::new(&name))),
+            Command::DeckCueTypeSet { deck, kind } => {
+                let beats = self.decks[deck.index()].controls.loop_size.beats();
+                (deck, CueEdit::Retype { kind, beats })
+            }
+            Command::DeckCueDelete { deck } => (deck, CueEdit::DeleteSelected),
+            other => return self.dispatch_loop(other),
+        };
+        self.send(RtCommand::Cues { deck, edit })
+    }
+
+    /// The commands of loops, jumps and moves. The selections of size and mode are kept
+    /// here; the processor gets what they amount to with each loop, jump or move.
+    fn dispatch_loop(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, edit) = match command {
+            Command::DeckLoopToggle { deck } => {
+                let beats = self.decks[deck.index()].controls.loop_size.beats();
+                (deck, LoopEdit::Toggle { beats })
+            }
+            Command::DeckLoopIn { deck } => (deck, LoopEdit::In),
+            Command::DeckLoopOut { deck } => (deck, LoopEdit::Out),
+            Command::DeckLoopSizeStep { deck, direction } => {
+                let size = self.decks[deck.index()].controls.loop_size;
+                let stepped = match direction {
+                    SizeStep::Down => size.smaller(),
+                    SizeStep::Up => size.larger(),
+                };
+                let Some(size) = stepped else {
+                    return Ok(());
+                };
+                let beats = size.beats();
+                self.send(RtCommand::Loop {
+                    deck,
+                    edit: LoopEdit::Resize { beats },
+                })?;
+                self.decks[deck.index()].controls.loop_size = size;
+                return Ok(());
+            }
+            Command::DeckBeatjump { deck, direction } => {
+                let by = self.move_span(deck, direction);
+                return self.send(RtCommand::Jump { deck, by });
+            }
+            Command::DeckMove { deck, direction } => {
+                let by = self.move_span(deck, direction);
+                let part = match self.decks[deck.index()].controls.move_mode {
+                    MoveMode::Beatjump => return self.send(RtCommand::Jump { deck, by }),
+                    MoveMode::Loop => LoopPart::Whole,
+                    MoveMode::LoopIn => LoopPart::In,
+                    MoveMode::LoopOut => LoopPart::Out,
+                };
+                (deck, LoopEdit::Move { part, by })
+            }
+            Command::DeckMoveModeSet { deck, mode } => {
+                self.decks[deck.index()].controls.move_mode = mode;
+                return Ok(());
+            }
+            Command::DeckMoveSizeStep { deck, direction } => {
+                let controls = &mut self.decks[deck.index()].controls;
+                if let Some(size) = controls.move_size.stepped(direction) {
+                    controls.move_size = size;
+                }
+                return Ok(());
+            }
+            Command::DeckMoveFineToggle { deck } => {
+                let controls = &mut self.decks[deck.index()].controls;
+                controls.move_fine = !controls.move_fine;
+                return Ok(());
+            }
+            other => return self.dispatch_grid(other),
+        };
+        self.send(RtCommand::Loop { deck, edit })
+    }
+
+    /// How far one jump or move of a deck goes, as its move size and fine steps stand.
+    fn move_span(&self, deck: DeckId, direction: Direction) -> Span {
+        let controls = &self.decks[deck.index()].controls;
+        if controls.move_fine {
+            return Span::Seconds(direction.sign() * FINE_MOVE_SECONDS);
+        }
+        match controls.move_size {
+            MoveSize::Beats(size) => Span::Beats(direction.sign() * size.beats()),
+            MoveSize::Loop => Span::Loop {
+                forward: direction == Direction::Forward,
+                beats: controls.loop_size.beats(),
+            },
         }
     }
 
@@ -294,9 +508,48 @@ impl Engine {
             Command::DeckGridMarkerPrevious { deck } => (deck, GridEdit::MarkerPrevious),
             Command::DeckGridMarkerNext { deck } => (deck, GridEdit::MarkerNext),
             Command::DeckGridLockToggle { deck } => (deck, GridEdit::ToggleLock),
-            mixer => return self.dispatch_channel(mixer),
+            other => return self.dispatch_sync(other),
         };
         self.send(RtCommand::Grid { deck, edit })
+    }
+
+    /// The commands of sync and of the master clock. The tempo master, the tempo of the
+    /// clock and the sync of each deck are kept by the processor, which follows what the
+    /// decks play.
+    fn dispatch_sync(&mut self, command: Command) -> Result<(), EngineError> {
+        let command = match command {
+            Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
+            Command::DeckMasterSet { deck } => RtCommand::Master { deck },
+            Command::ClockModeSet { mode } => {
+                let on = mode == ClockMode::Auto;
+                self.send(RtCommand::ClockAuto { on })?;
+                self.clock_auto = on;
+                return Ok(());
+            }
+            Command::ClockTempoSet { bpm } => RtCommand::ClockTempo {
+                bpm: Bpm::new(bpm)?,
+            },
+            Command::ClockTempoStep { amount } => {
+                let amount = ValueError::check("amount", amount, -MAX_BPM_STEP, MAX_BPM_STEP)?;
+                RtCommand::ClockStep { amount }
+            }
+            Command::ClockTap => match self.clock_tap.tap(Instant::now()) {
+                Some(bpm) => RtCommand::ClockTempo { bpm },
+                None => return Ok(()),
+            },
+            Command::ClockBend { amount } => {
+                let amount = ValueError::check("amount", amount, -MAX_NUDGE, MAX_NUDGE)? as f32;
+                RtCommand::ClockBend { amount }
+            }
+            Command::GlobalSyncModeSet { mode } => {
+                let on = mode == SyncMode::Beat;
+                self.send(RtCommand::KeepBeat { on })?;
+                self.sync_mode = mode;
+                return Ok(());
+            }
+            mixer => return self.dispatch_channel(mixer),
+        };
+        self.send(command)
     }
 
     fn set_tempo(&mut self, deck: DeckId, ratio: f64) -> Result<(), EngineError> {
@@ -479,8 +732,17 @@ impl Engine {
     /// what frees the audio of replaced tracks.
     pub fn poll(&mut self) -> Vec<Event> {
         self.collect_retired();
-        while let Ok(report) = self.ends.grids.pop() {
-            self.decks[report.deck.index()].grid = report.grid;
+        while let Ok(report) = self.ends.reports.pop() {
+            let deck = &mut self.decks[report.deck.index()];
+            if let Some(grid) = report.grid {
+                deck.grid = grid;
+            }
+            if let Some(looping) = report.looping {
+                deck.looping = looping;
+            }
+            if let Some(cues) = report.cues {
+                deck.cues = cues;
+            }
         }
         let mut events = Vec::new();
         while let Ok(finished) = self.finished_loads.try_recv() {
@@ -539,13 +801,24 @@ impl Engine {
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
                 grid: control.grid,
+                looping: control.looping,
+                cues: control.cues,
                 controls: control.controls.clone(),
                 levels: [published.levels[0].get(), published.levels[1].get()],
+                sync: published.sync.get(),
+                speed: published.speed.get(),
+                phase: Some(published.phase.get()).filter(|phase| phase.is_finite()),
             }
         };
         Snapshot {
             decks: [deck(DeckId::A), deck(DeckId::B)],
             mixer: self.mixer.clone(),
+            clock: ClockSnapshot {
+                auto: self.clock_auto,
+                sync_mode: self.sync_mode,
+                master: shared.master.get(),
+                bpm: shared.clock_bpm.get(),
+            },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
         }

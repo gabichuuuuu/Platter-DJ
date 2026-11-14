@@ -73,6 +73,19 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
   fixed-size value. In M3 the markers share the one tempo; M4 gives each marker its own (a
   flexible grid). The processor holds the grid of each deck and reports it to the control side
   after each change (`docs/decisions/0014-beatgrid-in-the-processor.md`).
+- **Loops and jumps.** The processor holds the loop of each deck too. The return of a loop to
+  its start and a beatjump move the deck at once, to the frame, and crossfade from what it was
+  playing; a seek fades out and in instead
+  (`docs/decisions/0015-jumps-that-keep-the-time.md`).
+- **Stored cues.** `Cues` in `platter-core`: eight slots and the selected one, in a fixed-size
+  value with the names in place. The processor holds the cues of each deck beside its grid
+  and its loop, so a store and the edits after it act in the order they were sent, and
+  reports them the same way (`docs/behavior/cues.md`).
+- **Sync.** The processor holds the master clock, a tempo and a place in the beat, and
+  chooses the tempo master each block. A synced deck takes its speed from the clock each
+  frame and, in the beat mode, keeps its beats on those of the clock. The tempo master, the
+  tempo of the clock, and the sync, the speed and the phase of each deck go to the control
+  side through the atomics (`docs/decisions/0016-master-clock-in-the-processor.md`).
 
 ## Engine
 

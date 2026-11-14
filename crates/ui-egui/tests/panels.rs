@@ -10,9 +10,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
-use platter_core::DeckId;
+use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::Command;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, SettingsPage};
+use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::DeckNotice;
@@ -30,6 +30,10 @@ struct State {
     scene: Scene,
     page: Option<SettingsPage>,
     notices: [Option<DeckNotice>; 2],
+    /// The page of the advanced panel each deck shows.
+    pages: [DeckPage; 2],
+    /// The hotcues of each deck are in the mapping mode.
+    mapping: [bool; 2],
 }
 
 /// The four states of the reference screens, plus one with everything that only shows
@@ -40,12 +44,20 @@ fn states() -> Vec<State> {
         scene,
         page,
         notices: [None; 2],
+        // Deck A, whose grid is not locked, shows the GRID page and deck B the MOVE page,
+        // so both are operated.
+        pages: [DeckPage::Grid, DeckPage::Move],
+        mapping: [false; 2],
     };
     let mut trouble = sample::playing();
     trouble.engine.master_levels = [1.4, 0.2];
     trouble.engine.decks[0].levels = [1.2, 1.2];
     let mut trouble = state("trouble", trouble, None);
     trouble.notices[1] = Some(DeckNotice::LoadFailed);
+    // The CUE page on both decks, and the hotcues of deck B waiting for the selected cue.
+    let mut cues = state("cues", sample::playing(), None);
+    cues.pages = [DeckPage::Cue; 2];
+    cues.mapping = [false, true];
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -60,6 +72,7 @@ fn states() -> Vec<State> {
             Some(SettingsPage::General),
         ),
         trouble,
+        cues,
     ]
 }
 
@@ -69,6 +82,8 @@ struct Stage {
     shell: Shell,
     state: State,
     time: f64,
+    /// Modifier keys held down during the frames.
+    modifiers: Modifiers,
 }
 
 impl Stage {
@@ -80,6 +95,8 @@ impl Stage {
         let mut shell = Shell::new(Language::English).unwrap();
         shell.set_texts(texts);
         shell.state.settings_page = state.page;
+        shell.state.deck_page = state.pages;
+        shell.state.cue_map = state.mapping;
         let ctx = egui::Context::default();
         shell.install(&ctx);
         let mut stage = Self {
@@ -87,6 +104,7 @@ impl Stage {
             shell,
             state: state.clone(),
             time: 0.0,
+            modifiers: Modifiers::NONE,
         };
         // Two frames, so everything that takes a frame to settle has settled.
         stage.frame(Vec::new());
@@ -95,8 +113,11 @@ impl Stage {
     }
 
     /// Draws one frame with `events` and returns what it produced.
-    fn frame(&mut self, events: Vec<Event>) -> (Vec<Action>, Vec<ClippedShape>) {
+    fn frame(&mut self, mut events: Vec<Event>) -> (Vec<Action>, Vec<ClippedShape>) {
         self.time += 1.0 / 60.0;
+        if self.modifiers != Modifiers::NONE {
+            events.insert(0, Event::ModifiersChanged(self.modifiers));
+        }
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(
                 Pos2::ZERO,
@@ -250,6 +271,163 @@ fn every_control_emits_its_command() {
         }
     }
     assert!(operated > 150, "{operated} controls operated");
+}
+
+#[test]
+fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for pages in [
+            [DeckPage::Grid, DeckPage::Move],
+            [DeckPage::Move, DeckPage::Grid],
+            [DeckPage::Cue, DeckPage::Cue],
+        ] {
+            // The states with the preferences open have the decks behind the dialog.
+            for state in states().into_iter().filter(|state| state.page.is_none()) {
+                let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+                stage.shell.state.deck_page = pages;
+                stage.frame(Vec::new());
+                stage.frame(Vec::new());
+                let controls: Vec<Control> = stage
+                    .controls()
+                    .into_iter()
+                    .filter(|control| control.command.starts_with("deck."))
+                    .collect();
+                assert!(controls.len() > 20, "{}", controls.len());
+                for (index, first) in controls.iter().enumerate() {
+                    for second in &controls[index + 1..] {
+                        let shared = first.rect.intersect(second.rect);
+                        assert!(
+                            shared.width() < 0.5 || shared.height() < 0.5,
+                            "{}, {language:?}, {pages:?}: {} at {:?} overlaps {} at {:?}",
+                            state.name,
+                            first.command,
+                            first.rect,
+                            second.command,
+                            second.rect,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The first hotcue of deck A, which holds a cue in the sample scene.
+fn first_pad(stage: &Stage) -> Control {
+    stage
+        .controls()
+        .into_iter()
+        .find(|control| control.command == "deck.hotcue.trigger")
+        .unwrap()
+}
+
+#[test]
+fn shift_and_a_press_on_a_hotcue_delete_its_cue_and_the_release_sends_nothing() {
+    let mut stage = Stage::new(&states()[0]);
+    let centre = first_pad(&stage).rect.center();
+    stage.modifiers = Modifiers::SHIFT;
+    stage.pointer(centre, None);
+    let pressed = stage.pointer(centre, Some(true));
+    assert_eq!(
+        pressed,
+        vec![Action::Engine(Command::DeckHotcueDelete {
+            deck: DeckId::A,
+            slot: HotcueSlot::ALL[0],
+        })]
+    );
+    assert!(stage.pointer(centre, Some(false)).is_empty());
+}
+
+#[test]
+fn a_hotcue_sends_its_press_and_its_release_with_its_slot() {
+    let mut stage = Stage::new(&states()[0]);
+    let centre = first_pad(&stage).rect.center();
+    let trigger = |pressed| {
+        vec![Action::Engine(Command::DeckHotcueTrigger {
+            deck: DeckId::A,
+            slot: HotcueSlot::ALL[0],
+            pressed,
+        })]
+    };
+    stage.pointer(centre, None);
+    assert_eq!(stage.pointer(centre, Some(true)), trigger(true));
+    assert_eq!(stage.pointer(centre, Some(false)), trigger(false));
+}
+
+#[test]
+fn a_hotcue_in_the_mapping_mode_takes_the_selected_cue_and_ends_the_mode() {
+    let state = states()
+        .into_iter()
+        .find(|state| state.name == "cues")
+        .unwrap();
+    let mut stage = Stage::new(&state);
+    let pads: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "deck.hotcue.map")
+        .collect();
+    assert_eq!(pads.len(), 8, "the eight hotcues of deck B");
+    let actions = stage.click(pads[6].rect.center());
+    assert_eq!(
+        actions,
+        vec![
+            Action::Engine(Command::DeckHotcueMap {
+                deck: DeckId::B,
+                slot: HotcueSlot::ALL[6],
+            }),
+            Action::App(AppCommand::DeckCueMapToggle { deck: DeckId::B }),
+        ]
+    );
+}
+
+#[test]
+fn the_mapping_mode_ends_when_no_cue_is_selected() {
+    let mut state = states()
+        .into_iter()
+        .find(|state| state.name == "cues")
+        .unwrap();
+    // The selected cue of deck B is deleted while its hotcues wait for it.
+    let cues = &mut state.scene.engine.decks[1].cues;
+    let selected = cues.selected().unwrap();
+    cues.delete(selected);
+    let stage = Stage::new(&state);
+    let controls = stage.controls();
+    assert!(
+        controls
+            .iter()
+            .all(|control| control.command != "deck.hotcue.map")
+    );
+    let pads = controls
+        .iter()
+        .filter(|control| control.command == "deck.hotcue.trigger" && control.enabled)
+        .count();
+    assert_eq!(pads, 16, "the hotcues of both decks act again");
+    assert!(!stage.shell.state.cue_map[1]);
+}
+
+#[test]
+fn the_type_list_of_a_cue_picks_its_last_option() {
+    let state = states()
+        .into_iter()
+        .find(|state| state.name == "cues")
+        .unwrap();
+    let mut stage = Stage::new(&state);
+    // Deck B: its selected cue is of the type cue, and its grid has a tempo.
+    let list = stage
+        .controls()
+        .into_iter()
+        .rfind(|control| control.command == "deck.cue.type.set")
+        .unwrap();
+    assert!(stage.click(list.rect.center()).is_empty());
+    // The fifth row of the list that hangs below the field.
+    let row = list.rect.center_bottom() + egui::vec2(0.0, 2.0 + 14.0 + 28.0 * 4.0);
+    assert_eq!(
+        stage.click(row),
+        vec![Action::Engine(Command::DeckCueTypeSet {
+            deck: DeckId::B,
+            kind: CueKind::Loop,
+        })]
+    );
 }
 
 #[test]
@@ -468,6 +646,11 @@ fn texts_of(shapes: &[ClippedShape]) -> Vec<String> {
 fn data_of(scene: &Scene) -> BTreeSet<String> {
     let mut data = BTreeSet::new();
     for deck in &scene.engine.decks {
+        data.extend(
+            deck.cues
+                .iter()
+                .map(|(_, cue)| cue.name.as_str().to_owned()),
+        );
         if let Some(track) = &deck.track {
             let tags = &track.tags;
             data.extend(
@@ -635,6 +818,21 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "deck.grid.marker.previous",
         "deck.grid.marker.next",
         "deck.grid.lock.toggle",
+        "deck.loop.toggle",
+        "deck.loop.in",
+        "deck.loop.out",
+        "deck.loop.size.step",
+        "deck.beatjump",
+        "deck.move",
+        "deck.move.mode.set",
+        "deck.move.size.step",
+        "deck.move.fine.toggle",
+        "deck.hotcue.trigger",
+        "deck.hotcue.map",
+        "deck.cue.store",
+        "deck.cue.select",
+        "deck.cue.type.set",
+        "deck.cue.delete",
         "mixer.gain.set",
         "mixer.eq.set",
         "mixer.eq.kill.toggle",
@@ -776,14 +974,26 @@ fn no_panel_paints_a_colour_outside_the_design_tokens() {
                 state.name
             );
         }
-        // The frame really shows the theme: the background, the panels and the deck hues.
+        // The frame really shows the theme: the background, the panels and the deck hues;
+        // where a deck has a loop, the brackets of the loop; and where it has a cue in its
+        // first slot, the colour of that slot.
+        let looped = state.scene.engine.decks[0].looping.region.is_some();
+        let cued = state.scene.engine.decks[0]
+            .cues
+            .get(HotcueSlot::ALL[0])
+            .is_some();
         for token in [
+            "hotcue-1",
             "bg-app",
             "surface-panel",
             "text-primary",
             "deck-a",
             "deck-b",
+            "loop-region",
         ] {
+            if (token == "loop-region" && !looped) || (token == "hotcue-1" && !cued) {
+                continue;
+            }
             assert!(
                 seen.contains(&tokens.all_colors[token]),
                 "{}: {token} is not painted",

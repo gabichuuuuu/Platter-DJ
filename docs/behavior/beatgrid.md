@@ -63,10 +63,11 @@ Several tempos along one track are M4.
   and marker as a brighter line over it. A marker is a downbeat and every fourth beat after it
   is the next one; before the first marker the bars count back from it. The overview shows no
   grid.
-- Each deck has two rows of the GRID page above its transport keys. The first: the tempo
-  field, halve, double, tap, move the marker earlier or later by 5 ms, and the lock at its
-  end, lit while the grid is locked. The second: lower and raise the tempo by 0.01 BPM, then
-  the previous marker, set a marker, the next marker and delete.
+- The GRID page of a deck is two rows above its transport keys, shown when the switch of
+  the advanced panel is on GRID (`docs/behavior/loops.md`). The first: the tempo
+  field, lower and raise the tempo by 0.01 BPM, halve, double, tap, move the marker earlier
+  or later by 5 ms, and the lock at its end, lit while the grid is locked. The second: the
+  previous marker, set a marker, the next marker and delete.
 - The tempo field shows the tempo of the grid, or `--.--` without one. Dragging it up or down
   sets the tempo, 0.05 BPM per pixel, a tenth of that with Shift; with the focus the arrows
   step it by 0.01 BPM and Page Up and Page Down by 1 BPM. Without a tempo in the grid the
@@ -92,8 +93,7 @@ that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
   single tempo Platter steps the tempo by the amount the command carries.
 - The tempo field cannot be typed into yet: it is dragged or stepped. Typing comes with the
   text field of the browser search, later in M3.
-- The GRID page is always shown; the MOVE and CUE pages, and the switch between the three,
-  come with loops and hotcues. The reset buttons and the beat tick come with the analysis.
+- The reset buttons and the beat tick come with the analysis.
 - The selected marker is the one on or before the play position, as the reference product
   selects it. Platter has no separate selection.
 - The grid lives with the loaded track and is lost when the track is loaded again, which a

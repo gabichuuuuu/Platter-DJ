@@ -123,6 +123,7 @@ token_group! {
         meter_clip => "meter-clip",
         grid_beat => "grid-beat",
         grid_downbeat => "grid-downbeat",
+        loop_region => "loop-region",
     }
 }
 
@@ -186,6 +187,8 @@ pub struct Tokens {
     pub stroke: Strokes,
     pub size: Sizes,
     pub text: TextStyles,
+    /// The colours of the eight hotcue slots, in their order.
+    pub hotcue: [Color32; 8],
     /// Every colour of the file by its name, including those no panel uses yet.
     pub all_colors: BTreeMap<String, Color32>,
 }
@@ -328,8 +331,14 @@ impl Tokens {
             .keys()
             .map(|name| Ok((name.clone(), resolve_color(colors, name, 0)?)))
             .collect::<Result<_, TokenError>>()?;
+        let color = Palette::read(&source)?;
+        let mut hotcue = [Color32::TRANSPARENT; 8];
+        for (index, slot) in hotcue.iter_mut().enumerate() {
+            *slot = resolve_color(colors, &format!("hotcue-{}", index + 1), 0)?;
+        }
         Ok(Self {
-            color: Palette::read(&source)?,
+            hotcue,
+            color,
             space: Spacing::read(&source)?,
             radius: Radius::read(&source)?,
             stroke: Strokes::read(&source)?,

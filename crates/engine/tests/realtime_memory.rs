@@ -6,8 +6,11 @@
 mod common;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::DeckId;
-use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output};
+use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_engine::{
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
+    SizeStep, SyncMode,
+};
 use platter_testkit::alloc::{CountingAllocator, count};
 
 #[global_allocator]
@@ -123,9 +126,149 @@ fn commands() -> Vec<Command> {
         Command::DeckGridLockToggle { deck: A },
         Command::DeckGridTap { deck: B },
         Command::DeckPlay { deck: A },
+        Command::DeckGridBpmSet {
+            deck: A,
+            bpm: 400.0,
+        },
+        // A loop of 1/32 of a beat at 400 BPM is 225 frames: it returns to its start
+        // twice in each block of 512.
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Down,
+        },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopSizeStep {
+            deck: A,
+            direction: SizeStep::Up,
+        },
+        Command::DeckBeatjump {
+            deck: A,
+            direction: Direction::Back,
+        },
+        Command::DeckMoveModeSet {
+            deck: A,
+            mode: MoveMode::Loop,
+        },
+        Command::DeckMove {
+            deck: A,
+            direction: Direction::Forward,
+        },
+        Command::DeckMoveFineToggle { deck: A },
+        Command::DeckMoveModeSet {
+            deck: A,
+            mode: MoveMode::LoopOut,
+        },
+        Command::DeckMove {
+            deck: A,
+            direction: Direction::Back,
+        },
+        Command::DeckMoveSizeStep {
+            deck: A,
+            direction: SizeStep::Up,
+        },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopIn { deck: A },
+        Command::DeckLoopOut { deck: A },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopToggle { deck: A },
+        hotcue(1, true),
+        hotcue(1, false),
+        Command::DeckLoopToggle { deck: A },
+        hotcue(2, true),
+        Command::DeckCueStore { deck: A },
+        Command::DeckCueTypeSet {
+            deck: A,
+            kind: CueKind::Loop,
+        },
+        Command::DeckCueRename {
+            deck: A,
+            name: "A name longer than the forty-eight bytes a cue keeps".to_owned(),
+        },
+        Command::DeckHotcueMap {
+            deck: A,
+            slot: HotcueSlot::ALL[7],
+        },
+        hotcue(1, true),
+        hotcue(1, false),
+        Command::DeckCueSelect {
+            deck: A,
+            direction: CueStep::Next,
+        },
+        Command::DeckCueSelect {
+            deck: A,
+            direction: CueStep::Previous,
+        },
+        Command::DeckCueDelete { deck: A },
+        Command::DeckHotcueDelete {
+            deck: A,
+            slot: HotcueSlot::ALL[0],
+        },
+        // Sync: deck B follows deck A and moves onto its beat, then follows the clock.
+        Command::DeckPlay { deck: A },
+        Command::DeckGridBpmSet {
+            deck: B,
+            bpm: 100.0,
+        },
+        Command::DeckSyncToggle { deck: B },
+        Command::DeckSeek {
+            deck: B,
+            seconds: 1.13,
+        },
+        Command::GlobalSyncModeSet {
+            mode: SyncMode::Tempo,
+        },
+        Command::GlobalSyncModeSet {
+            mode: SyncMode::Beat,
+        },
+        Command::ClockModeSet {
+            mode: ClockMode::Master,
+        },
+        Command::ClockTempoSet { bpm: 128.0 },
+        Command::ClockTempoStep { amount: -0.5 },
+        Command::ClockBend { amount: 0.1 },
+        Command::ClockBend { amount: 0.0 },
+        Command::ClockTap,
+        Command::DeckMasterSet { deck: B },
+        Command::DeckSyncToggle { deck: A },
+        Command::ClockModeSet {
+            mode: ClockMode::Auto,
+        },
+        Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },
     ]
+}
+
+fn hotcue(number: usize, pressed: bool) -> Command {
+    Command::DeckHotcueTrigger {
+        deck: DeckId::A,
+        slot: HotcueSlot::ALL[number - 1],
+        pressed,
+    }
 }
 
 #[test]

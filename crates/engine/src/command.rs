@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-use platter_core::{Bpm, DeckId, ValueError};
+use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
@@ -113,6 +113,83 @@ pub enum Command {
     DeckGridLockToggle {
         deck: DeckId,
     },
+    /// Switches the loop off, or starts one of the selected size at the play position.
+    DeckLoopToggle {
+        deck: DeckId,
+    },
+    /// Sets the in point of a loop at the play position.
+    DeckLoopIn {
+        deck: DeckId,
+    },
+    /// Ends the loop at the play position and switches it on.
+    DeckLoopOut {
+        deck: DeckId,
+    },
+    /// Selects the loop size before or after; a loop that is on takes it.
+    DeckLoopSizeStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Moves the play position by the move size.
+    DeckBeatjump {
+        deck: DeckId,
+        direction: Direction,
+    },
+    /// Moves what the move mode says by the move size.
+    DeckMove {
+        deck: DeckId,
+        direction: Direction,
+    },
+    DeckMoveModeSet {
+        deck: DeckId,
+        mode: MoveMode,
+    },
+    DeckMoveSizeStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Switches the fine steps of the moves on or off.
+    DeckMoveFineToggle {
+        deck: DeckId,
+    },
+    /// The key of a hotcue, pressed or released: stores into an empty slot, goes to a stored
+    /// cue. See `docs/behavior/cues.md`.
+    DeckHotcueTrigger {
+        deck: DeckId,
+        slot: HotcueSlot,
+        pressed: bool,
+    },
+    DeckHotcueDelete {
+        deck: DeckId,
+        slot: HotcueSlot,
+    },
+    /// Moves the selected cue to a slot.
+    DeckHotcueMap {
+        deck: DeckId,
+        slot: HotcueSlot,
+    },
+    /// Stores the floating cue, or the loop that is on, in the first empty slot.
+    DeckCueStore {
+        deck: DeckId,
+    },
+    /// Goes to the stored cue before or after the play position.
+    DeckCueSelect {
+        deck: DeckId,
+        direction: CueStep,
+    },
+    /// Names the selected cue.
+    DeckCueRename {
+        deck: DeckId,
+        name: String,
+    },
+    DeckCueTypeSet {
+        deck: DeckId,
+        kind: CueKind,
+    },
+    /// Deletes the selected cue.
+    DeckCueDelete {
+        deck: DeckId,
+    },
     MixerGainSet {
         deck: DeckId,
         db: f64,
@@ -168,6 +245,32 @@ pub enum Command {
     /// Plays a short tone on one output, to check the routing.
     MasterTestTone {
         output: Output,
+    },
+    DeckSyncToggle {
+        deck: DeckId,
+    },
+    /// Makes the deck the tempo master, while the mode of the clock is not automatic.
+    DeckMasterSet {
+        deck: DeckId,
+    },
+    ClockModeSet {
+        mode: ClockMode,
+    },
+    /// Tempo of the clock in beats per minute.
+    ClockTempoSet {
+        bpm: f64,
+    },
+    /// Adds beats per minute to the tempo of the clock.
+    ClockTempoStep {
+        amount: f64,
+    },
+    ClockTap,
+    /// The clock runs this fraction slower or faster until it is set back to zero.
+    ClockBend {
+        amount: f64,
+    },
+    GlobalSyncModeSet {
+        mode: SyncMode,
     },
 }
 
@@ -225,6 +328,127 @@ const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
 const BPM_SCALES: &[&str] = &["double", "half"];
+const DIRECTIONS: &[&str] = &["back", "forward"];
+const SIZE_STEPS: &[&str] = &["down", "up"];
+const MOVE_MODES: &[&str] = &["beatjump", "loop", "loop_in", "loop_out"];
+const CUE_STEPS: &[&str] = &["previous", "next"];
+const CUE_TYPES: &[&str] = &["cue", "fade_in", "fade_out", "load", "loop"];
+const CLOCK_MODES: &[&str] = &["auto", "master"];
+const SYNC_MODES: &[&str] = &["tempo", "beat"];
+
+/// Who the tempo master is: `docs/behavior/sync.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockMode {
+    /// The deck that starts to play, chosen by the engine.
+    Auto,
+    /// The clock, until `deck.master.set` names a deck.
+    Master,
+}
+
+/// What the sync of a deck locks to the tempo master.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SyncMode {
+    /// The tempo alone.
+    Tempo,
+    /// The tempo and the place in the beat.
+    #[default]
+    Beat,
+}
+
+impl SyncMode {
+    pub const ALL: [Self; 2] = [Self::Tempo, Self::Beat];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Tempo => "tempo",
+            Self::Beat => "beat",
+        }
+    }
+}
+
+/// Which neighbour of the play position `deck.cue.select` goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CueStep {
+    Previous,
+    Next,
+}
+
+/// Which way a jump or a move goes along the track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Back,
+    Forward,
+}
+
+impl Direction {
+    pub fn sign(self) -> f64 {
+        match self {
+            Self::Back => -1.0,
+            Self::Forward => 1.0,
+        }
+    }
+}
+
+/// Which way a step through a list of sizes goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SizeStep {
+    Down,
+    Up,
+}
+
+/// What `deck.move` moves.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MoveMode {
+    /// The play position.
+    #[default]
+    Beatjump,
+    /// Both ends of the loop.
+    Loop,
+    LoopIn,
+    LoopOut,
+}
+
+impl MoveMode {
+    pub const ALL: [Self; 4] = [Self::Beatjump, Self::Loop, Self::LoopIn, Self::LoopOut];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Beatjump => "beatjump",
+            Self::Loop => "loop",
+            Self::LoopIn => "loop_in",
+            Self::LoopOut => "loop_out",
+        }
+    }
+}
+
+/// How far a jump or a move goes: one of the preset sizes or the length of the loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveSize {
+    Beats(LoopSize),
+    /// The length of the loop that is on, or the selected loop size without one. It is the
+    /// entry after the largest preset size.
+    Loop,
+}
+
+impl Default for MoveSize {
+    fn default() -> Self {
+        Self::Beats(LoopSize::ONE_BEAT)
+    }
+}
+
+impl MoveSize {
+    /// The entry before or after this one, when there is one.
+    pub fn stepped(self, direction: SizeStep) -> Option<Self> {
+        match (self, direction) {
+            (Self::Beats(size), SizeStep::Down) => size.smaller().map(Self::Beats),
+            (Self::Beats(size), SizeStep::Up) => {
+                Some(size.larger().map_or(Self::Loop, Self::Beats))
+            }
+            (Self::Loop, SizeStep::Down) => Some(Self::Beats(LoopSize::LARGEST)),
+            (Self::Loop, SizeStep::Up) => None,
+        }
+    }
+}
 
 /// How `deck.grid.bpm.scale` changes the tempo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -246,6 +470,18 @@ const BAND: ParamSpec = ParamSpec {
     name: "band",
     kind: ParamKind::Choice(BANDS),
 };
+
+const DIRECTION: ParamSpec = ParamSpec {
+    name: "direction",
+    kind: ParamKind::Choice(DIRECTIONS),
+};
+
+const SIZE_STEP: ParamSpec = ParamSpec {
+    name: "direction",
+    kind: ParamKind::Choice(SIZE_STEPS),
+};
+
+const SLOT: ParamSpec = number("slot", 1.0, HotcueSlot::COUNT as f64);
 
 /// Whether a button that acts while held is being pressed or released.
 const BUTTON_ACTION: ParamSpec = ParamSpec {
@@ -386,6 +622,115 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.loop.toggle",
+        label: "Loop",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.in",
+        label: "Loop in",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.out",
+        label: "Loop out",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.loop.size.step",
+        label: "Halve or double loop size",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.beatjump",
+        label: "Beatjump",
+        params: &[DECK, DIRECTION],
+    },
+    CommandSpec {
+        id: "deck.move",
+        label: "Move",
+        params: &[DECK, DIRECTION],
+    },
+    CommandSpec {
+        id: "deck.move.mode.set",
+        label: "Set move mode",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice(MOVE_MODES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.move.size.step",
+        label: "Step move size",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.move.fine.toggle",
+        label: "Fine move steps",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.hotcue.trigger",
+        label: "Hotcue",
+        params: &[DECK, SLOT, BUTTON_ACTION],
+    },
+    CommandSpec {
+        id: "deck.hotcue.delete",
+        label: "Delete hotcue",
+        params: &[DECK, SLOT],
+    },
+    CommandSpec {
+        id: "deck.hotcue.map",
+        label: "Move selected cue to hotcue",
+        params: &[DECK, SLOT],
+    },
+    CommandSpec {
+        id: "deck.cue.store",
+        label: "Store cue",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.cue.select",
+        label: "Previous or next stored cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "direction",
+                kind: ParamKind::Choice(CUE_STEPS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.rename",
+        label: "Rename selected cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "name",
+                kind: ParamKind::Text,
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.type.set",
+        label: "Set type of selected cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "type",
+                kind: ParamKind::Choice(CUE_TYPES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.delete",
+        label: "Delete selected cue",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "mixer.gain.set",
         label: "Set channel gain",
         params: &[DECK, number("db", MIN_GAIN_DB, MAX_CHANNEL_GAIN_DB)],
@@ -454,6 +799,52 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[ParamSpec {
             name: "output",
             kind: ParamKind::Choice(OUTPUTS),
+        }],
+    },
+    CommandSpec {
+        id: "deck.sync.toggle",
+        label: "Sync",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.master.set",
+        label: "Make tempo master",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "clock.mode.set",
+        label: "Set tempo master mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(CLOCK_MODES),
+        }],
+    },
+    CommandSpec {
+        id: "clock.tempo.set",
+        label: "Set clock tempo",
+        params: &[number("bpm", Bpm::MIN, Bpm::MAX)],
+    },
+    CommandSpec {
+        id: "clock.tempo.step",
+        label: "Step clock tempo",
+        params: &[number("amount", -MAX_BPM_STEP, MAX_BPM_STEP)],
+    },
+    CommandSpec {
+        id: "clock.tap",
+        label: "Tap clock tempo",
+        params: &[],
+    },
+    CommandSpec {
+        id: "clock.bend",
+        label: "Bend clock tempo",
+        params: &[number("amount", -MAX_NUDGE, MAX_NUDGE)],
+    },
+    CommandSpec {
+        id: "global.sync.mode.set",
+        label: "Set sync mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(SYNC_MODES),
         }],
     },
 ];
@@ -588,6 +979,65 @@ impl Reader<'_> {
         }
     }
 
+    fn direction(&self) -> Result<Direction, CommandError> {
+        match self.text("direction")? {
+            "back" => Ok(Direction::Back),
+            "forward" => Ok(Direction::Forward),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "back, forward",
+            })),
+        }
+    }
+
+    fn size_step(&self) -> Result<SizeStep, CommandError> {
+        match self.text("direction")? {
+            "down" => Ok(SizeStep::Down),
+            "up" => Ok(SizeStep::Up),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "down, up",
+            })),
+        }
+    }
+
+    fn move_mode(&self) -> Result<MoveMode, CommandError> {
+        let name = self.text("mode")?;
+        MoveMode::ALL
+            .into_iter()
+            .find(|mode| mode.name() == name)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "beatjump, loop, loop_in, loop_out",
+            }))
+    }
+
+    fn slot(&self) -> Result<HotcueSlot, CommandError> {
+        Ok(HotcueSlot::from_number(self.number("slot")?)?)
+    }
+
+    fn cue_step(&self) -> Result<CueStep, CommandError> {
+        match self.text("direction")? {
+            "previous" => Ok(CueStep::Previous),
+            "next" => Ok(CueStep::Next),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "previous, next",
+            })),
+        }
+    }
+
+    fn cue_kind(&self) -> Result<CueKind, CommandError> {
+        let name = self.text("type")?;
+        CueKind::ALL
+            .into_iter()
+            .find(|kind| kind.name() == name)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "type",
+                expected: "cue, fade_in, fade_out, load, loop",
+            }))
+    }
+
     fn output(&self) -> Result<Output, CommandError> {
         match self.text("output")? {
             "master" => Ok(Output::Master),
@@ -595,6 +1045,28 @@ impl Reader<'_> {
             _ => Err(CommandError::Value(ValueError::UnknownChoice {
                 name: "output",
                 expected: "master, headphones",
+            })),
+        }
+    }
+
+    fn clock_mode(&self) -> Result<ClockMode, CommandError> {
+        match self.text("mode")? {
+            "auto" => Ok(ClockMode::Auto),
+            "master" => Ok(ClockMode::Master),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "auto, master",
+            })),
+        }
+    }
+
+    fn sync_mode(&self) -> Result<SyncMode, CommandError> {
+        match self.text("mode")? {
+            "tempo" => Ok(SyncMode::Tempo),
+            "beat" => Ok(SyncMode::Beat),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "tempo, beat",
             })),
         }
     }
@@ -630,6 +1102,19 @@ impl Command {
             "deck.play" => Self::DeckPlay { deck: read.deck()? },
             "deck.pause" => Self::DeckPause { deck: read.deck()? },
             "deck.play_pause" => Self::DeckPlayPause { deck: read.deck()? },
+            stored
+                if stored.starts_with("deck.hotcue.")
+                    || matches!(
+                        stored,
+                        "deck.cue.store"
+                            | "deck.cue.select"
+                            | "deck.cue.rename"
+                            | "deck.cue.type.set"
+                            | "deck.cue.delete"
+                    ) =>
+            {
+                return Self::stored_cue_from_args(stored, &read);
+            }
             "deck.cue.set" => Self::DeckCueSet { deck: read.deck()? },
             "deck.cue.goto" => Self::DeckCueGoto { deck: read.deck()? },
             "deck.cue" => Self::DeckCue {
@@ -654,7 +1139,97 @@ impl Command {
             },
             "deck.tempo.range.cycle" => Self::DeckTempoRangeCycle { deck: read.deck()? },
             grid if grid.starts_with("deck.grid.") => return Self::grid_from_args(grid, &read),
+            "deck.loop.toggle" => Self::DeckLoopToggle { deck: read.deck()? },
+            "deck.loop.in" => Self::DeckLoopIn { deck: read.deck()? },
+            "deck.loop.out" => Self::DeckLoopOut { deck: read.deck()? },
+            "deck.loop.size.step" => Self::DeckLoopSizeStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.beatjump" => Self::DeckBeatjump {
+                deck: read.deck()?,
+                direction: read.direction()?,
+            },
+            "deck.move" => Self::DeckMove {
+                deck: read.deck()?,
+                direction: read.direction()?,
+            },
+            "deck.move.mode.set" => Self::DeckMoveModeSet {
+                deck: read.deck()?,
+                mode: read.move_mode()?,
+            },
+            "deck.move.size.step" => Self::DeckMoveSizeStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
+            sync if sync.starts_with("clock.")
+                || matches!(
+                    sync,
+                    "deck.sync.toggle" | "deck.master.set" | "global.sync.mode.set"
+                ) =>
+            {
+                return Self::sync_from_args(sync, &read);
+            }
             mixer => return Self::mixer_from_args(mixer, &read),
+        })
+    }
+
+    fn sync_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        Ok(match id {
+            "deck.sync.toggle" => Self::DeckSyncToggle { deck: read.deck()? },
+            "deck.master.set" => Self::DeckMasterSet { deck: read.deck()? },
+            "clock.mode.set" => Self::ClockModeSet {
+                mode: read.clock_mode()?,
+            },
+            "clock.tempo.set" => Self::ClockTempoSet {
+                bpm: read.number("bpm")?,
+            },
+            "clock.tempo.step" => Self::ClockTempoStep {
+                amount: read.number("amount")?,
+            },
+            "clock.tap" => Self::ClockTap,
+            "clock.bend" => Self::ClockBend {
+                amount: read.number("amount")?,
+            },
+            "global.sync.mode.set" => Self::GlobalSyncModeSet {
+                mode: read.sync_mode()?,
+            },
+            other => return Err(CommandError::UnknownCommand(other.to_owned())),
+        })
+    }
+
+    fn stored_cue_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        let deck = read.deck()?;
+        Ok(match id {
+            "deck.hotcue.trigger" => Self::DeckHotcueTrigger {
+                deck,
+                slot: read.slot()?,
+                pressed: read.pressed()?,
+            },
+            "deck.hotcue.delete" => Self::DeckHotcueDelete {
+                deck,
+                slot: read.slot()?,
+            },
+            "deck.hotcue.map" => Self::DeckHotcueMap {
+                deck,
+                slot: read.slot()?,
+            },
+            "deck.cue.store" => Self::DeckCueStore { deck },
+            "deck.cue.select" => Self::DeckCueSelect {
+                deck,
+                direction: read.cue_step()?,
+            },
+            "deck.cue.rename" => Self::DeckCueRename {
+                deck,
+                name: read.text("name")?.to_owned(),
+            },
+            "deck.cue.type.set" => Self::DeckCueTypeSet {
+                deck,
+                kind: read.cue_kind()?,
+            },
+            "deck.cue.delete" => Self::DeckCueDelete { deck },
+            other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
 
@@ -763,6 +1338,23 @@ impl Command {
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
             Self::DeckGridLockToggle { .. } => "deck.grid.lock.toggle",
+            Self::DeckLoopToggle { .. } => "deck.loop.toggle",
+            Self::DeckLoopIn { .. } => "deck.loop.in",
+            Self::DeckLoopOut { .. } => "deck.loop.out",
+            Self::DeckLoopSizeStep { .. } => "deck.loop.size.step",
+            Self::DeckBeatjump { .. } => "deck.beatjump",
+            Self::DeckMove { .. } => "deck.move",
+            Self::DeckMoveModeSet { .. } => "deck.move.mode.set",
+            Self::DeckMoveSizeStep { .. } => "deck.move.size.step",
+            Self::DeckMoveFineToggle { .. } => "deck.move.fine.toggle",
+            Self::DeckHotcueTrigger { .. } => "deck.hotcue.trigger",
+            Self::DeckHotcueDelete { .. } => "deck.hotcue.delete",
+            Self::DeckHotcueMap { .. } => "deck.hotcue.map",
+            Self::DeckCueStore { .. } => "deck.cue.store",
+            Self::DeckCueSelect { .. } => "deck.cue.select",
+            Self::DeckCueRename { .. } => "deck.cue.rename",
+            Self::DeckCueTypeSet { .. } => "deck.cue.type.set",
+            Self::DeckCueDelete { .. } => "deck.cue.delete",
             Self::MixerGainSet { .. } => "mixer.gain.set",
             Self::MixerEqSet { .. } => "mixer.eq.set",
             Self::MixerEqKillToggle { .. } => "mixer.eq.kill.toggle",
@@ -776,6 +1368,14 @@ impl Command {
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
+            Self::DeckSyncToggle { .. } => "deck.sync.toggle",
+            Self::DeckMasterSet { .. } => "deck.master.set",
+            Self::ClockModeSet { .. } => "clock.mode.set",
+            Self::ClockTempoSet { .. } => "clock.tempo.set",
+            Self::ClockTempoStep { .. } => "clock.tempo.step",
+            Self::ClockTap => "clock.tap",
+            Self::ClockBend { .. } => "clock.bend",
+            Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
         }
     }
 }

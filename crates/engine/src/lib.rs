@@ -13,14 +13,17 @@ pub mod rt;
 mod tap;
 mod wav;
 
-pub use command::{BpmScale, Command, CommandError};
+pub use command::{
+    BpmScale, ClockMode, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
+    SyncMode,
+};
 pub use control::{
-    DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY, MixerControls, Snapshot,
-    TEMPO_RANGES, TrackInfo,
+    ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
+    FINE_MOVE_SECONDS, MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use peaks::WaveformPeaks;
 pub use platter_dsp::crossfade::CrossfaderCurve;
 pub use platter_dsp::eq::Band;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
-pub use rt::{Output, Processor};
+pub use rt::{LoopState, Output, Processor};
 pub use wav::WavWriter;

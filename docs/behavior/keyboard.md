@@ -50,6 +50,9 @@ The default table:
 | Pre-listen | 4 | 7 |
 | Load selected track | Shift + Left | Shift + Right |
 | Zoom out, in | F1, F2 | F3, F4 |
+| Loop on or off | A | L |
+| Loop size down, up | S, D | J, K |
+| Beatjump back, forward | E, R | U, I |
 
 Ctrl and comma opens the preferences.
 

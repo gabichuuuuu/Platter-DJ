@@ -37,7 +37,9 @@ while held, to correct the offset between two tracks by hand.
 
 - Play, pause, seek, eject and a track change apply a 5 ms fade, so none of them cuts the
   waveform. A seek while playing fades out, jumps and fades in.
-- Tempo and nudge follow a 20 ms ramp.
+- Tempo and nudge follow a 20 ms ramp. A deck that does not sound takes a new tempo at once.
+- While the sync of a deck is on, the tempo master sets its speed and `deck.tempo.set` has
+  no effect on it: `docs/behavior/sync.md`.
 - There is no key lock until M3: pitch follows speed.
 - The deck stops by itself at the end of the track and stays there.
 - Commands sent right after a load apply to the track that arrives: load, seek and play in a
@@ -52,6 +54,9 @@ while held, to correct the offset between two tracks by hand.
 | Paused, at the cue point | Plays while held | Returns to the cue point and pauses |
 
 Play pressed while the button holds a preview keeps the deck playing after the release.
+
+The key of a stored hotcue pressed on a paused deck moves the cue point to that hotcue and
+holds the same preview (`docs/behavior/cues.md`).
 
 ### The CUP button
 

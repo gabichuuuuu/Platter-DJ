@@ -28,6 +28,21 @@ pub fn duration(seconds: f64) -> String {
 }
 
 /// A tempo in beats per minute with two decimals: `124.00`.
+/// A place in a track to the millisecond: `02:48.200`.
+pub fn position(seconds: f64) -> String {
+    let millis = if seconds.is_finite() {
+        (seconds.max(0.0) * 1_000.0).round() as u64
+    } else {
+        0
+    };
+    format!(
+        "{:02}:{:02}.{:03}",
+        millis / 60_000,
+        millis / 1_000 % 60,
+        millis % 1_000
+    )
+}
+
 pub fn bpm(value: f64) -> String {
     format!("{value:.2}")
 }

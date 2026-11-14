@@ -7,10 +7,12 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::DeckId;
-use platter_core::{Bpm, MAX_MARKERS};
+use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
-use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output, TEMPO_RANGES};
+use platter_engine::{
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
+    SizeStep, SyncMode, TEMPO_RANGES,
+};
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
 /// Three files to load: two tracks and one that does not exist.
@@ -66,6 +68,48 @@ fn later_command() -> impl Strategy<Value = Command> {
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),
         grid_command(),
+        loop_command(),
+        cue_command(),
+    ]
+}
+
+/// The commands of the stored cues, added in M3.
+fn cue_command() -> impl Strategy<Value = Command> {
+    let slot = || prop::sample::select(HotcueSlot::ALL.to_vec());
+    let step = prop::sample::select(vec![CueStep::Previous, CueStep::Next]);
+    let kind = prop::sample::select(CueKind::ALL.to_vec());
+    prop_oneof![
+        4 => (deck(), slot(), any::<bool>()).prop_map(|(deck, slot, pressed)| {
+            Command::DeckHotcueTrigger { deck, slot, pressed }
+        }),
+        1 => (deck(), slot()).prop_map(|(deck, slot)| Command::DeckHotcueDelete { deck, slot }),
+        1 => (deck(), slot()).prop_map(|(deck, slot)| Command::DeckHotcueMap { deck, slot }),
+        2 => deck().prop_map(|deck| Command::DeckCueStore { deck }),
+        2 => (deck(), step).prop_map(|(deck, direction)| Command::DeckCueSelect { deck, direction }),
+        1 => (deck(), ".{0,60}").prop_map(|(deck, name)| Command::DeckCueRename { deck, name }),
+        2 => (deck(), kind).prop_map(|(deck, kind)| Command::DeckCueTypeSet { deck, kind }),
+        1 => deck().prop_map(|deck| Command::DeckCueDelete { deck }),
+    ]
+}
+
+/// The commands of loops, jumps and moves, added in M3.
+fn loop_command() -> impl Strategy<Value = Command> {
+    let direction = || prop::sample::select(vec![Direction::Back, Direction::Forward]);
+    let size_step = || prop::sample::select(vec![SizeStep::Down, SizeStep::Up]);
+    let mode = prop::sample::select(MoveMode::ALL.to_vec());
+    prop_oneof![
+        2 => deck().prop_map(|deck| Command::DeckLoopToggle { deck }),
+        1 => deck().prop_map(|deck| Command::DeckLoopIn { deck }),
+        1 => deck().prop_map(|deck| Command::DeckLoopOut { deck }),
+        2 => (deck(), size_step())
+            .prop_map(|(deck, direction)| Command::DeckLoopSizeStep { deck, direction }),
+        1 => (deck(), direction())
+            .prop_map(|(deck, direction)| Command::DeckBeatjump { deck, direction }),
+        2 => (deck(), direction()).prop_map(|(deck, direction)| Command::DeckMove { deck, direction }),
+        1 => (deck(), mode).prop_map(|(deck, mode)| Command::DeckMoveModeSet { deck, mode }),
+        1 => (deck(), size_step())
+            .prop_map(|(deck, direction)| Command::DeckMoveSizeStep { deck, direction }),
+        1 => deck().prop_map(|deck| Command::DeckMoveFineToggle { deck }),
     ]
 }
 
@@ -88,11 +132,27 @@ fn grid_command() -> impl Strategy<Value = Command> {
     ]
 }
 
+fn sync_command() -> impl Strategy<Value = Command> {
+    let clock_mode = prop::sample::select(vec![ClockMode::Auto, ClockMode::Master]);
+    let sync_mode = prop::sample::select(SyncMode::ALL.to_vec());
+    prop_oneof![
+        3 => deck().prop_map(|deck| Command::DeckSyncToggle { deck }),
+        2 => deck().prop_map(|deck| Command::DeckMasterSet { deck }),
+        2 => clock_mode.prop_map(|mode| Command::ClockModeSet { mode }),
+        1 => (15.0f64..420.0).prop_map(|bpm| Command::ClockTempoSet { bpm }),
+        1 => number().prop_map(|amount| Command::ClockTempoStep { amount }),
+        1 => proptest::strategy::Just(Command::ClockTap),
+        1 => number().prop_map(|amount| Command::ClockBend { amount }),
+        1 => sync_mode.prop_map(|mode| Command::GlobalSyncModeSet { mode }),
+    ]
+}
+
 fn command() -> impl Strategy<Value = Command> {
     let band = band();
     let curve = prop::sample::select(CrossfaderCurve::ALL.to_vec());
     prop_oneof![
         6 => later_command(),
+        4 => sync_command(),
         1 => (deck(), 0usize..3).prop_map(|(deck, file)| Command::DeckLoad {
             deck,
             path: files()[file].clone()
@@ -136,6 +196,23 @@ fn value() -> impl Strategy<Value = Value> {
             "headphones",
             "double",
             "half",
+            "back",
+            "forward",
+            "down",
+            "up",
+            "beatjump",
+            "loop",
+            "loop_in",
+            "loop_out",
+            "previous",
+            "next",
+            "cue",
+            "fade_in",
+            "fade_out",
+            "load",
+            "auto",
+            "tempo",
+            "beat",
         ])
         .prop_map(|text| Value::Text(text.to_owned())),
     ]
@@ -161,6 +238,8 @@ proptest! {
                 assert!(sample.is_finite() && sample.abs() <= 1.0, "{sample}");
             }
         }
+        // An empty block: the processor reports what the last commands left.
+        rig.processor.process(&mut [], 2);
         rig.engine.poll();
         let snapshot = rig.engine.snapshot();
         for deck in &snapshot.decks {
@@ -172,12 +251,47 @@ proptest! {
                 assert!((Bpm::MIN..=Bpm::MAX).contains(&bpm.value()));
             }
             assert!(deck.position_seconds.is_finite() && deck.position_seconds >= 0.0);
+            let seconds = deck.track.as_ref().map_or(0.0, |track| track.seconds);
+            if let Some(region) = deck.looping.region {
+                assert!(deck.looping.in_point.is_none());
+                assert!(region.start >= 0.0 && region.start < region.end, "{region:?}");
+                // A frame of slack: the length of the file is rounded to its frames.
+                assert!(region.end <= seconds + 1e-4, "{region:?} in {seconds}");
+            }
+            if let Some(at) = deck.looping.in_point {
+                assert!((0.0..=seconds + 1e-4).contains(&at), "{at} in {seconds}");
+            }
+            for (_, cue) in deck.cues.iter() {
+                assert!((0.0..=seconds + 1e-4).contains(&cue.position), "{cue:?}");
+                assert!(cue.name.as_str().len() <= CueName::MAX_BYTES);
+                assert_eq!(cue.region().is_some(), cue.kind() == CueKind::Loop);
+                if let Some(region) = cue.region() {
+                    assert!(region.start < region.end && region.end <= seconds + 1e-4, "{cue:?}");
+                }
+            }
+            if let Some(slot) = deck.cues.selected() {
+                assert!(deck.cues.get(slot).is_some(), "an empty slot is selected");
+            }
             assert!(deck.cue_seconds.is_finite());
             assert!(deck.levels.iter().all(|level| level.is_finite()));
             // deck.tempo.set takes the whole span of a tempo whatever the range of the fader
             // is, so only that span holds here; the range pulls the tempo in when it changes.
             assert!(TEMPO_RANGES.contains(&deck.controls.tempo_range));
             assert!((0.0..=2.0).contains(&deck.controls.tempo_ratio));
+            assert!((0.0..=2.0).contains(&deck.speed), "{}", deck.speed);
+            if let Some(phase) = deck.phase {
+                assert!((-0.5..=0.5).contains(&phase), "{phase}");
+                assert!(deck.grid.bpm().is_some());
+            }
+        }
+        let clock = &snapshot.clock;
+        assert!(clock.bpm.is_finite() && clock.bpm >= 0.0, "{}", clock.bpm);
+        if let Some(master) = clock.master {
+            let deck = &snapshot.decks[master.index()];
+            assert!(deck.grid.bpm().is_some(), "a tempo master without a tempo");
+        } else {
+            // A bend is at most half the tempo either way.
+            assert!((Bpm::MIN * 0.5..=Bpm::MAX * 1.5).contains(&clock.bpm), "{}", clock.bpm);
         }
         assert!(snapshot.master_levels.iter().all(|level| level.is_finite() && *level <= 1.0));
     }

@@ -6,11 +6,15 @@
 //! queue crate only; `cargo xtask layers` checks that.
 //!
 //! Memory is the delicate part. A track arrives inside a command and leaves through the
-//! retired queue, so its buffer is always freed by a normal thread. The beatgrid of each
-//! deck lives here, because its edits use the play position; it goes back to the control
-//! side as a fixed-size value through a third queue.
+//! retired queue, so its buffer is always freed by a normal thread. The beatgrid, the
+//! loop and the stored cues of each deck live here, because their edits use the play
+//! position; they go back to
+//! the control side as fixed-size values through a third queue. The master clock and the
+//! choice of the tempo master live here too, because they follow what the decks play.
 
+mod clock;
 mod deck;
+mod looper;
 mod processor;
 mod shared;
 mod strip;
@@ -18,14 +22,16 @@ mod tone;
 
 use std::sync::Arc;
 
-use platter_core::{BeatGrid, Bpm, DeckId, SampleRate};
+use platter_core::{
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate,
+};
 use platter_dsp::Frame;
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 pub use processor::Processor;
-pub use shared::{DeckShared, Shared};
+pub use shared::{DeckShared, MasterChoice, Shared};
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
@@ -135,6 +141,23 @@ pub enum RtCommand {
         deck: DeckId,
         edit: GridEdit,
     },
+    /// An edit of the loop, at the play position the deck has once the commands before are
+    /// applied.
+    Loop {
+        deck: DeckId,
+        edit: LoopEdit,
+    },
+    /// Moves the play position by a span, to the frame.
+    Jump {
+        deck: DeckId,
+        by: Span,
+    },
+    /// An edit of the stored cues, at the play position the deck has once the commands
+    /// before are applied.
+    Cues {
+        deck: DeckId,
+        edit: CueEdit,
+    },
     Gain {
         deck: DeckId,
         linear: f32,
@@ -185,6 +208,32 @@ pub enum RtCommand {
     TestTone {
         output: Output,
     },
+    SyncToggle {
+        deck: DeckId,
+    },
+    /// Makes a deck the tempo master, while the choice is not automatic.
+    Master {
+        deck: DeckId,
+    },
+    /// Switches the automatic choice of the tempo master on, or makes the clock the tempo
+    /// master.
+    ClockAuto {
+        on: bool,
+    },
+    ClockTempo {
+        bpm: Bpm,
+    },
+    /// Adds beats per minute to the tempo of the clock.
+    ClockStep {
+        amount: f64,
+    },
+    ClockBend {
+        amount: f32,
+    },
+    /// Whether a synced deck keeps its beats on those of the clock, or only its tempo.
+    KeepBeat {
+        on: bool,
+    },
 }
 
 /// An edit of a beatgrid. The ones that need a place use the play position.
@@ -202,26 +251,107 @@ pub enum GridEdit {
     ToggleLock,
 }
 
+/// How far a jump or a move goes. Negative values go back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Span {
+    /// Beats at the tempo of the grid; nothing without a tempo.
+    Beats(f64),
+    Seconds(f64),
+    /// The length of the loop that is on or, without one, this many beats.
+    Loop {
+        forward: bool,
+        beats: f64,
+    },
+}
+
+/// An edit of the loop of a deck.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LoopEdit {
+    /// Sets the in point and switches off the loop.
+    In,
+    /// Ends the loop at the play position and switches it on.
+    Out,
+    /// Switches the loop off, or starts one this many beats long.
+    Toggle {
+        beats: f64,
+    },
+    /// Gives the loop that is on this many beats from its start.
+    Resize {
+        beats: f64,
+    },
+    Move {
+        part: LoopPart,
+        by: Span,
+    },
+}
+
+/// What a move of the loop moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoopPart {
+    Whole,
+    In,
+    Out,
+}
+
+/// An edit of the stored cues of a deck, or a visit to one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CueEdit {
+    /// The key of a slot, pressed or released: stores into an empty slot, goes to a stored
+    /// cue.
+    Hotcue {
+        slot: HotcueSlot,
+        pressed: bool,
+    },
+    /// Stores the floating cue, or the loop that is on, in the first empty slot.
+    Store,
+    Delete(HotcueSlot),
+    DeleteSelected,
+    /// Moves the selected cue to a slot.
+    Map(HotcueSlot),
+    /// Goes to the cue after the play position, or to the one before.
+    Step {
+        forward: bool,
+    },
+    Rename(CueName),
+    /// Gives the selected cue a kind; one that becomes a loop gets this many beats.
+    Retype {
+        kind: CueKind,
+        beats: f64,
+    },
+}
+
+/// The loop of a deck, in seconds of its track. A loop is on for as long as it exists.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LoopState {
+    /// An in point that waits for its out point.
+    pub in_point: Option<f64>,
+    pub region: Option<LoopRegion>,
+}
+
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
 pub struct Retired(pub Option<TrackAudio>);
 
-/// The beatgrid of a deck after it changed.
+/// What changed in a deck that the control side keeps a copy of: each part is there when it
+/// changed since the report before.
 #[derive(Debug)]
-pub struct GridReport {
+pub struct DeckReport {
     pub deck: DeckId,
-    pub grid: BeatGrid,
+    pub grid: Option<BeatGrid>,
+    pub looping: Option<LoopState>,
+    pub cues: Option<Cues>,
 }
 
-/// Grid reports the queue holds. The processor sends at most one per deck and block, and
-/// keeps a report it cannot send for the next block, so the latest grid always arrives.
-const GRID_REPORT_CAPACITY: usize = 4 * DeckId::COUNT;
+/// Reports the queue holds. The processor sends at most one per deck and block, with all
+/// that changed, and keeps what it cannot send for the next block, so the latest state
+/// always arrives.
+const REPORT_CAPACITY: usize = 4 * DeckId::COUNT;
 
 /// The ends of the queues that stay on the control side.
 pub struct ControlEnds {
     pub commands: Producer<RtCommand>,
     pub retired: Consumer<Retired>,
-    pub grids: Consumer<GridReport>,
+    pub reports: Consumer<DeckReport>,
     pub shared: Arc<Shared>,
 }
 
@@ -229,7 +359,7 @@ pub struct ControlEnds {
 struct Queues {
     commands: Consumer<RtCommand>,
     retired: Producer<Retired>,
-    grids: Producer<GridReport>,
+    reports: Producer<DeckReport>,
 }
 
 /// Builds a processor for `rate` and the ends the control side keeps.
@@ -238,14 +368,14 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
     // Each swap retires one item and at most `COMMAND_CAPACITY` swaps are in flight, so
     // this queue cannot fill up.
     let (outgoing, retired) = RingBuffer::new(COMMAND_CAPACITY + DeckId::COUNT);
-    let (grid_reports, grids) = RingBuffer::new(GRID_REPORT_CAPACITY);
+    let (outgoing_reports, reports) = RingBuffer::new(REPORT_CAPACITY);
     let shared = Arc::new(Shared::default());
     let processor = Processor::new(
         rate,
         Queues {
             commands: incoming,
             retired: outgoing,
-            grids: grid_reports,
+            reports: outgoing_reports,
         },
         Arc::clone(&shared),
     );
@@ -253,7 +383,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
         ControlEnds {
             commands,
             retired,
-            grids,
+            reports,
             shared,
         },
         processor,

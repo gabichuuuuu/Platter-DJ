@@ -480,6 +480,35 @@ mod tests {
     }
 
     #[test]
+    fn a_binding_of_a_hotcue_sends_the_press_and_the_release_of_its_slot() {
+        let keymap = Keymap::parse(
+            "[[binding]]
+keys = \"G\"
+command = \"deck.hotcue.trigger\"
+deck = \"b\"
+slot = 3
+",
+        )
+        .unwrap();
+        let mut state = KeymapState::default();
+        let events = [
+            key(Key::G, true, Modifiers::NONE),
+            key(Key::G, false, Modifiers::NONE),
+        ];
+        let trigger = |pressed| {
+            Action::Engine(Command::DeckHotcueTrigger {
+                deck: DeckId::B,
+                slot: platter_core::HotcueSlot::ALL[2],
+                pressed,
+            })
+        };
+        assert_eq!(
+            state.actions(&keymap, &events, never),
+            [trigger(true), trigger(false)]
+        );
+    }
+
+    #[test]
     fn held_commands_send_press_and_release_once_each() {
         let keymap = Keymap::parse(
             "[[binding]]\nkeys = \"X\"\ncommand = \"deck.cue\"\ndeck = \"a\"\n\n\

@@ -13,13 +13,13 @@ The table is generated from `docs/parity.toml` by `cargo xtask parity`. Do not e
 | --- | ---: | ---: | ---: | ---: |
 | M1 | 9 | 9 | 0 | 0 |
 | M2 | 30 | 30 | 0 | 0 |
-| M3 | 76 | 2 | 2 | 72 |
+| M3 | 76 | 9 | 10 | 57 |
 | M4 | 31 | 0 | 0 | 31 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 41 | 2 | 119 |
+| Total | 162 | 48 | 10 | 104 |
 
-First complete version (M0 to M3): 41 of 115 features done.
+First complete version (M0 to M3): 48 of 115 features done.
 
 <!-- parity:end -->
 

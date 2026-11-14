@@ -9,7 +9,7 @@ use egui::{CornerRadius, Key, Rect, Sense};
 use platter_core::DeckId;
 use platter_engine::Command;
 
-use crate::command::{Action, AppCommand, SettingsPage};
+use crate::command::{Action, AppCommand, DeckPage, SettingsPage};
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
@@ -28,7 +28,7 @@ pub const DESIGN_HEIGHT: f32 = 900.0;
 const HEADER_HEIGHT: f32 = 40.0;
 const NOTICE_HEIGHT: f32 = 44.0;
 const LANES_HEIGHT: f32 = 178.0;
-const DECKS_HEIGHT: f32 = 356.0;
+const DECKS_HEIGHT: f32 = 388.0;
 const DECK_WIDTH: f32 = 520.0;
 /// How much of the window shows through the veil behind the preferences.
 const DIALOG_VEIL: f32 = 0.55;
@@ -43,6 +43,11 @@ pub struct ViewState {
     pub zoom: [usize; DeckId::COUNT],
     /// The large time of each deck is the time that remains.
     pub remaining_large: [bool; DeckId::COUNT],
+    /// The page of the advanced panel each deck shows.
+    pub deck_page: [DeckPage; DeckId::COUNT],
+    /// The hotcues of each deck are in the mapping mode: the next one pressed takes the
+    /// selected cue.
+    pub cue_map: [bool; DeckId::COUNT],
     /// The meters of deck A, deck B and the master.
     pub meters: [MeterMemory; 3],
     pub browser: BrowserMemory,
@@ -55,6 +60,8 @@ impl Default for ViewState {
             settings_page: None,
             zoom: [DEFAULT_ZOOM; DeckId::COUNT],
             remaining_large: [true; DeckId::COUNT],
+            deck_page: [DeckPage::default(); DeckId::COUNT],
+            cue_map: [false; DeckId::COUNT],
             meters: [MeterMemory::default(); 3],
             browser: BrowserMemory::default(),
             settings: SettingsMemory::default(),
@@ -144,6 +151,8 @@ impl Shell {
             AppCommand::DeckTimeDisplayToggle { deck } => {
                 state.remaining_large[deck.index()] ^= true;
             }
+            AppCommand::DeckPageSet { deck, page } => state.deck_page[deck.index()] = *page,
+            AppCommand::DeckCueMapToggle { deck } => state.cue_map[deck.index()] ^= true,
             AppCommand::MixerClipReset { meter } => state.meters[meter.index()].reset_clip(),
             _ => {}
         }
@@ -159,6 +168,11 @@ impl Shell {
             engine.master_levels,
         ]) {
             memory.update(levels, now);
+        }
+        // The mapping mode of the hotcues ends with the cue it was about: deleted, or gone
+        // with its track.
+        for (mapping, deck) in self.state.cue_map.iter_mut().zip(&engine.decks) {
+            *mapping &= deck.cues.selected().is_some();
         }
 
         let mut out = FrameOutput::default();

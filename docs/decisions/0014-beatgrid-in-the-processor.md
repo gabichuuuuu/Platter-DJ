@@ -33,6 +33,10 @@ shows the last one.
 The tap button is timed on the control side, where the clock may be read, and sends a tempo
 like any other.
 
+Since the loops (`0015-jumps-that-keep-the-time.md`) the report is `DeckReport` and carries
+the loop of the deck as well; since the hotcues, its stored cues and the selected one too,
+for the same reason: a store and the change of type after it need no round trip.
+
 ## How it was checked
 
 - `crates/engine/tests/beatgrid.rs`: a seek and a marker set in a row put the marker where the

@@ -4,14 +4,18 @@
 //! Component: `Waveform` in `docs/design/DESIGN.md`. Behaviour note:
 //! `docs/behavior/waveform.md`. Both views draw the three-band peaks the engine computed
 //! when the track loaded; nothing here looks at audio. The scrolling lane also draws the
-//! beatgrid (`docs/behavior/beatgrid.md`).
+//! beatgrid (`docs/behavior/beatgrid.md`), and both draw the loop (`docs/behavior/loops.md`).
 
-use egui::{Color32, CornerRadius, Mesh, Pos2, Rect, Role, Sense, Shape, Stroke, WidgetInfo};
-use platter_core::DeckId;
+use egui::{
+    Align2, Color32, CornerRadius, Mesh, Painter, Pos2, Rect, Role, Sense, Shape, Stroke,
+    WidgetInfo,
+};
+use platter_core::{DeckId, LoopSize};
 use platter_engine::{Command, DeckSnapshot, WaveformPeaks};
 
 use crate::command::AppCommand;
 use crate::cx::{ControlKind, Cx, id};
+use crate::i18n::Texts;
 use crate::icons::Glyph;
 use crate::paint;
 use crate::theme::Theme;
@@ -24,6 +28,161 @@ pub const DEFAULT_ZOOM: usize = 1;
 /// How much of the background shows through the veil over the played part of an overview.
 const PLAYED_VEIL: f32 = 0.55;
 const GUTTER_WIDTH: f32 = 32.0;
+/// How much of the loop colour covers the waveform inside a loop.
+const LOOP_VEIL: f32 = 0.22;
+/// Length of the two ticks that turn the line at an end of a loop into a bracket.
+const BRACKET_TICK: f32 = 5.0;
+/// Side of the flag that carries the number of a stored cue.
+const CUE_FLAG: f32 = 12.0;
+const CUE_LINE: f32 = 2.0;
+/// Half the width of the triangle of the floating cue.
+const FLOATING_CUE: f32 = 6.0;
+
+/// A size in beats as it is read: `1/8`, `4`.
+pub fn size_text(texts: &Texts, size: LoopSize) -> String {
+    match size.fraction() {
+        (beats, 1) => beats.to_string(),
+        (beats, parts) => texts.format(
+            "deck.size_fraction",
+            &[("beats", &beats.to_string()), ("parts", &parts.to_string())],
+        ),
+    }
+}
+
+/// The length of the loop of a deck: in beats with a tempo, in seconds without.
+fn loop_length_text(texts: &Texts, snapshot: &DeckSnapshot, seconds: f64) -> String {
+    let Some(bpm) = snapshot.grid.bpm() else {
+        return texts.format(
+            "deck.loop_seconds",
+            &[("seconds", &format!("{seconds:.2}"))],
+        );
+    };
+    let beats = seconds / bpm.beat_seconds();
+    let preset = (0..LoopSize::COUNT)
+        .filter_map(LoopSize::from_index)
+        .find(|size| (size.beats() - beats).abs() < size.beats() * 1e-3);
+    match preset {
+        Some(size) => size_text(texts, size),
+        None => format!("{beats:.1}"),
+    }
+}
+
+/// One end of a loop: a line with a tick at the top and at the bottom that point into the
+/// loop, to the right for `inward` above zero.
+fn bracket(painter: &Painter, lane: Rect, x: f32, inward: f32, ink: Color32) {
+    let stroke = Stroke::new(1.0, ink);
+    painter.vline(x, lane.y_range(), stroke);
+    for y in [lane.top() + 0.5, lane.bottom() - 0.5] {
+        let tick = if inward > 0.0 {
+            x..=x + BRACKET_TICK
+        } else {
+            x - BRACKET_TICK..=x
+        };
+        painter.hline(tick, y, stroke);
+    }
+}
+
+/// Draws the loop of a deck, or the in point that waits for its end, over a waveform.
+/// `x_of` places a position in seconds; `label` asks for the length of the loop in words.
+fn loop_overlay(
+    cx: &Cx<'_>,
+    painter: &Painter,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    x_of: impl Fn(f64) -> f32,
+    label: bool,
+) {
+    let tokens = &cx.theme.tokens;
+    let ink = tokens.color.loop_region;
+    let looping = &snapshot.looping;
+    if let Some(at) = looping.in_point {
+        bracket(painter, lane, x_of(at), 1.0, ink);
+    }
+    let Some(region) = looping.region else {
+        return;
+    };
+    let (left, right) = (x_of(region.start), x_of(region.end));
+    let area = Rect::from_min_max(Pos2::new(left, lane.top()), Pos2::new(right, lane.bottom()));
+    painter.rect_filled(area, CornerRadius::ZERO, ink.gamma_multiply(LOOP_VEIL));
+    bracket(painter, lane, left, 1.0, ink);
+    bracket(painter, lane, right, -1.0, ink);
+    if label {
+        let text = loop_length_text(cx.texts, snapshot, region.seconds());
+        let at = Rect::from_min_size(
+            // A loop that starts left of the lane keeps its label at the edge. The label sits
+            // at the bottom: the top is where the flags of the cues are.
+            Pos2::new(
+                left.max(lane.left()) + BRACKET_TICK + 2.0,
+                lane.bottom() - 16.0,
+            ),
+            egui::vec2(60.0, 14.0),
+        );
+        paint::text(
+            painter,
+            cx.theme,
+            at,
+            Align2::LEFT_CENTER,
+            &text,
+            tokens.text.readout,
+            ink,
+        );
+    }
+}
+
+/// The cues of a deck over its waveform: each stored cue as a line in the colour of its
+/// slot with its number on a flag and, with `names`, its name beside it; the floating cue
+/// as a triangle at the bottom.
+fn cue_overlay(
+    cx: &Cx<'_>,
+    painter: &Painter,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    x_of: impl Fn(f64) -> f32,
+    names: bool,
+) {
+    let tokens = &cx.theme.tokens;
+    for (slot, cue) in snapshot.cues.iter() {
+        let ink = tokens.hotcue[slot.index()];
+        let x = x_of(cue.position);
+        painter.vline(x, lane.y_range(), Stroke::new(CUE_LINE, ink));
+        let flag = Rect::from_min_size(Pos2::new(x, lane.top()), egui::vec2(CUE_FLAG, CUE_FLAG));
+        painter.rect_filled(flag, CornerRadius::ZERO, ink);
+        paint::text(
+            painter,
+            cx.theme,
+            flag,
+            Align2::CENTER_CENTER,
+            &slot.number().to_string(),
+            tokens.text.readout,
+            tokens.color.text_on_accent,
+        );
+        if names && !cue.name.is_empty() {
+            let at = Rect::from_min_size(
+                Pos2::new(flag.right() + 4.0, lane.top()),
+                egui::vec2(120.0, CUE_FLAG),
+            );
+            paint::text(
+                painter,
+                cx.theme,
+                at,
+                Align2::LEFT_CENTER,
+                cue.name.as_str(),
+                tokens.text.readout,
+                ink,
+            );
+        }
+    }
+    let x = x_of(snapshot.cue_seconds);
+    painter.add(Shape::convex_polygon(
+        vec![
+            Pos2::new(x - FLOATING_CUE, lane.bottom()),
+            Pos2::new(x + FLOATING_CUE, lane.bottom()),
+            Pos2::new(x, lane.bottom() - FLOATING_CUE),
+        ],
+        tokens.color.playhead,
+        Stroke::NONE,
+    ));
+}
 
 /// The low, mid and high colour of a deck, darkest first.
 pub fn band_colors(theme: &Theme, deck: DeckId) -> [Color32; 3] {
@@ -165,6 +324,8 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
     for x in over {
         painter.vline(x, lane.y_range(), Stroke::new(1.0, color.grid_downbeat));
     }
+    loop_overlay(cx, &painter, lane, snapshot, x_of, true);
+    cue_overlay(cx, &painter, lane, snapshot, x_of, true);
     playhead(cx, lane, lane.center().x);
 }
 
@@ -281,6 +442,12 @@ pub fn overview(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapsh
         CornerRadius::ZERO,
         color.bg_app.gamma_multiply(PLAYED_VEIL),
     );
+    let x_of = |seconds: f64| {
+        rect.left() + (seconds / track.seconds).clamp(0.0, 1.0) as f32 * rect.width()
+    };
+    let clipped = painter.with_clip_rect(rect);
+    loop_overlay(cx, &clipped, rect, snapshot, x_of, false);
+    cue_overlay(cx, &clipped, rect, snapshot, x_of, false);
     playhead(cx, rect, x.clamp(rect.left() + 1.0, rect.right() - 1.0));
     if response.has_focus() {
         paint::focus_ring(painter, theme, rect, tokens.radius.sm);
