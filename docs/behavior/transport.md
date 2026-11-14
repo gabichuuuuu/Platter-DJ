@@ -53,6 +53,9 @@ while held, to correct the offset between two tracks by hand.
 
 Play pressed while the button holds a preview keeps the deck playing after the release.
 
+The key of a stored hotcue pressed on a paused deck moves the cue point to that hotcue and
+holds the same preview (`docs/behavior/cues.md`).
+
 ### The CUP button
 
 Pressing it returns to the cue point and holds the deck there, paused. Releasing it starts

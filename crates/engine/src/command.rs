@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-use platter_core::{Bpm, DeckId, LoopSize, ValueError};
+use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
@@ -152,6 +152,44 @@ pub enum Command {
     DeckMoveFineToggle {
         deck: DeckId,
     },
+    /// The key of a hotcue, pressed or released: stores into an empty slot, goes to a stored
+    /// cue. See `docs/behavior/cues.md`.
+    DeckHotcueTrigger {
+        deck: DeckId,
+        slot: HotcueSlot,
+        pressed: bool,
+    },
+    DeckHotcueDelete {
+        deck: DeckId,
+        slot: HotcueSlot,
+    },
+    /// Moves the selected cue to a slot.
+    DeckHotcueMap {
+        deck: DeckId,
+        slot: HotcueSlot,
+    },
+    /// Stores the floating cue, or the loop that is on, in the first empty slot.
+    DeckCueStore {
+        deck: DeckId,
+    },
+    /// Goes to the stored cue before or after the play position.
+    DeckCueSelect {
+        deck: DeckId,
+        direction: CueStep,
+    },
+    /// Names the selected cue.
+    DeckCueRename {
+        deck: DeckId,
+        name: String,
+    },
+    DeckCueTypeSet {
+        deck: DeckId,
+        kind: CueKind,
+    },
+    /// Deletes the selected cue.
+    DeckCueDelete {
+        deck: DeckId,
+    },
     MixerGainSet {
         deck: DeckId,
         db: f64,
@@ -267,6 +305,15 @@ const BPM_SCALES: &[&str] = &["double", "half"];
 const DIRECTIONS: &[&str] = &["back", "forward"];
 const SIZE_STEPS: &[&str] = &["down", "up"];
 const MOVE_MODES: &[&str] = &["beatjump", "loop", "loop_in", "loop_out"];
+const CUE_STEPS: &[&str] = &["previous", "next"];
+const CUE_TYPES: &[&str] = &["cue", "fade_in", "fade_out", "load", "loop"];
+
+/// Which neighbour of the play position `deck.cue.select` goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CueStep {
+    Previous,
+    Next,
+}
 
 /// Which way a jump or a move goes along the track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -375,6 +422,8 @@ const SIZE_STEP: ParamSpec = ParamSpec {
     name: "direction",
     kind: ParamKind::Choice(SIZE_STEPS),
 };
+
+const SLOT: ParamSpec = number("slot", 1.0, HotcueSlot::COUNT as f64);
 
 /// Whether a button that acts while held is being pressed or released.
 const BUTTON_ACTION: ParamSpec = ParamSpec {
@@ -563,6 +612,64 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "deck.move.fine.toggle",
         label: "Fine move steps",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.hotcue.trigger",
+        label: "Hotcue",
+        params: &[DECK, SLOT, BUTTON_ACTION],
+    },
+    CommandSpec {
+        id: "deck.hotcue.delete",
+        label: "Delete hotcue",
+        params: &[DECK, SLOT],
+    },
+    CommandSpec {
+        id: "deck.hotcue.map",
+        label: "Move selected cue to hotcue",
+        params: &[DECK, SLOT],
+    },
+    CommandSpec {
+        id: "deck.cue.store",
+        label: "Store cue",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.cue.select",
+        label: "Previous or next stored cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "direction",
+                kind: ParamKind::Choice(CUE_STEPS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.rename",
+        label: "Rename selected cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "name",
+                kind: ParamKind::Text,
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.type.set",
+        label: "Set type of selected cue",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "type",
+                kind: ParamKind::Choice(CUE_TYPES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.cue.delete",
+        label: "Delete selected cue",
         params: &[DECK],
     },
     CommandSpec {
@@ -801,6 +908,32 @@ impl Reader<'_> {
             }))
     }
 
+    fn slot(&self) -> Result<HotcueSlot, CommandError> {
+        Ok(HotcueSlot::from_number(self.number("slot")?)?)
+    }
+
+    fn cue_step(&self) -> Result<CueStep, CommandError> {
+        match self.text("direction")? {
+            "previous" => Ok(CueStep::Previous),
+            "next" => Ok(CueStep::Next),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "previous, next",
+            })),
+        }
+    }
+
+    fn cue_kind(&self) -> Result<CueKind, CommandError> {
+        let name = self.text("type")?;
+        CueKind::ALL
+            .into_iter()
+            .find(|kind| kind.name() == name)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "type",
+                expected: "cue, fade_in, fade_out, load, loop",
+            }))
+    }
+
     fn output(&self) -> Result<Output, CommandError> {
         match self.text("output")? {
             "master" => Ok(Output::Master),
@@ -843,6 +976,19 @@ impl Command {
             "deck.play" => Self::DeckPlay { deck: read.deck()? },
             "deck.pause" => Self::DeckPause { deck: read.deck()? },
             "deck.play_pause" => Self::DeckPlayPause { deck: read.deck()? },
+            stored
+                if stored.starts_with("deck.hotcue.")
+                    || matches!(
+                        stored,
+                        "deck.cue.store"
+                            | "deck.cue.select"
+                            | "deck.cue.rename"
+                            | "deck.cue.type.set"
+                            | "deck.cue.delete"
+                    ) =>
+            {
+                return Self::stored_cue_from_args(stored, &read);
+            }
             "deck.cue.set" => Self::DeckCueSet { deck: read.deck()? },
             "deck.cue.goto" => Self::DeckCueGoto { deck: read.deck()? },
             "deck.cue" => Self::DeckCue {
@@ -892,6 +1038,40 @@ impl Command {
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             mixer => return Self::mixer_from_args(mixer, &read),
+        })
+    }
+
+    fn stored_cue_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        let deck = read.deck()?;
+        Ok(match id {
+            "deck.hotcue.trigger" => Self::DeckHotcueTrigger {
+                deck,
+                slot: read.slot()?,
+                pressed: read.pressed()?,
+            },
+            "deck.hotcue.delete" => Self::DeckHotcueDelete {
+                deck,
+                slot: read.slot()?,
+            },
+            "deck.hotcue.map" => Self::DeckHotcueMap {
+                deck,
+                slot: read.slot()?,
+            },
+            "deck.cue.store" => Self::DeckCueStore { deck },
+            "deck.cue.select" => Self::DeckCueSelect {
+                deck,
+                direction: read.cue_step()?,
+            },
+            "deck.cue.rename" => Self::DeckCueRename {
+                deck,
+                name: read.text("name")?.to_owned(),
+            },
+            "deck.cue.type.set" => Self::DeckCueTypeSet {
+                deck,
+                kind: read.cue_kind()?,
+            },
+            "deck.cue.delete" => Self::DeckCueDelete { deck },
+            other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
 
@@ -1009,6 +1189,14 @@ impl Command {
             Self::DeckMoveModeSet { .. } => "deck.move.mode.set",
             Self::DeckMoveSizeStep { .. } => "deck.move.size.step",
             Self::DeckMoveFineToggle { .. } => "deck.move.fine.toggle",
+            Self::DeckHotcueTrigger { .. } => "deck.hotcue.trigger",
+            Self::DeckHotcueDelete { .. } => "deck.hotcue.delete",
+            Self::DeckHotcueMap { .. } => "deck.hotcue.map",
+            Self::DeckCueStore { .. } => "deck.cue.store",
+            Self::DeckCueSelect { .. } => "deck.cue.select",
+            Self::DeckCueRename { .. } => "deck.cue.rename",
+            Self::DeckCueTypeSet { .. } => "deck.cue.type.set",
+            Self::DeckCueDelete { .. } => "deck.cue.delete",
             Self::MixerGainSet { .. } => "mixer.gain.set",
             Self::MixerEqSet { .. } => "mixer.eq.set",
             Self::MixerEqKillToggle { .. } => "mixer.eq.kill.toggle",

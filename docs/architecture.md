@@ -77,6 +77,10 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
   its start and a beatjump move the deck at once, to the frame, and crossfade from what it was
   playing; a seek fades out and in instead
   (`docs/decisions/0015-jumps-that-keep-the-time.md`).
+- **Stored cues.** `Cues` in `platter-core`: eight slots and the selected one, in a fixed-size
+  value with the names in place. The processor holds the cues of each deck beside its grid
+  and its loop, so a store and the edits after it act in the order they were sent, and
+  reports them the same way (`docs/behavior/cues.md`).
 
 ## Engine
 

@@ -6,9 +6,9 @@
 mod common;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::DeckId;
+use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{
-    Band, BpmScale, Command, CrossfaderCurve, Direction, MoveMode, Output, SizeStep,
+    Band, BpmScale, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output, SizeStep,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -193,9 +193,50 @@ fn commands() -> Vec<Command> {
         Command::DeckLoopIn { deck: A },
         Command::DeckLoopOut { deck: A },
         Command::DeckLoopToggle { deck: A },
+        Command::DeckLoopToggle { deck: A },
+        hotcue(1, true),
+        hotcue(1, false),
+        Command::DeckLoopToggle { deck: A },
+        hotcue(2, true),
+        Command::DeckCueStore { deck: A },
+        Command::DeckCueTypeSet {
+            deck: A,
+            kind: CueKind::Loop,
+        },
+        Command::DeckCueRename {
+            deck: A,
+            name: "A name longer than the forty-eight bytes a cue keeps".to_owned(),
+        },
+        Command::DeckHotcueMap {
+            deck: A,
+            slot: HotcueSlot::ALL[7],
+        },
+        hotcue(1, true),
+        hotcue(1, false),
+        Command::DeckCueSelect {
+            deck: A,
+            direction: CueStep::Next,
+        },
+        Command::DeckCueSelect {
+            deck: A,
+            direction: CueStep::Previous,
+        },
+        Command::DeckCueDelete { deck: A },
+        Command::DeckHotcueDelete {
+            deck: A,
+            slot: HotcueSlot::ALL[0],
+        },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },
     ]
+}
+
+fn hotcue(number: usize, pressed: bool) -> Command {
+    Command::DeckHotcueTrigger {
+        deck: DeckId::A,
+        slot: HotcueSlot::ALL[number - 1],
+        pressed,
+    }
 }
 
 #[test]

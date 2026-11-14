@@ -34,7 +34,8 @@ The tap button is timed on the control side, where the clock may be read, and se
 like any other.
 
 Since the loops (`0015-jumps-that-keep-the-time.md`) the report is `DeckReport` and carries
-the loop of the deck as well.
+the loop of the deck as well; since the hotcues, its stored cues and the selected one too,
+for the same reason: a store and the change of type after it need no round trip.
 
 ## How it was checked
 
