@@ -8,18 +8,20 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::Instant;
 
-use platter_core::{DeckId, Gain, SampleRate, Tempo, ValueError};
+use platter_core::{BeatGrid, Bpm, DeckId, Gain, SampleRate, Tempo, ValueError};
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::command::{
-    Command, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB, MAX_MASTER_GAIN_DB, MAX_NUDGE,
-    MAX_SEEK_SECONDS,
+    Command, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS,
+    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS,
 };
 use crate::peaks::WaveformPeaks;
-use crate::rt::{self, COMMAND_CAPACITY, ControlEnds, Processor, RtCommand, TrackAudio};
+use crate::rt::{self, COMMAND_CAPACITY, ControlEnds, GridEdit, Processor, RtCommand, TrackAudio};
+use crate::tap::TapTempo;
 
 /// Ranges of the tempo fader, as a fraction of the original speed either way.
 pub const TEMPO_RANGES: [f64; 3] = [0.08, 0.16, 0.5];
@@ -142,6 +144,8 @@ pub struct DeckSnapshot {
     pub playing: bool,
     pub position_seconds: f64,
     pub cue_seconds: f64,
+    /// Beatgrid of the loaded track, as of the last [`Engine::poll`].
+    pub grid: BeatGrid,
     pub controls: DeckControls,
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [f32; 2],
@@ -166,6 +170,9 @@ struct DeckControl {
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     controls: DeckControls,
+    /// The grid as the processor last reported it.
+    grid: BeatGrid,
+    tap: TapTempo,
 }
 
 struct Loaded {
@@ -252,8 +259,44 @@ impl Engine {
                 self.send(RtCommand::Nudge { deck, amount })
             }
             Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
-            mixer => self.dispatch_channel(mixer),
+            mixer => self.dispatch_grid(mixer),
         }
+    }
+
+    /// The commands of the beatgrid.
+    fn dispatch_grid(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, edit) = match command {
+            Command::DeckGridBpmSet { deck, bpm } => (deck, GridEdit::SetBpm(Bpm::new(bpm)?)),
+            Command::DeckGridBpmScale { deck, factor } => {
+                (deck, GridEdit::ScaleBpm(factor.factor()))
+            }
+            Command::DeckGridBpmStep { deck, amount } => {
+                let amount = ValueError::check("amount", amount, -MAX_BPM_STEP, MAX_BPM_STEP)?;
+                (deck, GridEdit::StepBpm(amount))
+            }
+            Command::DeckGridTap { deck } => {
+                match self.decks[deck.index()].tap.tap(Instant::now()) {
+                    Some(bpm) => (deck, GridEdit::SetBpm(bpm)),
+                    None => return Ok(()),
+                }
+            }
+            Command::DeckGridMarkerSet { deck } => (deck, GridEdit::MarkerSet),
+            Command::DeckGridMarkerMove { deck, seconds } => {
+                let by = ValueError::check(
+                    "seconds",
+                    seconds,
+                    -MAX_MARKER_MOVE_SECONDS,
+                    MAX_MARKER_MOVE_SECONDS,
+                )?;
+                (deck, GridEdit::MarkerMove(by))
+            }
+            Command::DeckGridMarkerDelete { deck } => (deck, GridEdit::MarkerDelete),
+            Command::DeckGridMarkerPrevious { deck } => (deck, GridEdit::MarkerPrevious),
+            Command::DeckGridMarkerNext { deck } => (deck, GridEdit::MarkerNext),
+            Command::DeckGridLockToggle { deck } => (deck, GridEdit::ToggleLock),
+            mixer => return self.dispatch_channel(mixer),
+        };
+        self.send(RtCommand::Grid { deck, edit })
     }
 
     fn set_tempo(&mut self, deck: DeckId, ratio: f64) -> Result<(), EngineError> {
@@ -436,6 +479,9 @@ impl Engine {
     /// what frees the audio of replaced tracks.
     pub fn poll(&mut self) -> Vec<Event> {
         self.collect_retired();
+        while let Ok(report) = self.ends.grids.pop() {
+            self.decks[report.deck.index()].grid = report.grid;
+        }
         let mut events = Vec::new();
         while let Ok(finished) = self.finished_loads.try_recv() {
             events.extend(self.finish_load(finished));
@@ -492,6 +538,7 @@ impl Engine {
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
+                grid: control.grid,
                 controls: control.controls.clone(),
                 levels: [published.levels[0].get(), published.levels[1].get()],
             }

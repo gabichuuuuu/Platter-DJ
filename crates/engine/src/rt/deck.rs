@@ -1,14 +1,14 @@
 //! One deck: reads its track at the current speed and handles the transport.
 //!
-//! Behaviour notes: `docs/behavior/transport.md`.
+//! Behaviour notes: `docs/behavior/transport.md` and, for the grid, `docs/behavior/beatgrid.md`.
 
-use platter_core::SampleRate;
+use platter_core::{BeatGrid, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
-use super::{Retired, TrackAudio};
+use super::{GridEdit, Retired, TrackAudio};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
@@ -42,6 +42,11 @@ pub(super) struct DeckPlayer {
     cue_preview: bool,
     /// The cue-play button is held: the deck waits at the cue point for its release.
     cup_held: bool,
+    grid: BeatGrid,
+    /// Grid edited for a track that is still arriving.
+    arriving_grid: Option<BeatGrid>,
+    /// The grid changed since the control side last got it.
+    grid_unreported: bool,
 }
 
 impl DeckPlayer {
@@ -60,6 +65,9 @@ impl DeckPlayer {
             arriving_cue: None,
             cue_preview: false,
             cup_held: false,
+            grid: BeatGrid::default(),
+            arriving_grid: None,
+            grid_unreported: false,
         }
     }
 
@@ -75,6 +83,7 @@ impl DeckPlayer {
         self.cup_held = false;
         self.pending_seek = None;
         self.arriving_cue = None;
+        self.arriving_grid = None;
         self.pending_swap = Some(audio);
     }
 
@@ -184,6 +193,56 @@ impl DeckPlayer {
         }
     }
 
+    /// Applies an edit to the grid of the track the deck holds once the pending changes are
+    /// applied, at the play position it will have then.
+    pub(super) fn edit_grid(&mut self, edit: GridEdit) {
+        let Some(audio) = self.settled_audio() else {
+            return;
+        };
+        let rate = audio.rate().as_f64();
+        let end = audio.frames() as f64 / rate;
+        let at = (self.settled_position() / rate).clamp(0.0, end);
+        let arriving = self.pending_swap.is_some();
+        let grid = if arriving {
+            self.arriving_grid.get_or_insert_with(BeatGrid::default)
+        } else {
+            &mut self.grid
+        };
+        let jump = match edit {
+            GridEdit::MarkerPrevious => grid.previous_marker(at),
+            GridEdit::MarkerNext => grid.next_marker(at),
+            _ => None,
+        };
+        let changed = match edit {
+            GridEdit::SetBpm(bpm) => grid.set_bpm(bpm),
+            GridEdit::ScaleBpm(factor) => grid.scale_bpm(factor),
+            GridEdit::StepBpm(amount) => grid.step_bpm(amount),
+            GridEdit::MarkerSet => grid.add_marker(at),
+            GridEdit::MarkerMove(by) => grid.move_marker(at, by, end),
+            GridEdit::MarkerDelete => grid.delete_marker(at),
+            GridEdit::ToggleLock => {
+                grid.set_locked(!grid.is_locked());
+                true
+            }
+            GridEdit::MarkerPrevious | GridEdit::MarkerNext => false,
+        };
+        if changed && !arriving {
+            self.grid_unreported = true;
+        }
+        if let Some(seconds) = jump {
+            self.pending_seek = Some(SeekTarget::Seconds(seconds));
+        }
+    }
+
+    /// The grid, once, after each change.
+    pub(super) fn unreported_grid(&self) -> Option<&BeatGrid> {
+        self.grid_unreported.then_some(&self.grid)
+    }
+
+    pub(super) fn grid_reported(&mut self) {
+        self.grid_unreported = false;
+    }
+
     pub(super) fn set_tempo(&mut self, ratio: f32) {
         self.tempo.set(ratio);
     }
@@ -221,6 +280,8 @@ impl DeckPlayer {
             retire(previous, retired);
             self.position = 0.0;
             self.cue = self.arriving_cue.take().unwrap_or(0.0);
+            self.grid = self.arriving_grid.take().unwrap_or_default();
+            self.grid_unreported = true;
         }
         if let Some(target) = self.pending_seek.take()
             && let Some(audio) = &self.audio

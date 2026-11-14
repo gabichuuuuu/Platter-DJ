@@ -94,10 +94,10 @@ id = "beatgrid"
 title = "Beatgrid"
 features = [
   { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "planned" },
-  { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "planned" },
-  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "planned" },
+  { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "in_progress" },
+  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "in_progress" },
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "planned" },
-  { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "planned" },
+  { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },
   { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
 ]

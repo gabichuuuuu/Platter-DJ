@@ -8,8 +8,9 @@ use std::sync::OnceLock;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
+use platter_core::{Bpm, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
-use platter_engine::{Band, Command, CrossfaderCurve, Output, TEMPO_RANGES};
+use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output, TEMPO_RANGES};
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
 /// Three files to load: two tracks and one that does not exist.
@@ -64,6 +65,26 @@ fn later_command() -> impl Strategy<Value = Command> {
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),
+        grid_command(),
+    ]
+}
+
+/// The commands of the beatgrid, added in M3.
+fn grid_command() -> impl Strategy<Value = Command> {
+    let scale = prop::sample::select(vec![BpmScale::Double, BpmScale::Half]);
+    prop_oneof![
+        (deck(), prop_oneof![number(), 15.0f64..420.0])
+            .prop_map(|(deck, bpm)| Command::DeckGridBpmSet { deck, bpm }),
+        (deck(), scale).prop_map(|(deck, factor)| Command::DeckGridBpmScale { deck, factor }),
+        (deck(), number()).prop_map(|(deck, amount)| Command::DeckGridBpmStep { deck, amount }),
+        deck().prop_map(|deck| Command::DeckGridTap { deck }),
+        deck().prop_map(|deck| Command::DeckGridMarkerSet { deck }),
+        (deck(), number())
+            .prop_map(|(deck, seconds)| Command::DeckGridMarkerMove { deck, seconds }),
+        deck().prop_map(|deck| Command::DeckGridMarkerDelete { deck }),
+        deck().prop_map(|deck| Command::DeckGridMarkerPrevious { deck }),
+        deck().prop_map(|deck| Command::DeckGridMarkerNext { deck }),
+        deck().prop_map(|deck| Command::DeckGridLockToggle { deck }),
     ]
 }
 
@@ -113,6 +134,8 @@ fn value() -> impl Strategy<Value = Value> {
             "release",
             "master",
             "headphones",
+            "double",
+            "half",
         ])
         .prop_map(|text| Value::Text(text.to_owned())),
     ]
@@ -138,8 +161,16 @@ proptest! {
                 assert!(sample.is_finite() && sample.abs() <= 1.0, "{sample}");
             }
         }
+        rig.engine.poll();
         let snapshot = rig.engine.snapshot();
         for deck in &snapshot.decks {
+            let markers = deck.grid.markers();
+            assert!(markers.len() <= MAX_MARKERS);
+            assert!(markers.iter().all(|marker| marker.is_finite() && *marker >= 0.0));
+            assert!(markers.windows(2).all(|pair| pair[0] < pair[1]), "{markers:?}");
+            if let Some(bpm) = deck.grid.bpm() {
+                assert!((Bpm::MIN..=Bpm::MAX).contains(&bpm.value()));
+            }
             assert!(deck.position_seconds.is_finite() && deck.position_seconds >= 0.0);
             assert!(deck.cue_seconds.is_finite());
             assert!(deck.levels.iter().all(|level| level.is_finite()));

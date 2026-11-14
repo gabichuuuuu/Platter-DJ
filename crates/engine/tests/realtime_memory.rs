@@ -7,7 +7,7 @@ mod common;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
-use platter_engine::{Band, Command, CrossfaderCurve, Output};
+use platter_engine::{Band, BpmScale, Command, CrossfaderCurve, Output};
 use platter_testkit::alloc::{CountingAllocator, count};
 
 #[global_allocator]
@@ -100,6 +100,28 @@ fn commands() -> Vec<Command> {
             deck: B,
             pressed: false,
         },
+        Command::DeckGridBpmSet {
+            deck: A,
+            bpm: 128.0,
+        },
+        Command::DeckGridMarkerSet { deck: A },
+        Command::DeckGridBpmScale {
+            deck: A,
+            factor: BpmScale::Half,
+        },
+        Command::DeckGridBpmStep {
+            deck: A,
+            amount: 0.5,
+        },
+        Command::DeckGridMarkerMove {
+            deck: A,
+            seconds: -0.1,
+        },
+        Command::DeckGridMarkerPrevious { deck: A },
+        Command::DeckGridMarkerNext { deck: A },
+        Command::DeckGridMarkerDelete { deck: A },
+        Command::DeckGridLockToggle { deck: A },
+        Command::DeckGridTap { deck: B },
         Command::DeckPlay { deck: A },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },

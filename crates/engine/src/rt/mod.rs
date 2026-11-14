@@ -1,12 +1,14 @@
 //! The real-time side of the engine: everything the audio callback runs.
 //!
 //! Rules of this module, from `AGENTS.md`: no allocation and no deallocation, no lock, no
-//! I/O, no system call, bounded time. It talks to the rest of the program through two
+//! I/O, no system call, bounded time. It talks to the rest of the program through three
 //! lock-free queues and a block of atomics. It uses `platter-core`, `platter-dsp` and the
 //! queue crate only; `cargo xtask layers` checks that.
 //!
 //! Memory is the delicate part. A track arrives inside a command and leaves through the
-//! retired queue, so its buffer is always freed by a normal thread.
+//! retired queue, so its buffer is always freed by a normal thread. The beatgrid of each
+//! deck lives here, because its edits use the play position; it goes back to the control
+//! side as a fixed-size value through a third queue.
 
 mod deck;
 mod processor;
@@ -16,7 +18,7 @@ mod tone;
 
 use std::sync::Arc;
 
-use platter_core::{DeckId, SampleRate};
+use platter_core::{BeatGrid, Bpm, DeckId, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
@@ -127,6 +129,12 @@ pub enum RtCommand {
         deck: DeckId,
         amount: f32,
     },
+    /// An edit of the beatgrid of the track the deck holds once the commands before are
+    /// applied.
+    Grid {
+        deck: DeckId,
+        edit: GridEdit,
+    },
     Gain {
         deck: DeckId,
         linear: f32,
@@ -179,15 +187,49 @@ pub enum RtCommand {
     },
 }
 
+/// An edit of a beatgrid. The ones that need a place use the play position.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GridEdit {
+    SetBpm(Bpm),
+    ScaleBpm(f64),
+    StepBpm(f64),
+    MarkerSet,
+    /// Moves the marker on or before the play position by this many seconds.
+    MarkerMove(f64),
+    MarkerDelete,
+    MarkerPrevious,
+    MarkerNext,
+    ToggleLock,
+}
+
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
 pub struct Retired(pub Option<TrackAudio>);
+
+/// The beatgrid of a deck after it changed.
+#[derive(Debug)]
+pub struct GridReport {
+    pub deck: DeckId,
+    pub grid: BeatGrid,
+}
+
+/// Grid reports the queue holds. The processor sends at most one per deck and block, and
+/// keeps a report it cannot send for the next block, so the latest grid always arrives.
+const GRID_REPORT_CAPACITY: usize = 4 * DeckId::COUNT;
 
 /// The ends of the queues that stay on the control side.
 pub struct ControlEnds {
     pub commands: Producer<RtCommand>,
     pub retired: Consumer<Retired>,
+    pub grids: Consumer<GridReport>,
     pub shared: Arc<Shared>,
+}
+
+/// The ends of the queues the processor keeps.
+struct Queues {
+    commands: Consumer<RtCommand>,
+    retired: Producer<Retired>,
+    grids: Producer<GridReport>,
 }
 
 /// Builds a processor for `rate` and the ends the control side keeps.
@@ -196,12 +238,22 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
     // Each swap retires one item and at most `COMMAND_CAPACITY` swaps are in flight, so
     // this queue cannot fill up.
     let (outgoing, retired) = RingBuffer::new(COMMAND_CAPACITY + DeckId::COUNT);
+    let (grid_reports, grids) = RingBuffer::new(GRID_REPORT_CAPACITY);
     let shared = Arc::new(Shared::default());
-    let processor = Processor::new(rate, incoming, outgoing, Arc::clone(&shared));
+    let processor = Processor::new(
+        rate,
+        Queues {
+            commands: incoming,
+            retired: outgoing,
+            grids: grid_reports,
+        },
+        Arc::clone(&shared),
+    );
     (
         ControlEnds {
             commands,
             retired,
+            grids,
             shared,
         },
         processor,

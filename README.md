@@ -30,9 +30,10 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has not started.** The desktop application opens, loads
-> tracks and plays them through a sound card, its tests pass, and the maintainer has listened
-> to it. It is not yet a tool to play a set with: there is no sync, no loops and no library.
+> **Milestone M2 is complete; M3 has started with the beatgrid in the engine.** The desktop
+> application opens, loads tracks and plays them through a sound card, its tests pass, and
+> the maintainer has listened to it. It is not yet a tool to play a set with: there is no
+> sync, no loops and no library.
 
 ### What exists today
 
@@ -61,8 +62,11 @@ its own code, graphics and sounds.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
   and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
   damaged input only, as the project has no encoder for them.
-- No sync, no beatgrid, no loops, no hotcues, no key lock, no collection, no MIDI: those are
-  milestone M3. Changing the tempo changes the pitch.
+- The beatgrid is edited through engine commands only: tempo, tap, markers and lock. The
+  interface does not show it yet, nothing detects the tempo, and the grid is lost when the
+  track is loaded again.
+- No sync, no loops, no hotcues, no key lock, no collection, no MIDI: those are milestone M3.
+  Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 

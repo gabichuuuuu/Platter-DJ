@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-use platter_core::{DeckId, ValueError};
+use platter_core::{Bpm, DeckId, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
@@ -69,6 +69,48 @@ pub enum Command {
     },
     /// Moves to the next range of the tempo fader.
     DeckTempoRangeCycle {
+        deck: DeckId,
+    },
+    /// Sets the tempo of the beatgrid, in beats per minute.
+    DeckGridBpmSet {
+        deck: DeckId,
+        bpm: f64,
+    },
+    DeckGridBpmScale {
+        deck: DeckId,
+        factor: BpmScale,
+    },
+    /// Adds `amount` beats per minute to the tempo of the beatgrid, `-10.0..=10.0`.
+    DeckGridBpmStep {
+        deck: DeckId,
+        amount: f64,
+    },
+    /// One tap of the TAP button; the tempo is set from the fourth tap on.
+    DeckGridTap {
+        deck: DeckId,
+    },
+    /// Sets a grid marker at the play position.
+    DeckGridMarkerSet {
+        deck: DeckId,
+    },
+    /// Moves the marker on or before the play position, `-1.0..=1.0` seconds.
+    DeckGridMarkerMove {
+        deck: DeckId,
+        seconds: f64,
+    },
+    /// Deletes the marker on or before the play position.
+    DeckGridMarkerDelete {
+        deck: DeckId,
+    },
+    /// Jumps to the marker before the play position.
+    DeckGridMarkerPrevious {
+        deck: DeckId,
+    },
+    /// Jumps to the marker after the play position.
+    DeckGridMarkerNext {
+        deck: DeckId,
+    },
+    DeckGridLockToggle {
         deck: DeckId,
     },
     MixerGainSet {
@@ -172,6 +214,8 @@ const fn number(name: &'static str, min: f64, max: f64) -> ParamSpec {
 
 pub const MAX_SEEK_SECONDS: f64 = 86_400.0;
 pub const MAX_NUDGE: f64 = 0.5;
+pub const MAX_BPM_STEP: f64 = 10.0;
+pub const MAX_MARKER_MOVE_SECONDS: f64 = 1.0;
 pub const MAX_CHANNEL_GAIN_DB: f64 = 12.0;
 pub const MAX_MASTER_GAIN_DB: f64 = 12.0;
 pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
@@ -180,6 +224,23 @@ const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
+const BPM_SCALES: &[&str] = &["double", "half"];
+
+/// How `deck.grid.bpm.scale` changes the tempo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BpmScale {
+    Double,
+    Half,
+}
+
+impl BpmScale {
+    pub fn factor(self) -> f64 {
+        match self {
+            Self::Double => 2.0,
+            Self::Half => 0.5,
+        }
+    }
+}
 
 const BAND: ParamSpec = ParamSpec {
     name: "band",
@@ -263,6 +324,65 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "deck.tempo.range.cycle",
         label: "Next tempo range",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.bpm.set",
+        label: "Set beatgrid tempo",
+        params: &[DECK, number("bpm", Bpm::MIN, Bpm::MAX)],
+    },
+    CommandSpec {
+        id: "deck.grid.bpm.scale",
+        label: "Double or halve beatgrid tempo",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "factor",
+                kind: ParamKind::Choice(BPM_SCALES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "deck.grid.bpm.step",
+        label: "Step beatgrid tempo",
+        params: &[DECK, number("amount", -MAX_BPM_STEP, MAX_BPM_STEP)],
+    },
+    CommandSpec {
+        id: "deck.grid.tap",
+        label: "Tap tempo",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.set",
+        label: "Set grid marker",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.move",
+        label: "Move grid marker",
+        params: &[
+            DECK,
+            number("seconds", -MAX_MARKER_MOVE_SECONDS, MAX_MARKER_MOVE_SECONDS),
+        ],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.delete",
+        label: "Delete grid marker",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.previous",
+        label: "Previous grid marker",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.next",
+        label: "Next grid marker",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.lock.toggle",
+        label: "Lock beatgrid",
         params: &[DECK],
     },
     CommandSpec {
@@ -457,6 +577,17 @@ impl Reader<'_> {
         }
     }
 
+    fn bpm_scale(&self) -> Result<BpmScale, CommandError> {
+        match self.text("factor")? {
+            "double" => Ok(BpmScale::Double),
+            "half" => Ok(BpmScale::Half),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "factor",
+                expected: "double, half",
+            })),
+        }
+    }
+
     fn output(&self) -> Result<Output, CommandError> {
         match self.text("output")? {
             "master" => Ok(Output::Master),
@@ -522,7 +653,37 @@ impl Command {
                 amount: read.number("amount")?,
             },
             "deck.tempo.range.cycle" => Self::DeckTempoRangeCycle { deck: read.deck()? },
+            grid if grid.starts_with("deck.grid.") => return Self::grid_from_args(grid, &read),
             mixer => return Self::mixer_from_args(mixer, &read),
+        })
+    }
+
+    fn grid_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        let deck = read.deck()?;
+        Ok(match id {
+            "deck.grid.bpm.set" => Self::DeckGridBpmSet {
+                deck,
+                bpm: read.number("bpm")?,
+            },
+            "deck.grid.bpm.scale" => Self::DeckGridBpmScale {
+                deck,
+                factor: read.bpm_scale()?,
+            },
+            "deck.grid.bpm.step" => Self::DeckGridBpmStep {
+                deck,
+                amount: read.number("amount")?,
+            },
+            "deck.grid.tap" => Self::DeckGridTap { deck },
+            "deck.grid.marker.set" => Self::DeckGridMarkerSet { deck },
+            "deck.grid.marker.move" => Self::DeckGridMarkerMove {
+                deck,
+                seconds: read.number("seconds")?,
+            },
+            "deck.grid.marker.delete" => Self::DeckGridMarkerDelete { deck },
+            "deck.grid.marker.previous" => Self::DeckGridMarkerPrevious { deck },
+            "deck.grid.marker.next" => Self::DeckGridMarkerNext { deck },
+            "deck.grid.lock.toggle" => Self::DeckGridLockToggle { deck },
+            other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
 
@@ -592,6 +753,16 @@ impl Command {
             Self::DeckTempoSet { .. } => "deck.tempo.set",
             Self::DeckNudge { .. } => "deck.nudge",
             Self::DeckTempoRangeCycle { .. } => "deck.tempo.range.cycle",
+            Self::DeckGridBpmSet { .. } => "deck.grid.bpm.set",
+            Self::DeckGridBpmScale { .. } => "deck.grid.bpm.scale",
+            Self::DeckGridBpmStep { .. } => "deck.grid.bpm.step",
+            Self::DeckGridTap { .. } => "deck.grid.tap",
+            Self::DeckGridMarkerSet { .. } => "deck.grid.marker.set",
+            Self::DeckGridMarkerMove { .. } => "deck.grid.marker.move",
+            Self::DeckGridMarkerDelete { .. } => "deck.grid.marker.delete",
+            Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
+            Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
+            Self::DeckGridLockToggle { .. } => "deck.grid.lock.toggle",
             Self::MixerGainSet { .. } => "mixer.gain.set",
             Self::MixerEqSet { .. } => "mixer.eq.set",
             Self::MixerEqKillToggle { .. } => "mixer.eq.kill.toggle",

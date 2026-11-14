@@ -13,7 +13,7 @@ use rtrb::{Consumer, Producer};
 use super::deck::DeckPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tone::TestTone;
-use super::{COMMAND_CAPACITY, Output, Retired, RtCommand, Shared};
+use super::{COMMAND_CAPACITY, GridReport, Output, Queues, Retired, RtCommand, Shared};
 
 /// Channels a device needs for the headphones to have their own pair.
 const CHANNELS_WITH_HEADPHONES: usize = 4;
@@ -30,6 +30,7 @@ struct Channel {
 pub struct Processor {
     commands: Consumer<RtCommand>,
     retired: Producer<Retired>,
+    grids: Producer<GridReport>,
     shared: Arc<Shared>,
     channels: [Channel; 2],
     crossfader_position: f32,
@@ -44,12 +45,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub(super) fn new(
-        rate: SampleRate,
-        commands: Consumer<RtCommand>,
-        retired: Producer<Retired>,
-        shared: Arc<Shared>,
-    ) -> Self {
+    pub(super) fn new(rate: SampleRate, queues: Queues, shared: Arc<Shared>) -> Self {
         let position = 0.5;
         let curve = CrossfaderCurve::default();
         let (left, right) = curve.gains(position);
@@ -61,8 +57,9 @@ impl Processor {
             pre_listen: parameter(0.0),
         };
         Self {
-            commands,
-            retired,
+            commands: queues.commands,
+            retired: queues.retired,
+            grids: queues.grids,
             shared,
             channels: [channel(left), channel(right)],
             crossfader_position: position,
@@ -136,6 +133,7 @@ impl Processor {
             RtCommand::Seek { deck, seconds } => self.player(deck).seek_seconds(seconds),
             RtCommand::Tempo { deck, ratio } => self.player(deck).set_tempo(ratio),
             RtCommand::Nudge { deck, amount } => self.player(deck).set_nudge(amount),
+            RtCommand::Grid { deck, edit } => self.player(deck).edit_grid(edit),
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -220,7 +218,16 @@ impl Processor {
         (master, headphones)
     }
 
-    fn publish(&self) {
+    fn publish(&mut self) {
+        for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
+            if let Some(grid) = channel.player.unreported_grid() {
+                let report = GridReport { deck, grid: *grid };
+                // A full queue keeps the report for the next block.
+                if self.grids.push(report).is_ok() {
+                    channel.player.grid_reported();
+                }
+            }
+        }
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.loaded.set(channel.player.is_loaded());
             shared.playing.set(channel.player.is_playing());
