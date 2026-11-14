@@ -80,6 +80,27 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
   move one end. A deck left after an end that moved back returns into the loop as after a
   change of size.
 
+### In the interface
+
+- Each deck has a loop row above the page of its advanced panel: the selected loop size
+  between two arrows, In, Out and Active, and at the right end the two beatjump keys around
+  the move size. In is lit while an in point waits for its out point and Active while a loop
+  is on, both in the loop colour.
+- The advanced panel shows one page at a time, MOVE or GRID, picked with a switch at the
+  right end of its second row; it starts on MOVE. The page is a choice of the window, not of
+  the engine: `deck.page.set`. The CUE page comes with the hotcues.
+- The MOVE page has the four modes in its first row; in its second the move size between two
+  arrows, the two move keys and Fine, lit while the fine steps are on. With them on the size
+  reads `5 ms` and its arrows rest.
+- Both waveforms draw the loop as a veil of the loop colour with a bracket at each end, and
+  an in point that waits as a single bracket. The scrolling waveform also writes the length
+  of the loop at its start: in beats with a tempo in the grid, in seconds without.
+- Controls that would change nothing are disabled: an arrow at the end of its list, Out
+  without an in point or a loop, Active and the jumps without a tempo, the moves of a loop
+  without a loop.
+- Default shortcuts, per deck (`docs/behavior/keyboard.md`): the loop, its size down and up,
+  and the jump back and forward.
+
 ## Differences
 
 - The reference product keeps the in and out markers of a loop that is switched off, and its
@@ -93,6 +114,11 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
   step is left out.
 - The mode that takes the move size from the loop is the last entry of the size list instead
   of a button of its own.
+- An arrow that has nowhere to step to is disabled. The design system asks for a flash of the
+  arrow on a size that is out of range; a selected size the loop could not take shows in the
+  waveform, where the label keeps the length the loop has.
+- The design system names one set of loop keys for the deck with the focus. Platter has no
+  such deck: every shortcut names its deck, so each deck has its own keys.
 
 ## Edge cases
 
@@ -113,4 +139,5 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
 
 `crates/core/src/loops.rs` for the sizes; `crates/engine/src/rt/looper.rs` for the loop itself;
 `crates/engine/tests/loops.rs` for the commands, the length of a pass, the place a jump lands
-and the absence of clicks.
+and the absence of clicks; `crates/ui-egui/tests/panels.rs` for the loop row and the MOVE page,
+which it operates control by control.

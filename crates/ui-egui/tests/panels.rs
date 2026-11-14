@@ -12,7 +12,7 @@ use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::DeckId;
 use platter_engine::Command;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, SettingsPage};
+use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::DeckNotice;
@@ -80,6 +80,9 @@ impl Stage {
         let mut shell = Shell::new(Language::English).unwrap();
         shell.set_texts(texts);
         shell.state.settings_page = state.page;
+        // Deck A, whose grid is not locked, shows the GRID page and deck B the MOVE page, so
+        // both are operated.
+        shell.state.deck_page = [DeckPage::Grid, DeckPage::Move];
         let ctx = egui::Context::default();
         shell.install(&ctx);
         let mut stage = Self {
@@ -250,6 +253,44 @@ fn every_control_emits_its_command() {
         }
     }
     assert!(operated > 150, "{operated} controls operated");
+}
+
+#[test]
+fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for pages in [
+            [DeckPage::Grid, DeckPage::Move],
+            [DeckPage::Move, DeckPage::Grid],
+        ] {
+            // The states with the preferences open have the decks behind the dialog.
+            for state in states().into_iter().filter(|state| state.page.is_none()) {
+                let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+                stage.shell.state.deck_page = pages;
+                stage.frame(Vec::new());
+                stage.frame(Vec::new());
+                let controls: Vec<Control> = stage
+                    .controls()
+                    .into_iter()
+                    .filter(|control| control.command.starts_with("deck."))
+                    .collect();
+                assert!(controls.len() > 20, "{}", controls.len());
+                for (index, first) in controls.iter().enumerate() {
+                    for second in &controls[index + 1..] {
+                        let shared = first.rect.intersect(second.rect);
+                        assert!(
+                            shared.width() < 0.5 || shared.height() < 0.5,
+                            "{}, {language:?}, {pages:?}: {} at {:?} overlaps {} at {:?}",
+                            state.name,
+                            first.command,
+                            first.rect,
+                            second.command,
+                            second.rect,
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -635,6 +676,15 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "deck.grid.marker.previous",
         "deck.grid.marker.next",
         "deck.grid.lock.toggle",
+        "deck.loop.toggle",
+        "deck.loop.in",
+        "deck.loop.out",
+        "deck.loop.size.step",
+        "deck.beatjump",
+        "deck.move",
+        "deck.move.mode.set",
+        "deck.move.size.step",
+        "deck.move.fine.toggle",
         "mixer.gain.set",
         "mixer.eq.set",
         "mixer.eq.kill.toggle",
@@ -776,14 +826,20 @@ fn no_panel_paints_a_colour_outside_the_design_tokens() {
                 state.name
             );
         }
-        // The frame really shows the theme: the background, the panels and the deck hues.
+        // The frame really shows the theme: the background, the panels and the deck hues;
+        // and, where a deck has a loop, the brackets of the loop.
+        let looped = state.scene.engine.decks[0].looping.region.is_some();
         for token in [
             "bg-app",
             "surface-panel",
             "text-primary",
             "deck-a",
             "deck-b",
+            "loop-region",
         ] {
+            if token == "loop-region" && !looped {
+                continue;
+            }
             assert!(
                 seen.contains(&tokens.all_colors[token]),
                 "{}: {token} is not painted",

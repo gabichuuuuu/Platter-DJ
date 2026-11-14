@@ -9,7 +9,7 @@ use egui::{CornerRadius, Key, Rect, Sense};
 use platter_core::DeckId;
 use platter_engine::Command;
 
-use crate::command::{Action, AppCommand, SettingsPage};
+use crate::command::{Action, AppCommand, DeckPage, SettingsPage};
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
@@ -43,6 +43,8 @@ pub struct ViewState {
     pub zoom: [usize; DeckId::COUNT],
     /// The large time of each deck is the time that remains.
     pub remaining_large: [bool; DeckId::COUNT],
+    /// The page of the advanced panel each deck shows.
+    pub deck_page: [DeckPage; DeckId::COUNT],
     /// The meters of deck A, deck B and the master.
     pub meters: [MeterMemory; 3],
     pub browser: BrowserMemory,
@@ -55,6 +57,7 @@ impl Default for ViewState {
             settings_page: None,
             zoom: [DEFAULT_ZOOM; DeckId::COUNT],
             remaining_large: [true; DeckId::COUNT],
+            deck_page: [DeckPage::default(); DeckId::COUNT],
             meters: [MeterMemory::default(); 3],
             browser: BrowserMemory::default(),
             settings: SettingsMemory::default(),
@@ -144,6 +147,7 @@ impl Shell {
             AppCommand::DeckTimeDisplayToggle { deck } => {
                 state.remaining_large[deck.index()] ^= true;
             }
+            AppCommand::DeckPageSet { deck, page } => state.deck_page[deck.index()] = *page,
             AppCommand::MixerClipReset { meter } => state.meters[meter.index()].reset_clip(),
             _ => {}
         }

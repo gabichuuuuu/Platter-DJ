@@ -83,6 +83,35 @@ keys = "F2"
 command = "waveform.zoom.in"
 deck = "a"
 
+[[binding]]
+keys = "A"
+command = "deck.loop.toggle"
+deck = "a"
+
+[[binding]]
+keys = "S"
+command = "deck.loop.size.step"
+deck = "a"
+direction = "down"
+
+[[binding]]
+keys = "D"
+command = "deck.loop.size.step"
+deck = "a"
+direction = "up"
+
+[[binding]]
+keys = "E"
+command = "deck.beatjump"
+deck = "a"
+direction = "back"
+
+[[binding]]
+keys = "R"
+command = "deck.beatjump"
+deck = "a"
+direction = "forward"
+
 # Deck B
 
 [[binding]]
@@ -151,6 +180,35 @@ deck = "b"
 keys = "F4"
 command = "waveform.zoom.in"
 deck = "b"
+
+[[binding]]
+keys = "L"
+command = "deck.loop.toggle"
+deck = "b"
+
+[[binding]]
+keys = "J"
+command = "deck.loop.size.step"
+deck = "b"
+direction = "down"
+
+[[binding]]
+keys = "K"
+command = "deck.loop.size.step"
+deck = "b"
+direction = "up"
+
+[[binding]]
+keys = "U"
+command = "deck.beatjump"
+deck = "b"
+direction = "back"
+
+[[binding]]
+keys = "I"
+command = "deck.beatjump"
+deck = "b"
+direction = "forward"
 
 # Application
 

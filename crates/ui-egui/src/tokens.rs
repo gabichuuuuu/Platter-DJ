@@ -123,6 +123,7 @@ token_group! {
         meter_clip => "meter-clip",
         grid_beat => "grid-beat",
         grid_downbeat => "grid-downbeat",
+        loop_region => "loop-region",
     }
 }
 
