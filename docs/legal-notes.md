@@ -5,9 +5,11 @@ They are not legal advice.
 
 ## Licence of the project
 
-Platter is licensed under `MIT OR Apache-2.0`. The copyright holder named in the licence files is
-"The Platter contributors". There is no CLA and no DCO: submitting a pull request licenses the
-contribution under the same terms (`CONTRIBUTING.md`).
+Platter is licensed under `MIT OR Apache-2.0`. The copyright notice in `LICENSE-MIT`,
+`LICENSE-APACHE` and `NOTICE` names Gabriel Alejandro Spoleto Couto, the maintainer and author of
+the project, together with the Platter contributors. There is no CLA and no DCO: each contributor
+keeps the copyright of their contribution and licenses it under the same terms
+(`CONTRIBUTING.md`).
 
 ## Clean-room position
 

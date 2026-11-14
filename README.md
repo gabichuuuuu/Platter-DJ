@@ -96,6 +96,8 @@ cargo run -p platter-cli -- --help
 
 ## Licence
 
+Copyright 2026 Gabriel Alejandro Spoleto Couto and the Platter contributors.
+
 Licensed under either of the Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE)) or
 the MIT license ([`LICENSE-MIT`](LICENSE-MIT)), at your option. Third-party resources are listed
 in [`ATTRIBUTION.md`](ATTRIBUTION.md).
