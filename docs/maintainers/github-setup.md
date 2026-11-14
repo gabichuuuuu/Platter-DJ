@@ -54,8 +54,6 @@ In this order, when the maintainer decides to open:
 5. Review the rule of `main`: with more than one maintainer, require at least one approval.
 6. Mark `docs/decisions/0001-pull-requests-limited-to-collaborators.md` as superseded by a new
    record that registers the opening.
-7. Decide whether `ci.yml` keeps running by itself for pull requests from outside the project,
-   and record it as `docs/decisions/0016-contributors-test-on-their-machine.md` asks.
 
 ## Files in this repository that GitHub reads
 
