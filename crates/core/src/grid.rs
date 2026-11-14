@@ -77,12 +77,10 @@ impl BeatGrid {
         if self.locked {
             return false;
         }
-        if self.len == 0 {
-            self.add_marker(0.0);
-        }
+        let added = self.len == 0 && self.add_marker(0.0);
         let changed = self.bpm != Some(bpm);
         self.bpm = Some(bpm);
-        changed
+        added || changed
     }
 
     /// Multiplies the tempo by `factor`. Nothing changes without a tempo or when the result
@@ -227,6 +225,18 @@ mod tests {
         let mut grid = grid_with(&[1.5]);
         grid.set_bpm(bpm(128.0));
         assert_eq!(grid.markers(), &[1.5]);
+    }
+
+    #[test]
+    fn the_same_tempo_on_a_grid_without_markers_still_changes_it() {
+        let mut grid = BeatGrid::default();
+        grid.set_bpm(bpm(128.0));
+        assert!(grid.delete_marker(0.0));
+        assert!(
+            grid.set_bpm(bpm(128.0)),
+            "the marker at the start is a change"
+        );
+        assert_eq!(grid.markers(), &[0.0]);
     }
 
     #[test]

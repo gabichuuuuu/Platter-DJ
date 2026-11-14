@@ -19,7 +19,8 @@ control side dispatches the command; an invalid command changes nothing.
 
 **Two values from one constructor.** `Engine::new` returns the control side and the
 `Processor`. The processor is moved to whoever drives the audio. The two share a block of
-atomics and two `rtrb` queues: commands one way, retired buffers the other.
+atomics and two `rtrb` queues: commands one way, retired buffers the other. M3 adds a third,
+for the beatgrids (`docs/decisions/0014-beatgrid-in-the-processor.md`).
 
 **Track memory.** A loaded track is stereo `f32` PCM behind an `Arc`. It reaches the processor
 inside a command and leaves through the retired queue, one item per swap, so the buffer is

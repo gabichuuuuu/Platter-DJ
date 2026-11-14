@@ -201,7 +201,7 @@ impl DeckPlayer {
         };
         let rate = audio.rate().as_f64();
         let end = audio.frames() as f64 / rate;
-        let at = self.settled_position() / rate;
+        let at = (self.settled_position() / rate).clamp(0.0, end);
         let arriving = self.pending_swap.is_some();
         let grid = if arriving {
             self.arriving_grid.get_or_insert_with(BeatGrid::default)

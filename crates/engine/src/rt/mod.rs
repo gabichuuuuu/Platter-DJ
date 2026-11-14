@@ -1,7 +1,7 @@
 //! The real-time side of the engine: everything the audio callback runs.
 //!
 //! Rules of this module, from `AGENTS.md`: no allocation and no deallocation, no lock, no
-//! I/O, no system call, bounded time. It talks to the rest of the program through two
+//! I/O, no system call, bounded time. It talks to the rest of the program through three
 //! lock-free queues and a block of atomics. It uses `platter-core`, `platter-dsp` and the
 //! queue crate only; `cargo xtask layers` checks that.
 //!

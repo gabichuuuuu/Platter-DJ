@@ -47,7 +47,9 @@ Several tempos along one track are M4.
   marker set in a row put the marker where the seek landed, as with the cue point
   (`docs/behavior/transport.md`).
 - A tempo set on a grid without markers also sets a marker at the start of the track, so the
-  beats have a place.
+  beats have a place. A grid whose last marker is deleted keeps its tempo but has no beats
+  until a marker is set or the tempo is set again.
+- A marker set after a seek past the end of the track goes on the end.
 - A position within 1 ms of a marker counts as on it. A new marker that close to another is not
   added; previous and next skip the marker the deck stands on.
 - A moved marker stays inside the track and at least 1 ms from its neighbours, so the markers
@@ -60,7 +62,8 @@ Several tempos along one track are M4.
 Each tap is timed on the control side when the command arrives. From the fourth tap on, the
 tempo is 60 divided by the mean of the intervals between the last taps, up to eight of them. A
 pause longer than two seconds starts a new count. A tapped tempo outside 20 to 400 BPM changes
-nothing.
+nothing. Taps use the clock of the computer, not the time of a render script, so a script
+that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
 
 ## Differences
 
@@ -70,8 +73,9 @@ nothing.
   single tempo Platter steps the tempo by the amount the command carries.
 - The selected marker is the one on or before the play position, as the reference product
   selects it. Platter has no separate selection.
-- The grid lives with the loaded track and is lost when the track is loaded again, until the
-  collection stores it later in M3.
+- The grid lives with the loaded track and is lost when the track is loaded again, which a
+  change of sample rate of the audio device also does, until the collection stores it later
+  in M3.
 
 ## Edge cases
 

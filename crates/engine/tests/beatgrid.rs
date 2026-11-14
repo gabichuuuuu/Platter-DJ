@@ -53,6 +53,24 @@ fn a_marker_goes_where_the_seek_before_it_landed() {
 }
 
 #[test]
+fn a_marker_after_a_seek_past_the_end_lands_on_the_end() {
+    let mut rig = rig("grid-seek-past-end");
+    seek(&mut rig, 10.0);
+    rig.send(Command::DeckGridMarkerSet { deck: A });
+    assert_eq!(grid(&mut rig).markers(), &[4.0]);
+}
+
+#[test]
+fn the_marker_a_repeated_tempo_adds_reaches_the_snapshot() {
+    let mut rig = rig("grid-same-tempo");
+    set_bpm(&mut rig, 128.0);
+    rig.send(Command::DeckGridMarkerDelete { deck: A });
+    assert_eq!(grid(&mut rig).markers(), &[] as &[f64]);
+    set_bpm(&mut rig, 128.0);
+    assert_eq!(grid(&mut rig).markers(), &[0.0]);
+}
+
+#[test]
 fn a_marker_set_while_playing_lands_at_the_play_position() {
     let mut rig = rig("grid-playing-marker");
     rig.send(Command::DeckPlay { deck: A });
