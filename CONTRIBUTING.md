@@ -27,8 +27,8 @@ change, whoever or whatever writes it.
 ## The gate
 
 `cargo xtask ci` is the only gate, and CI runs exactly the same command. It checks formatting,
-lints, tests, the layer rules, licences and advisories, the clean-room rules, the privacy rules
-and the feature inventory. A pull request is reviewed once the gate passes.
+lints, tests, the layer rules, licences and advisories, the clean-room rules and the feature
+inventory. A pull request is reviewed once the gate passes.
 
 Do not weaken a test or a rule to make the gate pass. If a rule seems wrong, open an issue.
 
