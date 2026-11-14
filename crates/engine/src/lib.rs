@@ -13,7 +13,9 @@ pub mod rt;
 mod tap;
 mod wav;
 
-pub use command::{BpmScale, Command, CommandError, Direction, MoveMode, MoveSize, SizeStep};
+pub use command::{
+    BpmScale, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
+};
 pub use control::{
     DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY, FINE_MOVE_SECONDS,
     MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,

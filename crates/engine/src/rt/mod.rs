@@ -6,8 +6,9 @@
 //! queue crate only; `cargo xtask layers` checks that.
 //!
 //! Memory is the delicate part. A track arrives inside a command and leaves through the
-//! retired queue, so its buffer is always freed by a normal thread. The beatgrid and the
-//! loop of each deck live here, because their edits use the play position; they go back to
+//! retired queue, so its buffer is always freed by a normal thread. The beatgrid, the
+//! loop and the stored cues of each deck live here, because their edits use the play
+//! position; they go back to
 //! the control side as fixed-size values through a third queue.
 
 mod deck;
@@ -19,7 +20,9 @@ mod tone;
 
 use std::sync::Arc;
 
-use platter_core::{BeatGrid, Bpm, DeckId, LoopRegion, SampleRate};
+use platter_core::{
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate,
+};
 use platter_dsp::Frame;
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
@@ -147,6 +150,12 @@ pub enum RtCommand {
         deck: DeckId,
         by: Span,
     },
+    /// An edit of the stored cues, at the play position the deck has once the commands
+    /// before are applied.
+    Cues {
+        deck: DeckId,
+        edit: CueEdit,
+    },
     Gain {
         deck: DeckId,
         linear: f32,
@@ -256,6 +265,33 @@ pub enum LoopPart {
     Out,
 }
 
+/// An edit of the stored cues of a deck, or a visit to one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CueEdit {
+    /// The key of a slot, pressed or released: stores into an empty slot, goes to a stored
+    /// cue.
+    Hotcue {
+        slot: HotcueSlot,
+        pressed: bool,
+    },
+    /// Stores the floating cue, or the loop that is on, in the first empty slot.
+    Store,
+    Delete(HotcueSlot),
+    DeleteSelected,
+    /// Moves the selected cue to a slot.
+    Map(HotcueSlot),
+    /// Goes to the cue after the play position, or to the one before.
+    Step {
+        forward: bool,
+    },
+    Rename(CueName),
+    /// Gives the selected cue a kind; one that becomes a loop gets this many beats.
+    Retype {
+        kind: CueKind,
+        beats: f64,
+    },
+}
+
 /// The loop of a deck, in seconds of its track. A loop is on for as long as it exists.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct LoopState {
@@ -275,6 +311,7 @@ pub struct DeckReport {
     pub deck: DeckId,
     pub grid: Option<BeatGrid>,
     pub looping: Option<LoopState>,
+    pub cues: Option<Cues>,
 }
 
 /// Reports the queue holds. The processor sends at most one per deck and block, with all

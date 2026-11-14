@@ -1,16 +1,17 @@
 //! One deck: reads its track at the current speed and handles the transport.
 //!
 //! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
-//! for loops and jumps, `docs/behavior/loops.md`.
+//! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
+//! `docs/behavior/cues.md`.
 
-use platter_core::{BeatGrid, SampleRate};
+use platter_core::{BeatGrid, Cue, CueKind, Cues, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
-use super::looper::{Looper, Track};
-use super::{GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
+use super::looper::{Looper, Region, Track};
+use super::{CueEdit, GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
@@ -74,6 +75,10 @@ pub(super) struct DeckPlayer {
     grid_unreported: bool,
     /// The loop of the track the deck holds once the pending swap is applied.
     looper: Looper,
+    /// The stored cues of the track the deck holds once the pending swap is applied.
+    cues: Cues,
+    /// The cues changed since the control side last got them.
+    cues_unreported: bool,
     tail: Option<Tail>,
 }
 
@@ -97,6 +102,8 @@ impl DeckPlayer {
             arriving_grid: None,
             grid_unreported: false,
             looper: Looper::default(),
+            cues: Cues::default(),
+            cues_unreported: false,
             tail: None,
         }
     }
@@ -115,6 +122,7 @@ impl DeckPlayer {
         self.arriving_cue = None;
         self.arriving_grid = None;
         self.looper.clear();
+        self.set_cues(Cues::default());
         self.pending_swap = Some(audio);
     }
 
@@ -167,7 +175,10 @@ impl DeckPlayer {
         let end = self
             .settled_audio()
             .map_or(0.0, |audio| audio.frames() as f64);
-        let cue = self.settled_position().clamp(0.0, end);
+        self.set_cue_at(self.settled_position().clamp(0.0, end));
+    }
+
+    fn set_cue_at(&mut self, cue: f64) {
         if self.pending_swap.is_some() {
             self.arriving_cue = Some(cue);
         } else {
@@ -320,6 +331,120 @@ impl DeckPlayer {
             self.tail = Tail::over(self.position, SPLICE_SECONDS * self.engine_rate);
             self.position = frame;
         }
+    }
+
+    fn set_cues(&mut self, cues: Cues) {
+        if cues != self.cues {
+            self.cues = cues;
+            self.cues_unreported = true;
+        }
+    }
+
+    /// Applies an edit to the stored cues of the track the deck holds once the pending
+    /// changes are applied, at the play position it will have then.
+    pub(super) fn edit_cues(&mut self, edit: CueEdit) {
+        let Some(track) = self.settled_track() else {
+            return;
+        };
+        let at = self.settled_position().clamp(0.0, track.frames);
+        let mut cues = self.cues;
+        match edit {
+            CueEdit::Hotcue {
+                slot,
+                pressed: true,
+            } => match cues.get(slot).copied() {
+                Some(cue) => {
+                    cues.select(slot);
+                    self.go_to_cue(cue, track, true);
+                }
+                None => {
+                    cues.store(slot, self.cue_to_store(at, track));
+                }
+            },
+            CueEdit::Hotcue { pressed: false, .. } => self.cue_button(false),
+            CueEdit::Store => {
+                if let Some(slot) = cues.first_free() {
+                    let floating = self.settled_cue().clamp(0.0, track.frames);
+                    cues.store(slot, self.cue_to_store(floating, track));
+                }
+            }
+            CueEdit::Delete(slot) => {
+                cues.delete(slot);
+            }
+            CueEdit::DeleteSelected => {
+                if let Some(slot) = cues.selected() {
+                    cues.delete(slot);
+                }
+            }
+            CueEdit::Map(slot) => {
+                cues.map_selected(slot);
+            }
+            CueEdit::Step { forward } => {
+                let seconds = at / track.rate;
+                let slot = if forward {
+                    cues.next(seconds)
+                } else {
+                    cues.previous(seconds)
+                };
+                if let Some((slot, cue)) = slot.and_then(|slot| Some((slot, *cues.get(slot)?))) {
+                    cues.select(slot);
+                    self.go_to_cue(cue, track, false);
+                }
+            }
+            CueEdit::Rename(name) => {
+                cues.rename_selected(name);
+            }
+            CueEdit::Retype { kind, beats } => {
+                // A loop the track cannot hold from the cue on is not made.
+                let length = cues.selected_cue().and_then(|cue| {
+                    let length = beats * track.beat?;
+                    let fits =
+                        kind == CueKind::Loop && cue.position * track.rate + length <= track.frames;
+                    fits.then_some(length / track.rate)
+                });
+                cues.retype_selected(kind, length);
+            }
+        }
+        self.set_cues(cues);
+    }
+
+    /// What a store at frame `at` stores: the loop that is on, or else that place.
+    fn cue_to_store(&self, at: f64, track: Track) -> Cue {
+        match self.looper.state(track.rate).region {
+            Some(region) => Cue::looping(region),
+            None => Cue::at(at / track.rate),
+        }
+    }
+
+    /// Goes to a stored cue and switches on the loop it stores. A deck that plays goes on
+    /// from there. A paused one moves there and, with `hold`, takes the cue as its floating
+    /// cue and plays until the key is released, as under the cue button.
+    fn go_to_cue(&mut self, cue: Cue, track: Track, hold: bool) {
+        let frame = (cue.position * track.rate).clamp(0.0, track.frames);
+        if let Some(region) = cue.region() {
+            // The end went through seconds and back: it may be a hair past the track.
+            let end = (region.end * track.rate).min(track.frames);
+            self.looper.set_region(Region { start: frame, end }, track);
+        }
+        if self.playing && !self.cue_preview {
+            self.jump_to(frame);
+            return;
+        }
+        self.pending_seek = Some(SeekTarget::Frame(frame));
+        if hold {
+            self.set_cue_at(frame);
+            self.playing = true;
+            self.cue_preview = true;
+        }
+    }
+
+    /// The stored cues, once, after each change.
+    pub(super) fn unreported_cues(&self) -> Option<Cues> {
+        self.cues_unreported.then_some(self.cues)
+    }
+
+    pub(super) fn cues_reported(&mut self) {
+        self.cues_unreported = false;
     }
 
     /// The loop, once, after each change.

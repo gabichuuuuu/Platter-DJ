@@ -66,9 +66,11 @@ its own code, graphics and sounds.
 - The beatgrid is set by hand on the GRID page of each deck: nothing detects the tempo yet,
   the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
 - Loops, beatjumps and the moves of a loop start at the play position as it is: nothing
-  puts them on the beat until Quantize exists. A loop is lost when it is switched off, as
-  there are no hotcues to store it in. Nobody has listened to them yet.
-- No sync, no hotcues, no key lock, no collection, no MIDI: those are milestone M3.
+  puts them on the beat until Quantize exists. Nobody has listened to them yet.
+- Stored cues and the eight hotcues exist as commands of the engine, for the render scripts;
+  the window has no controls for them yet. They are lost when the track is loaded again, and
+  the fade and load types are labels only.
+- No sync, no key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.

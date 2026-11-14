@@ -136,6 +136,7 @@ impl Processor {
             RtCommand::Grid { deck, edit } => self.player(deck).edit_grid(edit),
             RtCommand::Loop { deck, edit } => self.player(deck).edit_loop(edit),
             RtCommand::Jump { deck, by } => self.player(deck).jump(by),
+            RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -226,10 +227,15 @@ impl Processor {
                 deck,
                 grid: channel.player.unreported_grid().copied(),
                 looping: channel.player.unreported_loop(),
+                cues: channel.player.unreported_cues(),
             };
             let (grid, looping) = (report.grid.is_some(), report.looping.is_some());
+            let cues = report.cues.is_some();
             // A full queue keeps what changed for the next block.
-            if (grid || looping) && self.reports.push(report).is_ok() {
+            if (grid || looping || cues) && self.reports.push(report).is_ok() {
+                if cues {
+                    channel.player.cues_reported();
+                }
                 if grid {
                     channel.player.grid_reported();
                 }

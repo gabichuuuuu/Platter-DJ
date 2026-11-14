@@ -10,20 +10,22 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
-use platter_core::{BeatGrid, Bpm, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError};
+use platter_core::{
+    BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
+};
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::command::{
-    Command, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB,
+    Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB,
     MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MoveMode, MoveSize,
     SizeStep,
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
-    self, COMMAND_CAPACITY, ControlEnds, GridEdit, LoopEdit, LoopPart, LoopState, Processor,
-    RtCommand, Span, TrackAudio,
+    self, COMMAND_CAPACITY, ControlEnds, CueEdit, GridEdit, LoopEdit, LoopPart, LoopState,
+    Processor, RtCommand, Span, TrackAudio,
 };
 use crate::tap::TapTempo;
 
@@ -165,6 +167,8 @@ pub struct DeckSnapshot {
     pub grid: BeatGrid,
     /// Loop of the loaded track, as of the last [`Engine::poll`].
     pub looping: LoopState,
+    /// Stored cues of the loaded track, as of the last [`Engine::poll`].
+    pub cues: Cues,
     pub controls: DeckControls,
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [f32; 2],
@@ -189,9 +193,10 @@ struct DeckControl {
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     controls: DeckControls,
-    /// The grid and the loop as the processor last reported them.
+    /// The grid, the loop and the stored cues as the processor last reported them.
     grid: BeatGrid,
     looping: LoopState,
+    cues: Cues,
     tap: TapTempo,
 }
 
@@ -279,8 +284,35 @@ impl Engine {
                 self.send(RtCommand::Nudge { deck, amount })
             }
             Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
-            other => self.dispatch_loop(other),
+            other => self.dispatch_cues(other),
         }
+    }
+
+    /// The commands of the stored cues. The slots and the selection are kept by the
+    /// processor, so commands in a row act on what the ones before left.
+    fn dispatch_cues(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, edit) = match command {
+            Command::DeckHotcueTrigger {
+                deck,
+                slot,
+                pressed,
+            } => (deck, CueEdit::Hotcue { slot, pressed }),
+            Command::DeckHotcueDelete { deck, slot } => (deck, CueEdit::Delete(slot)),
+            Command::DeckHotcueMap { deck, slot } => (deck, CueEdit::Map(slot)),
+            Command::DeckCueStore { deck } => (deck, CueEdit::Store),
+            Command::DeckCueSelect { deck, direction } => {
+                let forward = direction == CueStep::Next;
+                (deck, CueEdit::Step { forward })
+            }
+            Command::DeckCueRename { deck, name } => (deck, CueEdit::Rename(CueName::new(&name))),
+            Command::DeckCueTypeSet { deck, kind } => {
+                let beats = self.decks[deck.index()].controls.loop_size.beats();
+                (deck, CueEdit::Retype { kind, beats })
+            }
+            Command::DeckCueDelete { deck } => (deck, CueEdit::DeleteSelected),
+            other => return self.dispatch_loop(other),
+        };
+        self.send(RtCommand::Cues { deck, edit })
     }
 
     /// The commands of loops, jumps and moves. The selections of size and mode are kept
@@ -584,6 +616,9 @@ impl Engine {
             if let Some(looping) = report.looping {
                 deck.looping = looping;
             }
+            if let Some(cues) = report.cues {
+                deck.cues = cues;
+            }
         }
         let mut events = Vec::new();
         while let Ok(finished) = self.finished_loads.try_recv() {
@@ -643,6 +678,7 @@ impl Engine {
                 cue_seconds: published.cue.get(),
                 grid: control.grid,
                 looping: control.looping,
+                cues: control.cues,
                 controls: control.controls.clone(),
                 levels: [published.levels[0].get(), published.levels[1].get()],
             }

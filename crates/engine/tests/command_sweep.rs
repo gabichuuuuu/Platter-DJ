@@ -7,11 +7,11 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::DeckId;
-use platter_core::{Bpm, MAX_MARKERS};
+use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
-    Band, BpmScale, Command, CrossfaderCurve, Direction, MoveMode, Output, SizeStep, TEMPO_RANGES,
+    Band, BpmScale, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output, SizeStep,
+    TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -69,6 +69,26 @@ fn later_command() -> impl Strategy<Value = Command> {
         output.prop_map(|output| Command::MasterTestTone { output }),
         grid_command(),
         loop_command(),
+        cue_command(),
+    ]
+}
+
+/// The commands of the stored cues, added in M3.
+fn cue_command() -> impl Strategy<Value = Command> {
+    let slot = || prop::sample::select(HotcueSlot::ALL.to_vec());
+    let step = prop::sample::select(vec![CueStep::Previous, CueStep::Next]);
+    let kind = prop::sample::select(CueKind::ALL.to_vec());
+    prop_oneof![
+        4 => (deck(), slot(), any::<bool>()).prop_map(|(deck, slot, pressed)| {
+            Command::DeckHotcueTrigger { deck, slot, pressed }
+        }),
+        1 => (deck(), slot()).prop_map(|(deck, slot)| Command::DeckHotcueDelete { deck, slot }),
+        1 => (deck(), slot()).prop_map(|(deck, slot)| Command::DeckHotcueMap { deck, slot }),
+        2 => deck().prop_map(|deck| Command::DeckCueStore { deck }),
+        2 => (deck(), step).prop_map(|(deck, direction)| Command::DeckCueSelect { deck, direction }),
+        1 => (deck(), ".{0,60}").prop_map(|(deck, name)| Command::DeckCueRename { deck, name }),
+        2 => (deck(), kind).prop_map(|(deck, kind)| Command::DeckCueTypeSet { deck, kind }),
+        1 => deck().prop_map(|deck| Command::DeckCueDelete { deck }),
     ]
 }
 
@@ -168,6 +188,12 @@ fn value() -> impl Strategy<Value = Value> {
             "loop",
             "loop_in",
             "loop_out",
+            "previous",
+            "next",
+            "cue",
+            "fade_in",
+            "fade_out",
+            "load",
         ])
         .prop_map(|text| Value::Text(text.to_owned())),
     ]
@@ -213,6 +239,17 @@ proptest! {
             }
             if let Some(at) = deck.looping.in_point {
                 assert!((0.0..=seconds + 1e-4).contains(&at), "{at} in {seconds}");
+            }
+            for (_, cue) in deck.cues.iter() {
+                assert!((0.0..=seconds + 1e-4).contains(&cue.position), "{cue:?}");
+                assert!(cue.name.as_str().len() <= CueName::MAX_BYTES);
+                assert_eq!(cue.region().is_some(), cue.kind() == CueKind::Loop);
+                if let Some(region) = cue.region() {
+                    assert!(region.start < region.end && region.end <= seconds + 1e-4, "{cue:?}");
+                }
+            }
+            if let Some(slot) = deck.cues.selected() {
+                assert!(deck.cues.get(slot).is_some(), "an empty slot is selected");
             }
             assert!(deck.cue_seconds.is_finite());
             assert!(deck.levels.iter().all(|level| level.is_finite()));

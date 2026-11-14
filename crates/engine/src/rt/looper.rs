@@ -77,6 +77,17 @@ impl Looper {
         }
     }
 
+    /// Switches on a loop over `region`, in place of what there was, when the track holds
+    /// it.
+    pub(super) fn set_region(&mut self, region: Region, track: Track) {
+        let fits = region.start >= 0.0
+            && region.end <= track.frames
+            && region.frames() >= MIN_LOOP_SECONDS * track.rate;
+        if fits {
+            self.set(State::On(region));
+        }
+    }
+
     /// A span in frames of the track, or nothing when it has no length here.
     pub(super) fn frames_of(&self, span: Span, track: Track) -> Option<f64> {
         let frames = match span {
@@ -230,6 +241,25 @@ mod tests {
         let mut looper = Looper::default();
         assert_eq!(looper.edit(LoopEdit::Toggle { beats }, at, TRACK), None);
         looper
+    }
+
+    #[test]
+    fn a_region_is_set_only_when_the_track_holds_it() {
+        let mut looper = looped(1_000.0, 4.0);
+        let set = |looper: &mut Looper, start, end| {
+            looper.set_region(Region { start, end }, TRACK);
+            looper.region()
+        };
+        assert_eq!(set(&mut looper, 5_000.0, 6_000.0), region(5_000.0, 6_000.0));
+        assert_eq!(
+            set(&mut looper, 99_500.0, 100_000.5),
+            region(5_000.0, 6_000.0)
+        );
+        assert_eq!(set(&mut looper, 7_000.0, 7_000.5), region(5_000.0, 6_000.0));
+        assert_eq!(
+            set(&mut looper, f64::NAN, 8_000.0),
+            region(5_000.0, 6_000.0)
+        );
     }
 
     #[test]
