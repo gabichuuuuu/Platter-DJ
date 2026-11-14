@@ -269,6 +269,8 @@ pub enum Command {
     ClockBend {
         amount: f64,
     },
+    /// A click on every beat of the clock, on the headphones.
+    ClockMetronomeToggle,
     GlobalSyncModeSet {
         mode: SyncMode,
     },
@@ -844,6 +846,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[number("amount", -MAX_NUDGE, MAX_NUDGE)],
     },
     CommandSpec {
+        id: "clock.metronome.toggle",
+        label: "Metronome",
+        params: &[],
+    },
+    CommandSpec {
         id: "global.snap.toggle",
         label: "Snap",
         params: &[],
@@ -1210,6 +1217,7 @@ impl Command {
             "clock.bend" => Self::ClockBend {
                 amount: read.number("amount")?,
             },
+            "clock.metronome.toggle" => Self::ClockMetronomeToggle,
             "global.sync.mode.set" => Self::GlobalSyncModeSet {
                 mode: read.sync_mode()?,
             },
@@ -1395,6 +1403,7 @@ impl Command {
             Self::ClockTempoStep { .. } => "clock.tempo.step",
             Self::ClockTap => "clock.tap",
             Self::ClockBend { .. } => "clock.bend",
+            Self::ClockMetronomeToggle => "clock.metronome.toggle",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",

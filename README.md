@@ -75,6 +75,9 @@ its own code, graphics and sounds.
   controls for them, its tempo readout does not show the speed of a synced deck, and nobody
   has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
   sync.
+- The metronome of the master clock has no key in the window yet: `clock.metronome.toggle`
+  switches it from the command line. It clicks on the headphones only, so a device with two
+  outputs does not play it, and nobody has listened to it.
 - No key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
