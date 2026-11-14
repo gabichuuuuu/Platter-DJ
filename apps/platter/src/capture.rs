@@ -121,7 +121,7 @@ pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
     shell.state.settings_page = page;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Platter")
+            .with_title("Platter DJ")
             .with_inner_size([DESIGN_WIDTH, DESIGN_HEIGHT])
             .with_resizable(false),
         ..eframe::NativeOptions::default()
@@ -136,7 +136,7 @@ pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
         done: Arc::new(AtomicBool::new(false)),
     };
     eframe::run_native(
-        "Platter",
+        "Platter DJ",
         options,
         Box::new(move |creation| {
             app.shell.install(&creation.egui_ctx);

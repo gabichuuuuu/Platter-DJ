@@ -133,7 +133,7 @@ impl PlatterApp {
         };
         app.log(
             Level::Info,
-            &format!("Platter {} started", env!("CARGO_PKG_VERSION")),
+            &format!("Platter DJ {} started", env!("CARGO_PKG_VERSION")),
         );
         app.load_keymap();
         app.open_audio(Some(source_of(processor)));

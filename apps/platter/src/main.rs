@@ -35,7 +35,7 @@ fn run() -> Result<(), String> {
     let shell = Shell::new(settings.language).map_err(|error| error.to_string())?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Platter")
+            .with_title("Platter DJ")
             .with_app_id("platter")
             .with_inner_size([DESIGN_WIDTH, DESIGN_HEIGHT])
             .with_min_inner_size([960.0, 600.0])
@@ -43,7 +43,7 @@ fn run() -> Result<(), String> {
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(
-        "Platter",
+        "Platter DJ",
         options,
         Box::new(move |creation| {
             shell.install(&creation.egui_ctx);

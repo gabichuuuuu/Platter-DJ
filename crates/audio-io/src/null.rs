@@ -16,8 +16,10 @@ use crate::{AudioError, DeviceKind, Output, Routing, Running, Source, StreamInfo
 /// Frames per tick of the clocked output.
 const CLOCK_FRAMES: u32 = 512;
 const CLOCK_CHANNELS: u16 = 2;
-/// How far the clock may fall behind before it starts over instead of making up the blocks.
-const MAX_LAG: Duration = Duration::from_millis(250);
+/// How far behind the clocked output may fall and still catch up. A timer that wakes late, as
+/// on a loaded machine, is made up for with blocks run at once; a longer gap is a suspend or a
+/// debugger, and then the clock starts over instead of running a burst.
+const CLOCK_MAX_LAG: Duration = Duration::from_millis(250);
 
 /// A stream that produces audio only when asked, into a buffer the caller can read.
 pub struct ManualStream {
@@ -90,21 +92,16 @@ pub fn silent(source: Source, sample_rate: u32) -> Result<Output, AudioError> {
         .name("platter-silent-output".to_owned())
         .spawn(move || {
             let mut block = vec![0.0f32; CLOCK_FRAMES as usize * usize::from(CLOCK_CHANNELS)];
-            // When the next block is due. A sleep may last longer than asked, by a lot on a
-            // coarse system timer, so the blocks it owes are made up at once.
             let mut next = Instant::now();
             while !stopped.load(Ordering::Relaxed) {
-                let now = Instant::now();
-                if next > now {
-                    std::thread::sleep(next - now);
-                    continue;
-                }
-                if now - next > MAX_LAG {
-                    // The machine was busy or asleep: start over instead of catching up.
-                    next = now;
-                }
                 driver.fill(&mut block, usize::from(CLOCK_CHANNELS));
                 next += tick;
+                let now = Instant::now();
+                match pace(next, now) {
+                    Pace::Sleep(wait) => std::thread::sleep(wait),
+                    Pace::CatchUp => {}
+                    Pace::Restart => next = now,
+                }
             }
             driver
         })
@@ -124,4 +121,53 @@ pub fn silent(source: Source, sample_rate: u32) -> Result<Output, AudioError> {
             thread: Some(thread),
         }),
     })
+}
+
+/// What the clocked output does after a block, given when the next one is due.
+#[derive(Debug, PartialEq, Eq)]
+enum Pace {
+    /// The next block is due later: wait for it.
+    Sleep(Duration),
+    /// The clock is behind by less than [`CLOCK_MAX_LAG`]: run the next block at once.
+    CatchUp,
+    /// The clock is further behind: count from now.
+    Restart,
+}
+
+fn pace(next: Instant, now: Instant) -> Pace {
+    if next > now {
+        Pace::Sleep(next - now)
+    } else if now - next <= CLOCK_MAX_LAG {
+        Pace::CatchUp
+    } else {
+        Pace::Restart
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_block_due_later_is_waited_for() {
+        let now = Instant::now();
+        let wait = Duration::from_millis(5);
+        assert_eq!(pace(now + wait, now), Pace::Sleep(wait));
+    }
+
+    // Regression: a timer that woke a few blocks late made the clock start over, so on a loaded
+    // macOS runner the silent output produced a quarter of the frames of the time elapsed.
+    #[test]
+    fn a_clock_a_few_blocks_late_catches_up() {
+        let next = Instant::now();
+        assert_eq!(pace(next, next + Duration::from_millis(40)), Pace::CatchUp);
+        assert_eq!(pace(next, next + CLOCK_MAX_LAG), Pace::CatchUp);
+    }
+
+    #[test]
+    fn a_clock_far_behind_starts_over() {
+        let next = Instant::now();
+        let late = CLOCK_MAX_LAG + Duration::from_millis(1);
+        assert_eq!(pace(next, next + late), Pace::Restart);
+    }
 }

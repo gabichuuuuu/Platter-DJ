@@ -2,7 +2,7 @@
   <img src="docs/assets/platter-mark.svg" width="96" height="96" alt="The Platter mark">
 </p>
 
-<h1 align="center">Platter</h1>
+<h1 align="center">Platter DJ</h1>
 
 <p align="center">An open-source DJ application written in Rust.</p>
 
