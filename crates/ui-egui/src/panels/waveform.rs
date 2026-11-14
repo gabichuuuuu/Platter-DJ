@@ -32,6 +32,11 @@ const GUTTER_WIDTH: f32 = 32.0;
 const LOOP_VEIL: f32 = 0.22;
 /// Length of the two ticks that turn the line at an end of a loop into a bracket.
 const BRACKET_TICK: f32 = 5.0;
+/// Side of the flag that carries the number of a stored cue.
+const CUE_FLAG: f32 = 12.0;
+const CUE_LINE: f32 = 2.0;
+/// Half the width of the triangle of the floating cue.
+const FLOATING_CUE: f32 = 6.0;
 
 /// A size in beats as it is read: `1/8`, `4`.
 pub fn size_text(texts: &Texts, size: LoopSize) -> String {
@@ -104,8 +109,12 @@ fn loop_overlay(
     if label {
         let text = loop_length_text(cx.texts, snapshot, region.seconds());
         let at = Rect::from_min_size(
-            // A loop that starts left of the lane keeps its label at the edge.
-            Pos2::new(left.max(lane.left()) + BRACKET_TICK + 2.0, lane.top() + 2.0),
+            // A loop that starts left of the lane keeps its label at the edge. The label sits
+            // at the bottom: the top is where the flags of the cues are.
+            Pos2::new(
+                left.max(lane.left()) + BRACKET_TICK + 2.0,
+                lane.bottom() - 16.0,
+            ),
             egui::vec2(60.0, 14.0),
         );
         paint::text(
@@ -118,6 +127,61 @@ fn loop_overlay(
             ink,
         );
     }
+}
+
+/// The cues of a deck over its waveform: each stored cue as a line in the colour of its
+/// slot with its number on a flag and, with `names`, its name beside it; the floating cue
+/// as a triangle at the bottom.
+fn cue_overlay(
+    cx: &Cx<'_>,
+    painter: &Painter,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    x_of: impl Fn(f64) -> f32,
+    names: bool,
+) {
+    let tokens = &cx.theme.tokens;
+    for (slot, cue) in snapshot.cues.iter() {
+        let ink = tokens.hotcue[slot.index()];
+        let x = x_of(cue.position);
+        painter.vline(x, lane.y_range(), Stroke::new(CUE_LINE, ink));
+        let flag = Rect::from_min_size(Pos2::new(x, lane.top()), egui::vec2(CUE_FLAG, CUE_FLAG));
+        painter.rect_filled(flag, CornerRadius::ZERO, ink);
+        paint::text(
+            painter,
+            cx.theme,
+            flag,
+            Align2::CENTER_CENTER,
+            &slot.number().to_string(),
+            tokens.text.readout,
+            tokens.color.text_on_accent,
+        );
+        if names && !cue.name.is_empty() {
+            let at = Rect::from_min_size(
+                Pos2::new(flag.right() + 4.0, lane.top()),
+                egui::vec2(120.0, CUE_FLAG),
+            );
+            paint::text(
+                painter,
+                cx.theme,
+                at,
+                Align2::LEFT_CENTER,
+                cue.name.as_str(),
+                tokens.text.readout,
+                ink,
+            );
+        }
+    }
+    let x = x_of(snapshot.cue_seconds);
+    painter.add(Shape::convex_polygon(
+        vec![
+            Pos2::new(x - FLOATING_CUE, lane.bottom()),
+            Pos2::new(x + FLOATING_CUE, lane.bottom()),
+            Pos2::new(x, lane.bottom() - FLOATING_CUE),
+        ],
+        tokens.color.playhead,
+        Stroke::NONE,
+    ));
 }
 
 /// The low, mid and high colour of a deck, darkest first.
@@ -261,6 +325,7 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
         painter.vline(x, lane.y_range(), Stroke::new(1.0, color.grid_downbeat));
     }
     loop_overlay(cx, &painter, lane, snapshot, x_of, true);
+    cue_overlay(cx, &painter, lane, snapshot, x_of, true);
     playhead(cx, lane, lane.center().x);
 }
 
@@ -380,14 +445,9 @@ pub fn overview(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapsh
     let x_of = |seconds: f64| {
         rect.left() + (seconds / track.seconds).clamp(0.0, 1.0) as f32 * rect.width()
     };
-    loop_overlay(
-        cx,
-        &painter.with_clip_rect(rect),
-        rect,
-        snapshot,
-        x_of,
-        false,
-    );
+    let clipped = painter.with_clip_rect(rect);
+    loop_overlay(cx, &clipped, rect, snapshot, x_of, false);
+    cue_overlay(cx, &clipped, rect, snapshot, x_of, false);
     playhead(cx, rect, x.clamp(rect.left() + 1.0, rect.right() - 1.0));
     if response.has_focus() {
         paint::focus_ring(painter, theme, rect, tokens.radius.sm);

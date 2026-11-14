@@ -57,6 +57,11 @@ fn binding_label(texts: &Texts, command: &str, args: &platter_engine::command::A
         }
         _ => String::new(),
     };
+    // The number of a hotcue, without the decimals a number of the file may carry.
+    let slot = match args.get("slot") {
+        Some(platter_engine::command::Value::Number(slot)) => format!("{slot:.0}"),
+        _ => String::new(),
+    };
     // The two bend keys share a command; the sign of its amount tells them apart.
     let key = match (command, args.get("amount")) {
         ("deck.nudge", Some(platter_engine::command::Value::Number(amount))) if *amount < 0.0 => {
@@ -65,7 +70,10 @@ fn binding_label(texts: &Texts, command: &str, args: &platter_engine::command::A
         ("deck.nudge", Some(_)) => "command.deck.nudge.faster".to_owned(),
         _ => format!("command.{command}"),
     };
-    texts.format(&key, &[("deck", &text("deck")), ("band", &band)])
+    texts.format(
+        &key,
+        &[("deck", &text("deck")), ("band", &band), ("slot", &slot)],
+    )
 }
 
 /// What the dialog keeps between frames.

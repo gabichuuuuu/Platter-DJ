@@ -85,6 +85,31 @@ is selected: the commands of the CUE page act on it.
 - `deck.hotcue.map` onto a taken slot swaps the two cues. The selection follows the cue.
 - Deleting the selected cue leaves no cue selected.
 
+### In the interface
+
+- Each deck has its eight hotcues as two rows of four pads above the loop row. A pad that
+  holds a cue has a strip of the colour of its slot, its number in that colour and the name
+  of the cue, or its type until it has a name; an empty pad shows its number alone. A pad
+  acts while it is held, with the pointer or with Space or Enter: it sends
+  `deck.hotcue.trigger` with `press` and then with `release`. Shift and a press delete the
+  cue of the pad.
+- The advanced panel has a third page, CUE, between MOVE and GRID. Its first row: the keys to
+  the cue before and after the play position; the selected cue, as the colour and the number
+  of its slot, its name or type and its position to the millisecond; and at the right end
+  Store, Map and Delete. Its second row: the type of the selected cue, a list.
+- Map switches the mapping mode of the hotcues of the deck, a choice of the window:
+  `deck.cue.map`. While it is on the key is lit, the pads have a dashed outline, and a press
+  on a pad sends `deck.hotcue.map` for it and ends the mode. The mode also ends when no cue
+  is selected any more.
+- Both waveforms draw each stored cue as a line in the colour of its slot with its number on
+  a flag at the top; the scrolling one writes its name beside the flag. The floating cue is a
+  triangle at the bottom, in the colour of the play position. The length of a loop is
+  written at the bottom of the scrolling waveform, clear of the flags.
+- Controls that would change nothing are disabled: the pads of an empty deck, a step key
+  with no cue on its side, Store with the eight slots taken, Map, Delete and the type without
+  a selected cue, and the type `loop` without a tempo.
+- While a deck shows a notice, the notice takes the place of its pads.
+
 ## Differences
 
 - The reference product keeps a list of cues and maps some of them to the eight hotcue
@@ -105,6 +130,14 @@ is selected: the commands of the CUE page act on it.
 - Cues are stored at the play position as it is. Landing on the beat is Snap, which comes
   with sync.
 - A deleted cue is gone: there is no undo yet.
+- The window cannot rename a cue yet: `deck.cue.rename` has no control until the text field
+  of the browser search exists, later in M3, as with the tempo field of the grid.
+- The hotcues have no default shortcuts. The design system gives the keys 1 to 8 to the deck
+  with the focus; Platter has no such deck and those keys are taken, so the pads are
+  reached with the pointer, with Tab, or with shortcuts the user adds.
+- The pads are as wide as the deck allows and 38 px high, as the screen of the design system
+  draws them; its component text says 76 by 44. The CUE page takes two rows, as the other
+  pages do, where that screen draws one.
 
 ## Edge cases
 
@@ -125,4 +158,6 @@ is selected: the commands of the CUE page act on it.
 ## Tests
 
 `crates/core/src/cue.rs` for the slots, the selection and the names;
-`crates/engine/tests/cues.rs` for the commands. The window has no controls for them yet.
+`crates/engine/tests/cues.rs` for the commands; `crates/ui-egui/tests/panels.rs` for the pads
+and the CUE page, which it operates control by control, with the Shift press and the
+mapping mode in tests of their own.

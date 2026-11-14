@@ -106,7 +106,7 @@ features = [
 id = "cues"
 title = "Cues"
 features = [
-  { id = "hotcues", name = "Eight hotcues", milestone = "M3", status = "in_progress" },
+  { id = "hotcues", name = "Eight hotcues", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test cues; cargo test -p platter-ui-egui --test panels" },
   { id = "cue-page", name = "CUE page: previous and next, list, position, type, delete, rename, MAP and STORE", milestone = "M3", status = "in_progress" },
   { id = "cue-types", name = "Cue types: cue, fade-in, fade-out, load, grid and loop", milestone = "M3", status = "in_progress" },
 ]
@@ -118,7 +118,7 @@ features = [
   { id = "loop-size", name = "Preset loop size with arrows", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test loops; cargo test -p platter-ui-egui --test panels" },
   { id = "loop-in-out", name = "Loop in, loop out and ACTIVE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test loops; cargo test -p platter-ui-egui --test panels" },
   { id = "loop-indicator", name = "Loop indicator in the waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels no_panel_paints_a_colour; the scrolling lane checked by eye in a capture, the overview not" },
-  { id = "stored-loops", name = "Loops stored in hotcues", milestone = "M3", status = "in_progress" },
+  { id = "stored-loops", name = "Loops stored in hotcues", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test cues; cargo test -p platter-ui-egui --test panels" },
   { id = "beatjump", name = "Beatjump", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test loops; cargo test -p platter-ui-egui --test panels" },
   { id = "move-page", name = "MOVE page: move the loop, move loop in or loop out, size in beats and fine mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test loops; cargo test -p platter-ui-egui --test panels" },
 ]

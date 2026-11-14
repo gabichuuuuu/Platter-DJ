@@ -42,7 +42,8 @@ its own code, graphics and sounds.
   gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three
   curves, meters and a master with a safety limiter; pre-listening on a second output pair;
   loops of a preset size or between an in and an out point, beatjumps and the moves of a
-  loop; a file selector; audio and general preferences; keyboard shortcuts in a file the user
+  loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them; a
+  file selector; audio and general preferences; keyboard shortcuts in a file the user
   edits; English and Spanish.
 - `platter-cli info <file>` and `platter-cli render --script <mix.toml> --out <mix.wav>`: file
   information, and a scripted mix rendered to a WAV file without a sound card.
@@ -67,9 +68,8 @@ its own code, graphics and sounds.
   the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
 - Loops, beatjumps and the moves of a loop start at the play position as it is: nothing
   puts them on the beat until Quantize exists. Nobody has listened to them yet.
-- Stored cues and the eight hotcues exist as commands of the engine, for the render scripts;
-  the window has no controls for them yet. They are lost when the track is loaded again, and
-  the fade and load types are labels only.
+- Stored cues are lost when the track is loaded again, the fade and load types are labels
+  only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
 - No sync, no key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
