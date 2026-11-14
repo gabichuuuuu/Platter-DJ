@@ -18,7 +18,11 @@ protected by DRM cannot be played, and WMA is not supported.
 - A mono file feeds both sides. A file with more than two channels plays its first two.
 - The sample rate of the file is kept. The engine reads the track at the ratio of the two
   rates while it plays (`docs/decisions/0004-interpolation.md`); nothing is resampled on load.
-- Title, artist and album are read when the file carries them.
+- Title, artist, album and tempo are read when the file carries them. The tempo comes from
+  the tag, with its decimals; values outside 20 to 999 beats per minute are ignored. Platter
+  does not measure tempo before M3.
+- `probe_file` reads the header and the tags without decoding the audio, for the file list of
+  the interface. A file that passes it may still fail to decode.
 
 ## Differences
 

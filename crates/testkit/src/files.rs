@@ -68,13 +68,23 @@ const FLAC_BLOCK: usize = 4_096;
 
 /// A FLAC file with 16-bit samples stored in verbatim subframes: valid FLAC, no compression.
 pub fn flac_pcm16(rate: u32, channels: u8, samples: &[i16]) -> Vec<u8> {
+    flac_pcm16_tagged(rate, channels, samples, &[])
+}
+
+/// Like [`flac_pcm16`], with a comment block that carries `tags` as `KEY=value` entries.
+pub fn flac_pcm16_tagged(
+    rate: u32,
+    channels: u8,
+    samples: &[i16],
+    tags: &[(&str, &str)],
+) -> Vec<u8> {
     let channels = channels.clamp(1, 8);
     let frame_len = usize::from(channels);
     let total_frames = (samples.len() / frame_len) as u64;
     let mut out = Vec::new();
     out.extend_from_slice(b"fLaC");
-    // Last metadata block, type 0 (STREAMINFO), 34 bytes.
-    out.extend_from_slice(&[0x80, 0, 0, 34]);
+    // Metadata block of type 0 (STREAMINFO), 34 bytes; the top bit marks the last block.
+    out.extend_from_slice(&[if tags.is_empty() { 0x80 } else { 0 }, 0, 0, 34]);
     out.extend_from_slice(&(FLAC_BLOCK as u16).to_be_bytes());
     out.extend_from_slice(&(FLAC_BLOCK as u16).to_be_bytes());
     // Minimum and maximum frame size: unknown.
@@ -86,6 +96,13 @@ pub fn flac_pcm16(rate: u32, channels: u8, samples: &[i16]) -> Vec<u8> {
     out.extend_from_slice(&packed.to_be_bytes());
     // MD5 of the audio: zero means not computed.
     out.extend_from_slice(&[0; 16]);
+    if !tags.is_empty() {
+        let comments = vorbis_comments(tags);
+        // Last metadata block, type 4 (VORBIS_COMMENT), with a 24-bit length.
+        out.push(0x84);
+        out.extend_from_slice(&(comments.len() as u32).to_be_bytes()[1..]);
+        out.extend_from_slice(&comments);
+    }
 
     for (number, block) in samples.chunks(FLAC_BLOCK * frame_len).enumerate() {
         let start = out.len();
@@ -109,6 +126,29 @@ pub fn flac_pcm16(rate: u32, channels: u8, samples: &[i16]) -> Vec<u8> {
         let crc = crc16(&out[start..]);
         out.extend_from_slice(&crc.to_be_bytes());
     }
+    out
+}
+
+/// The body of a comment block: a vendor string and the entries, with little-endian lengths.
+fn vorbis_comments(tags: &[(&str, &str)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut push = |text: &str| {
+        out.extend_from_slice(&(text.len() as u32).to_le_bytes());
+        out.extend_from_slice(text.as_bytes());
+    };
+    push("platter-testkit");
+    let entries: Vec<String> = tags
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    let count = entries.len() as u32;
+    let mut body = Vec::new();
+    for entry in &entries {
+        body.extend_from_slice(&(entry.len() as u32).to_le_bytes());
+        body.extend_from_slice(entry.as_bytes());
+    }
+    out.extend_from_slice(&count.to_le_bytes());
+    out.extend_from_slice(&body);
     out
 }
 

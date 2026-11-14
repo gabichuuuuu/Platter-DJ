@@ -6,8 +6,8 @@
 // The lint configuration allows these in test functions; this whole file is test code.
 #![allow(clippy::unwrap_used)]
 
-use platter_decode::{Container, DecodeError, decode_bytes, decode_file};
-use platter_testkit::files::{aiff_pcm16, flac_pcm16, wav_pcm16};
+use platter_decode::{Container, DecodeError, decode_bytes, decode_file, probe_bytes};
+use platter_testkit::files::{aiff_pcm16, flac_pcm16, flac_pcm16_tagged, wav_pcm16};
 use platter_testkit::measure::sine_fit;
 use platter_testkit::signal::{channel, sine, stereo, to_i16};
 use proptest::prelude::{ProptestConfig, any, prop, proptest};
@@ -151,6 +151,56 @@ fn reads_a_file_from_disk() {
 }
 
 /// Decoded audio is always finite, whatever the input.
+#[test]
+fn probing_reads_the_header_without_the_audio() {
+    let samples = stereo_sine();
+    for (bytes, extension, container) in [
+        (wav_pcm16(RATE, 2, &samples), "wav", Container::Wav),
+        (aiff_pcm16(RATE, 2, &samples), "aiff", Container::Aiff),
+        (flac_pcm16(RATE, 2, &samples), "flac", Container::Flac),
+    ] {
+        let info = probe_bytes(bytes, Some(extension)).unwrap();
+        assert_eq!(info.container, container);
+        assert_eq!(info.sample_rate.hz(), RATE);
+        assert_eq!(info.channels, 2);
+        assert!((info.seconds.unwrap() - 0.5).abs() < 1e-6, "{container:?}");
+        assert_eq!(info.tags.bpm, None);
+    }
+    assert!(probe_bytes(b"not audio".to_vec(), Some("wav")).is_err());
+}
+
+#[test]
+fn tags_carry_title_artist_album_and_tempo() {
+    let tags = [
+        ("TITLE", "Test tone"),
+        ("ARTIST", "Signal generator"),
+        ("ALBUM", "Fixtures"),
+        ("BPM", "124.50"),
+    ];
+    let bytes = flac_pcm16_tagged(RATE, 2, &stereo_sine(), &tags);
+    for read in [
+        probe_bytes(bytes.clone(), Some("flac")).unwrap().tags,
+        decode_bytes(bytes, Some("flac")).unwrap().tags,
+    ] {
+        assert_eq!(read.title.as_deref(), Some("Test tone"));
+        assert_eq!(read.artist.as_deref(), Some("Signal generator"));
+        assert_eq!(read.album.as_deref(), Some("Fixtures"));
+        assert_eq!(read.bpm, Some(124.5));
+    }
+}
+
+#[test]
+fn a_tempo_tag_out_of_range_is_ignored() {
+    for value in ["0", "5000", "fast", "-120"] {
+        let bytes = flac_pcm16_tagged(RATE, 2, &stereo_sine(), &[("BPM", value)]);
+        assert_eq!(
+            probe_bytes(bytes, Some("flac")).unwrap().tags.bpm,
+            None,
+            "{value}"
+        );
+    }
+}
+
 fn assert_sane(result: Result<platter_decode::DecodedAudio, DecodeError>) {
     if let Ok(audio) = result {
         assert!(audio.channels >= 1);

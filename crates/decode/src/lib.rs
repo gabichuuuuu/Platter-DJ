@@ -6,10 +6,14 @@
 //! A file is untrusted input. Whatever it contains, decoding returns audio or an error; the
 //! sizes it declares are bounded before memory is reserved for them.
 
+mod mp4_edit;
+
 use std::fmt;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
+
+use mp4_edit::{Edit, read_edit};
 
 use platter_core::SampleRate;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -17,7 +21,7 @@ use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
-use symphonia::core::meta::{MetadataOptions, StandardTag};
+use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
 
 /// Longest audio a single file may hold. A longer declaration is treated as a corrupt or
 /// hostile header rather than as a reason to reserve the memory.
@@ -60,12 +64,31 @@ impl Container {
     }
 }
 
+/// Tempo a tag may declare, in beats per minute. Anything outside is treated as noise.
+const TAG_BPM_RANGE: std::ops::RangeInclusive<f64> = 20.0..=999.0;
+/// Keys that carry the tempo: Vorbis comments and APE, ID3v2.3 and later, ID3v2.2.
+const TEMPO_KEYS: [&str; 3] = ["BPM", "TBPM", "TBP"];
+
 /// Descriptive tags read from the file. Each one is absent when the file does not carry it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Tags {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// Tempo in beats per minute, as the tag states it. Platter does not measure tempo
+    /// before M3.
+    pub bpm: Option<f64>,
+}
+
+/// What a file declares about itself, read without decoding its audio.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FileInfo {
+    pub container: Container,
+    pub sample_rate: SampleRate,
+    pub channels: usize,
+    /// Length the header declares; absent when the format does not state it up front.
+    pub seconds: Option<f64>,
+    pub tags: Tags,
 }
 
 /// A whole file decoded into memory.
@@ -177,12 +200,33 @@ impl From<SymphoniaError> for DecodeError {
 pub fn decode_file(path: &Path) -> Result<DecodedAudio, DecodeError> {
     let file = File::open(path).map_err(DecodeError::Io)?;
     let extension = path.extension().and_then(|extension| extension.to_str());
-    decode_source(Box::new(file), extension)
+    decode_source(Box::new(file), extension, || file_edit(path))
 }
 
 /// Decodes a file held in memory. `extension` is an optional hint, without the dot.
 pub fn decode_bytes(bytes: Vec<u8>, extension: Option<&str>) -> Result<DecodedAudio, DecodeError> {
-    decode_source(Box::new(Cursor::new(bytes)), extension)
+    let edit = read_edit(&mut Cursor::new(&bytes));
+    decode_source(Box::new(Cursor::new(bytes)), extension, move || edit)
+}
+
+/// Reads the header and the tags of the file at `path` without decoding its audio. The
+/// file list of the interface uses it; a file that passes may still fail to decode.
+pub fn probe_file(path: &Path) -> Result<FileInfo, DecodeError> {
+    let file = File::open(path).map_err(DecodeError::Io)?;
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    probe_source(Box::new(file), extension, || file_edit(path))
+}
+
+/// Reads the header and the tags of a file held in memory.
+pub fn probe_bytes(bytes: Vec<u8>, extension: Option<&str>) -> Result<FileInfo, DecodeError> {
+    let edit = read_edit(&mut Cursor::new(&bytes));
+    probe_source(Box::new(Cursor::new(bytes)), extension, move || edit)
+}
+
+fn file_edit(path: &Path) -> Option<Edit> {
+    File::open(path)
+        .ok()
+        .and_then(|mut file| read_edit(&mut file))
 }
 
 /// Runs the decoder behind a panic boundary.
@@ -191,39 +235,100 @@ pub fn decode_bytes(bytes: Vec<u8>, extension: Option<&str>) -> Result<DecodedAu
 /// header fields can overflow, which panics in builds with overflow checks; a damaged file
 /// must be an error for the caller, never the end of the program. See
 /// `docs/decisions/0008-decoder-panic-boundary.md`.
-fn decode_source(
-    source: Box<dyn MediaSource>,
-    extension: Option<&str>,
-) -> Result<DecodedAudio, DecodeError> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        decode_unguarded(source, extension)
-    }))
-    .unwrap_or_else(|_| {
+fn guarded<T>(work: impl FnOnce() -> Result<T, DecodeError>) -> Result<T, DecodeError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| {
         Err(DecodeError::Corrupt(
             "the decoder gave up on the content".to_owned(),
         ))
     })
 }
 
-fn decode_unguarded(
+/// `edit` reads the edit list of an MP4 file; it is called only when the content is one.
+fn decode_source(
     source: Box<dyn MediaSource>,
     extension: Option<&str>,
+    edit: impl FnOnce() -> Option<Edit>,
 ) -> Result<DecodedAudio, DecodeError> {
+    guarded(|| decode_unguarded(source, extension, edit))
+}
+
+fn probe_source(
+    source: Box<dyn MediaSource>,
+    extension: Option<&str>,
+    edit: impl FnOnce() -> Option<Edit>,
+) -> Result<FileInfo, DecodeError> {
+    guarded(|| probe_unguarded(source, extension, edit))
+}
+
+fn open(
+    source: Box<dyn MediaSource>,
+    extension: Option<&str>,
+) -> Result<(Box<dyn FormatReader>, Container), DecodeError> {
     let stream = MediaSourceStream::new(source, Default::default());
     let mut hint = Hint::new();
     if let Some(extension) = extension {
         hint.with_extension(extension);
     }
-    let mut reader = symphonia::default::get_probe().probe(
+    let reader = symphonia::default::get_probe().probe(
         &hint,
         stream,
         FormatOptions::default(),
         MetadataOptions::default(),
     )?;
-
     let reader_name = reader.format_info().short_name;
     let container = Container::from_reader_name(reader_name)
         .ok_or_else(|| DecodeError::Unsupported(format!("container `{reader_name}`")))?;
+    Ok((reader, container))
+}
+
+fn probe_unguarded(
+    source: Box<dyn MediaSource>,
+    extension: Option<&str>,
+    edit: impl FnOnce() -> Option<Edit>,
+) -> Result<FileInfo, DecodeError> {
+    let (mut reader, container) = open(source, extension)?;
+    let track = reader
+        .default_track(TrackType::Audio)
+        .ok_or(DecodeError::Empty)?;
+    let declared_frames = track.num_frames;
+    let parameters = track
+        .codec_params
+        .as_ref()
+        .and_then(|parameters| parameters.audio())
+        .ok_or(DecodeError::Empty)?;
+    let hz = parameters.sample_rate.ok_or(DecodeError::Empty)?;
+    let sample_rate = SampleRate::new(hz)
+        .map_err(|_| DecodeError::Unsupported(format!("sample rate {hz} Hz")))?;
+    let channels = parameters
+        .channels
+        .as_ref()
+        .map_or(0, |channels| channels.count());
+    if channels > MAX_CHANNELS {
+        return Err(DecodeError::Unsupported(format!("{channels} channels")));
+    }
+    let edited_seconds = (container == Container::M4a)
+        .then(edit)
+        .flatten()
+        .and_then(|edit| edit.seconds());
+    let seconds = edited_seconds
+        .or_else(|| declared_frames.map(|frames| frames as f64 / sample_rate.as_f64()))
+        .filter(|seconds| *seconds <= MAX_SECONDS as f64);
+    let tags = read_tags(reader.as_mut());
+    Ok(FileInfo {
+        container,
+        sample_rate,
+        channels,
+        seconds,
+        tags,
+    })
+}
+
+fn decode_unguarded(
+    source: Box<dyn MediaSource>,
+    extension: Option<&str>,
+    edit: impl FnOnce() -> Option<Edit>,
+) -> Result<DecodedAudio, DecodeError> {
+    let (mut reader, container) = open(source, extension)?;
 
     let track = reader
         .default_track(TrackType::Audio)
@@ -307,6 +412,16 @@ fn decode_unguarded(
             decoded_frames,
         });
     }
+    // The decoding library leaves the priming and padding of an AAC encoder in its output;
+    // the edit list of the file says which frames are the track.
+    if container == Container::M4a
+        && let Some(edit) = edit()
+    {
+        trim(&mut samples, channels, edit.frames(sample_rate.hz()));
+        if samples.is_empty() {
+            return Err(DecodeError::Empty);
+        }
+    }
     let tags = read_tags(reader.as_mut());
     Ok(DecodedAudio {
         container,
@@ -317,6 +432,17 @@ fn decode_unguarded(
     })
 }
 
+/// Keeps `length` frames from frame `start` of interleaved `samples`, or all frames from
+/// `start` when the length is absent.
+fn trim(samples: &mut Vec<f32>, channels: usize, (start, length): (u64, Option<u64>)) {
+    let to_samples =
+        |frames: u64| usize::try_from(frames).map_or(usize::MAX, |f| f.saturating_mul(channels));
+    samples.drain(..to_samples(start).min(samples.len()));
+    if let Some(length) = length {
+        samples.truncate(to_samples(length));
+    }
+}
+
 fn read_tags(reader: &mut dyn FormatReader) -> Tags {
     let mut tags = Tags::default();
     let mut metadata = reader.metadata();
@@ -324,6 +450,21 @@ fn read_tags(reader: &mut dyn FormatReader) -> Tags {
         return tags;
     };
     for tag in &revision.media.tags {
+        // The library reads tempo as a whole number and drops a value with decimals, so
+        // the tempo comes from the raw value, found by the standard form or by the key.
+        let is_tempo = matches!(tag.std, Some(StandardTag::Bpm(_)))
+            || TEMPO_KEYS
+                .iter()
+                .any(|key| tag.raw.key.eq_ignore_ascii_case(key));
+        if is_tempo {
+            if let Some(bpm) = raw_number(&tag.raw.value)
+                && tags.bpm.is_none()
+                && TAG_BPM_RANGE.contains(&bpm)
+            {
+                tags.bpm = Some(bpm);
+            }
+            continue;
+        }
         let (slot, value) = match &tag.std {
             Some(StandardTag::TrackTitle(value)) => (&mut tags.title, value),
             Some(StandardTag::Artist(value)) => (&mut tags.artist, value),
@@ -335,4 +476,32 @@ fn read_tags(reader: &mut dyn FormatReader) -> Tags {
         }
     }
     tags
+}
+
+fn raw_number(value: &RawValue) -> Option<f64> {
+    let number = match value {
+        RawValue::Float(number) => *number,
+        RawValue::UnsignedInt(number) => *number as f64,
+        RawValue::SignedInt(number) => *number as f64,
+        RawValue::String(text) => text.trim().replace(',', ".").parse().ok()?,
+        _ => return None,
+    };
+    number.is_finite().then_some(number)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim;
+
+    #[test]
+    fn trim_drops_the_priming_and_the_padding() {
+        // Two channels: frames 0, 1 are priming, 2..=4 the track, 5 padding.
+        let mut samples: Vec<f32> = (0..12).map(|value| value as f32).collect();
+        trim(&mut samples, 2, (2, Some(3)));
+        assert_eq!(samples, [4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+
+        let mut samples = vec![0.0; 6];
+        trim(&mut samples, 2, (10, None));
+        assert!(samples.is_empty());
+    }
 }
