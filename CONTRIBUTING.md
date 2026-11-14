@@ -32,6 +32,24 @@ and the feature inventory. A pull request is reviewed once the gate passes.
 
 Do not weaken a test or a rule to make the gate pass. If a rule seems wrong, open an issue.
 
+## Testing on your machine
+
+The gate runs without a sound card, a controller or anyone listening. What depends on them is
+tested by the author:
+
+- Run `cargo xtask ci` before opening the pull request.
+- A change to audio output, the engine, controller support or the interface is also run in the
+  application, on the hardware it concerns.
+- Say what was run and on what under "How it was tested" in the pull request template. "Not
+  tested on hardware" is a valid answer; a reviewer may ask for a run before merging.
+- Describe the setup generically: operating system and architecture, audio API, sample rate,
+  buffer size, the kind of controller. A pull request description can reach the history through
+  the squash merge, so it follows the privacy rules of `AGENTS.md`: no device names as the
+  system shows them, no machine model, no local paths.
+- Report what was measured or checked. Do not write that something sounds good.
+
+The reasons are recorded in `docs/decisions/0016-contributors-test-on-their-machine.md`.
+
 ## Commits and pull requests
 
 - [Conventional Commits](https://www.conventionalcommits.org/), with the crate as scope:
