@@ -256,6 +256,44 @@ fn every_control_emits_its_command() {
 }
 
 #[test]
+fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for pages in [
+            [DeckPage::Grid, DeckPage::Move],
+            [DeckPage::Move, DeckPage::Grid],
+        ] {
+            // The states with the preferences open have the decks behind the dialog.
+            for state in states().into_iter().filter(|state| state.page.is_none()) {
+                let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+                stage.shell.state.deck_page = pages;
+                stage.frame(Vec::new());
+                stage.frame(Vec::new());
+                let controls: Vec<Control> = stage
+                    .controls()
+                    .into_iter()
+                    .filter(|control| control.command.starts_with("deck."))
+                    .collect();
+                assert!(controls.len() > 20, "{}", controls.len());
+                for (index, first) in controls.iter().enumerate() {
+                    for second in &controls[index + 1..] {
+                        let shared = first.rect.intersect(second.rect);
+                        assert!(
+                            shared.width() < 0.5 || shared.height() < 0.5,
+                            "{}, {language:?}, {pages:?}: {} at {:?} overlaps {} at {:?}",
+                            state.name,
+                            first.command,
+                            first.rect,
+                            second.command,
+                            second.rect,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_disabled_control_emits_nothing() {
     let state = &states()[1];
     let mut found = 0;
@@ -788,14 +826,20 @@ fn no_panel_paints_a_colour_outside_the_design_tokens() {
                 state.name
             );
         }
-        // The frame really shows the theme: the background, the panels and the deck hues.
+        // The frame really shows the theme: the background, the panels and the deck hues;
+        // and, where a deck has a loop, the brackets of the loop.
+        let looped = state.scene.engine.decks[0].looping.region.is_some();
         for token in [
             "bg-app",
             "surface-panel",
             "text-primary",
             "deck-a",
             "deck-b",
+            "loop-region",
         ] {
+            if token == "loop-region" && !looped {
+                continue;
+            }
             assert!(
                 seen.contains(&tokens.all_colors[token]),
                 "{}: {token} is not painted",

@@ -104,7 +104,8 @@ fn loop_overlay(
     if label {
         let text = loop_length_text(cx.texts, snapshot, region.seconds());
         let at = Rect::from_min_size(
-            Pos2::new(left + BRACKET_TICK + 2.0, lane.top() + 2.0),
+            // A loop that starts left of the lane keeps its label at the edge.
+            Pos2::new(left.max(lane.left()) + BRACKET_TICK + 2.0, lane.top() + 2.0),
             egui::vec2(60.0, 14.0),
         );
         paint::text(
