@@ -86,9 +86,9 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
   between two arrows, In, Out and Active, and at the right end the two beatjump keys around
   the move size. In is lit while an in point waits for its out point and Active while a loop
   is on, both in the loop colour.
-- The advanced panel shows one page at a time, MOVE or GRID, picked with a switch at the
+- The advanced panel shows one page at a time, MOVE, CUE or GRID, picked with a switch at the
   right end of its second row; it starts on MOVE. The page is a choice of the window, not of
-  the engine: `deck.page.set`. The CUE page comes with the hotcues.
+  the engine: `deck.page.set`. The CUE page is in `docs/behavior/cues.md`.
 - The MOVE page has the four modes in its first row; in its second the move size between two
   arrows, the two move keys and Fine, lit while the fine steps are on. With them on the size
   reads `5 ms` and its arrows rest.

@@ -1,28 +1,33 @@
-//! A deck: its header, the overview of its track, the loop controls, a page of the advanced
-//! panel, the transport keys and the tempo control.
+//! A deck: its header, the overview of its track, the hotcues, the loop controls, a page of
+//! the advanced panel, the transport keys and the tempo control.
 //!
-//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `LoopControls`, `MovePanel`,
-//! `GridEditor` and `Notice` in `docs/design/DESIGN.md`; placement from
+//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `HotcuePads`, `LoopControls`,
+//! `MovePanel`, `CuePanel`, `GridEditor` and `Notice` in `docs/design/DESIGN.md`; placement from
 //! `docs/design/screens/M2-main.html` and, for the loop row and the pages,
 //! `docs/design/screens/First-version.html`. Behaviour notes: `docs/behavior/transport.md`,
-//! `docs/behavior/beatgrid.md` and `docs/behavior/loops.md`.
+//! `docs/behavior/beatgrid.md`, `docs/behavior/loops.md` and `docs/behavior/cues.md`.
 
 use std::path::PathBuf;
 
-use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
-use platter_core::{Bpm, DeckId};
-use platter_engine::{BpmScale, Command, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep};
+use egui::{
+    Align2, Color32, CornerRadius, Key, Rect, Role, Sense, Shape, Stroke, StrokeKind, WidgetInfo,
+};
+use platter_core::{Bpm, Cue, CueKind, DeckId, HotcueSlot};
+use platter_engine::{
+    BpmScale, Command, CueStep, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep,
+};
 
 use crate::command::{Action, AppCommand, DeckPage};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
+use crate::i18n::Texts;
 use crate::icons::Glyph;
 use crate::model::{DeckNotice, View};
 use crate::paint;
 use crate::panels::waveform::{self, deck_color};
 use crate::shell::ViewState;
-use crate::tokens::{TextStyle, Tokens};
-use crate::widgets::choice::{self, Choice};
+use crate::tokens::{TextStyle, Tokens, Weight};
+use crate::widgets::choice::{self, Choice, SelectSpec};
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, Steps, ValueSpec};
 
@@ -43,6 +48,13 @@ const LOOP_ROW_HEIGHT: f32 = 28.0;
 const ARROW_WIDTH: f32 = 28.0;
 const LOOP_SIZE_WIDTH: f32 = 48.0;
 const MOVE_SIZE_WIDTH: f32 = 40.0;
+const PAD_HEIGHT: f32 = 38.0;
+/// Height of the strip of its colour along the top of a pad that holds a cue.
+const PAD_STRIP: f32 = 4.0;
+const PAD_COLUMNS: usize = 4;
+const CUE_SQUARE: f32 = 12.0;
+const CUE_TYPE_WIDTH: f32 = 96.0;
+const CUE_POSITION_WIDTH: f32 = 68.0;
 
 /// The name a track is shown by: its title tag, or the name of its file.
 fn title_of(snapshot: &DeckSnapshot) -> Option<String> {
@@ -116,15 +128,20 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         controls.min,
         egui::pos2(tempo_column.left() - tokens.space.s5, controls.bottom()),
     );
+    let mapping = state.cue_map[deck.index()];
+    // A notice takes the place of the hotcues for as long as it shows.
     if let Some(notice) = view.notices[deck.index()] {
         let area = Rect::from_min_size(left.min, egui::vec2(left.width(), 52.0));
         deck_notice(cx, area, deck, notice);
+    } else {
+        hotcue_pads(cx, left, deck, snapshot, mapping);
     }
     transport(cx, left, deck, snapshot);
     loop_controls(cx, left, deck, snapshot);
     let page = state.deck_page[deck.index()];
     match page {
         DeckPage::Move => move_page(cx, left, deck, snapshot),
+        DeckPage::Cue => cue_page(cx, left, deck, snapshot, mapping),
         DeckPage::Grid => grid_page(cx, left, deck, snapshot),
     }
     page_selector(cx, left, deck, page);
@@ -466,6 +483,441 @@ fn move_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
     );
 }
 
+/// The translation key of the name of a kind of cue.
+fn cue_kind_key(kind: CueKind) -> &'static str {
+    match kind {
+        CueKind::Cue => "deck.cue_type_cue",
+        CueKind::FadeIn => "deck.cue_type_fade_in",
+        CueKind::FadeOut => "deck.cue_type_fade_out",
+        CueKind::Load => "deck.cue_type_load",
+        CueKind::Loop => "deck.cue_type_loop",
+    }
+}
+
+/// What a cue is shown by: its name, or its kind until it has one.
+fn cue_label<'a>(texts: &'a Texts, cue: &'a Cue) -> &'a str {
+    if cue.name.is_empty() {
+        texts.get(cue_kind_key(cue.kind()))
+    } else {
+        cue.name.as_str()
+    }
+}
+
+/// What the pointer or the keyboard holds a pad down for.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum PadHold {
+    #[default]
+    Up,
+    /// The cue is being played or stored: the release is sent too.
+    Pressed,
+    /// The press deleted the cue: the release sends nothing.
+    Deleted,
+}
+
+/// The eight hotcues, two rows of four above the loop row. A pad acts while held, as the
+/// cue key does; with Shift it deletes its cue; in the mapping mode it takes the selected
+/// cue instead.
+fn hotcue_pads(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot, mapping: bool) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let letter = deck.letter().to_string();
+    let loaded = is_ready(snapshot);
+    let gap = tokens.space.s2;
+    let (first_top, _) = page_rows(area, tokens);
+    let bottom = first_top - tokens.space.s3 - LOOP_ROW_HEIGHT - gap;
+    let top = bottom - 2.0 * PAD_HEIGHT - gap;
+    let columns = PAD_COLUMNS as f32;
+    let width = (area.width() - (columns - 1.0) * gap) / columns;
+    let mut bold = tokens.text.button;
+    bold.weight = Weight::Bold;
+    for slot in HotcueSlot::ALL {
+        let index = slot.index();
+        let rect = Rect::from_min_size(
+            egui::pos2(
+                area.left() + (index % PAD_COLUMNS) as f32 * (width + gap),
+                top + (index / PAD_COLUMNS) as f32 * (PAD_HEIGHT + gap),
+            ),
+            egui::vec2(width, PAD_HEIGHT),
+        );
+        let cue = snapshot.cues.get(slot).filter(|_| loaded);
+        let number = slot.number().to_string();
+        let values = [("slot", number.as_str()), ("deck", letter.as_str())];
+        let (name, command, kind, enabled) = if mapping {
+            (
+                "deck.hotcue_map_name",
+                "deck.hotcue.map",
+                ControlKind::Button,
+                loaded && snapshot.cues.selected().is_some(),
+            )
+        } else if cue.is_some() {
+            (
+                "deck.hotcue_name",
+                "deck.hotcue.trigger",
+                ControlKind::Hold,
+                loaded,
+            )
+        } else {
+            (
+                "deck.hotcue_empty_name",
+                "deck.hotcue.trigger",
+                ControlKind::Hold,
+                loaded,
+            )
+        };
+        let name = texts.format(name, &values);
+        let pad = id(("deck-hotcue", deck.index(), index));
+        cx.record(command, rect, kind, enabled);
+        let response = cx.ui.interact(rect, pad, cx.sense(enabled, Sense::click()));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, &name));
+        let focused = response.has_focus();
+        if focused {
+            cx.out.claim(&[Key::Space, Key::Enter]);
+        }
+        let mut down = false;
+        if mapping {
+            if response.clicked() {
+                cx.out.emit(Command::DeckHotcueMap { deck, slot });
+                cx.out.emit(AppCommand::DeckCueMapToggle { deck });
+            }
+        } else {
+            let (keyboard, shift) = cx.ui.input(|input| {
+                let keys = input.key_down(Key::Space) || input.key_down(Key::Enter);
+                (focused && keys, input.modifiers.shift)
+            });
+            down = enabled && (response.is_pointer_button_down_on() || keyboard);
+            let held = cx
+                .ui
+                .ctx()
+                .data(|data| data.get_temp::<PadHold>(pad))
+                .unwrap_or_default();
+            if down != (held != PadHold::Up) {
+                let next = match (down, shift && cue.is_some()) {
+                    (false, _) => PadHold::Up,
+                    (true, true) => PadHold::Deleted,
+                    (true, false) => PadHold::Pressed,
+                };
+                cx.ui.ctx().data_mut(|data| data.insert_temp(pad, next));
+                let trigger = |pressed| Command::DeckHotcueTrigger {
+                    deck,
+                    slot,
+                    pressed,
+                };
+                match (held, next) {
+                    (_, PadHold::Deleted) => cx.out.emit(Command::DeckHotcueDelete { deck, slot }),
+                    (_, PadHold::Pressed) => cx.out.emit(trigger(true)),
+                    (PadHold::Pressed, PadHold::Up) => cx.out.emit(trigger(false)),
+                    _ => {}
+                }
+            }
+        }
+
+        let painter = cx.painter();
+        let corner = paint::radius(tokens.radius.lg);
+        let hovered = enabled && response.hovered();
+        let ink = tokens.hotcue[index];
+        let numeral = Rect::from_min_max(
+            egui::pos2(rect.left() + tokens.space.s3, rect.top() + PAD_STRIP),
+            egui::pos2(rect.left() + tokens.space.s3 + 12.0, rect.bottom()),
+        );
+        match cue {
+            Some(cue) => {
+                let fill = if down {
+                    color.surface_pressed
+                } else if hovered {
+                    color.surface_hover
+                } else {
+                    color.surface_control
+                };
+                painter.rect(
+                    rect,
+                    corner,
+                    fill,
+                    paint::hairline(theme, color.line_key),
+                    StrokeKind::Inside,
+                );
+                let strip = Rect::from_min_size(rect.min, egui::vec2(rect.width(), PAD_STRIP));
+                painter.rect_filled(
+                    strip,
+                    CornerRadius {
+                        nw: corner.nw,
+                        ne: corner.ne,
+                        sw: 0,
+                        se: 0,
+                    },
+                    ink,
+                );
+                paint::text(
+                    painter,
+                    theme,
+                    numeral,
+                    Align2::LEFT_CENTER,
+                    &number,
+                    bold,
+                    ink,
+                );
+                let label = Rect::from_min_max(
+                    egui::pos2(numeral.right() + tokens.space.s1, numeral.top()),
+                    egui::pos2(rect.right() - tokens.space.s2, rect.bottom()),
+                );
+                paint::text_elided(
+                    painter,
+                    theme,
+                    label,
+                    cue_label(texts, cue),
+                    tokens.text.body,
+                    color.text_primary,
+                );
+            }
+            None => {
+                let fill = if hovered {
+                    color.surface_hover
+                } else {
+                    Color32::TRANSPARENT
+                };
+                painter.rect(
+                    rect,
+                    corner,
+                    fill,
+                    paint::hairline(theme, color.line_key),
+                    StrokeKind::Inside,
+                );
+                let ink = if loaded {
+                    color.text_secondary
+                } else {
+                    color.text_disabled
+                };
+                paint::text(
+                    painter,
+                    theme,
+                    numeral,
+                    Align2::LEFT_CENTER,
+                    &number,
+                    tokens.text.button,
+                    ink,
+                );
+            }
+        }
+        if mapping && enabled {
+            let outline = [
+                rect.left_top(),
+                rect.right_top(),
+                rect.right_bottom(),
+                rect.left_bottom(),
+                rect.left_top(),
+            ];
+            painter.extend(Shape::dashed_line(
+                &outline,
+                Stroke::new(tokens.stroke.focus, color.focus_ring),
+                4.0,
+                3.0,
+            ));
+        }
+        if focused {
+            paint::focus_ring(painter, theme, rect, tokens.radius.lg);
+        }
+    }
+}
+
+/// The two rows of the CUE page: the keys to the cue before and after, the selected cue
+/// and Store, Map and Delete; then the type of the selected cue.
+fn cue_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot, mapping: bool) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let letter = deck.letter().to_string();
+    let named = |key: &str| texts.format(key, &[("deck", &letter)]);
+    let loaded = is_ready(snapshot);
+    let cues = &snapshot.cues;
+    let selected = cues
+        .selected()
+        .filter(|_| loaded)
+        .and_then(|slot| Some((slot, cues.get(slot)?)));
+    let at = snapshot.position_seconds;
+    let (first_top, second_top) = page_rows(area, tokens);
+    let gap = tokens.space.s2;
+    let height = GRID_ROW_HEIGHT;
+
+    let mut row = Row {
+        x: area.left(),
+        top: first_top,
+        height,
+        gap,
+    };
+    let steps = [
+        (
+            Glyph::ChevronLeft,
+            "deck.cue_previous_name",
+            CueStep::Previous,
+            cues.previous(at).is_some(),
+        ),
+        (
+            Glyph::ChevronRight,
+            "deck.cue_next_name",
+            CueStep::Next,
+            cues.next(at).is_some(),
+        ),
+    ];
+    for (index, (glyph, name, direction, there)) in steps.into_iter().enumerate() {
+        let rect = row.place(GRID_KEY_WIDTH);
+        let name = named(name);
+        key::key(
+            cx,
+            rect,
+            id(("deck-cue-step", deck.index(), index)),
+            KeySpec::icon(glyph, 14.0, &name).enabled(loaded && there),
+            Press::Click(Command::DeckCueSelect { deck, direction }.into()),
+        );
+    }
+    let reading_left = row.x + tokens.space.s2;
+
+    // Store, Map and Delete at the right end of the row.
+    let store = texts.get("deck.cue_store");
+    let map = texts.get("deck.cue_map");
+    let store_width = key::width_for(cx, store, GRID_KEY_WIDTH);
+    let map_width = key::width_for(cx, map, GRID_KEY_WIDTH);
+    let mut row = Row {
+        x: area.right() - store_width - map_width - GRID_KEY_WIDTH - 2.0 * gap,
+        top: first_top,
+        height,
+        gap,
+    };
+    let reading_right = row.x - tokens.space.s3;
+    let rect = row.place(store_width);
+    let name = named("deck.cue_store_name");
+    let mut spec = KeySpec::text(store).enabled(loaded && cues.first_free().is_some());
+    spec.name = &name;
+    key::key(
+        cx,
+        rect,
+        id(("deck-cue-store", deck.index())),
+        spec,
+        Press::Click(Command::DeckCueStore { deck }.into()),
+    );
+    let rect = row.place(map_width);
+    let name = named("deck.cue_map_name");
+    let mut spec = KeySpec::text(map).enabled(mapping || selected.is_some());
+    spec.name = &name;
+    spec.lit = mapping.then_some(color.focus_ring);
+    key::key(
+        cx,
+        rect,
+        id(("deck-cue-map", deck.index())),
+        spec,
+        Press::Click(AppCommand::DeckCueMapToggle { deck }.into()),
+    );
+    let rect = row.place(GRID_KEY_WIDTH);
+    let name = named("deck.cue_delete_name");
+    key::key(
+        cx,
+        rect,
+        id(("deck-cue-delete", deck.index())),
+        KeySpec::icon(Glyph::Trash, 14.0, &name).enabled(selected.is_some()),
+        Press::Click(Command::DeckCueDelete { deck }.into()),
+    );
+
+    // Between them the selected cue: the colour and the number of its slot, what it is
+    // called and where it is.
+    let reading = Rect::from_min_max(
+        egui::pos2(reading_left, first_top),
+        egui::pos2(reading_right, first_top + height),
+    );
+    let painter = cx.painter();
+    match selected {
+        Some((slot, cue)) => {
+            let square = Rect::from_center_size(
+                egui::pos2(reading.left() + CUE_SQUARE / 2.0, reading.center().y),
+                egui::vec2(CUE_SQUARE, CUE_SQUARE),
+            );
+            painter.rect_filled(
+                square,
+                paint::radius(tokens.radius.sm),
+                tokens.hotcue[slot.index()],
+            );
+            let numeral = Rect::from_min_max(
+                egui::pos2(square.right() + tokens.space.s2, reading.top()),
+                egui::pos2(square.right() + tokens.space.s2 + 10.0, reading.bottom()),
+            );
+            paint::text(
+                painter,
+                theme,
+                numeral,
+                Align2::LEFT_CENTER,
+                &slot.number().to_string(),
+                tokens.text.body,
+                color.text_primary,
+            );
+            let position = Rect::from_min_max(
+                egui::pos2(reading.right() - CUE_POSITION_WIDTH, reading.top()),
+                reading.max,
+            );
+            paint::text(
+                painter,
+                theme,
+                position,
+                Align2::RIGHT_CENTER,
+                &format::position(cue.position),
+                tokens.text.readout,
+                color.text_secondary,
+            );
+            let label = Rect::from_min_max(
+                egui::pos2(numeral.right() + tokens.space.s1, reading.top()),
+                egui::pos2(position.left() - tokens.space.s2, reading.bottom()),
+            );
+            paint::text_elided(
+                painter,
+                theme,
+                label,
+                cue_label(texts, cue),
+                tokens.text.body,
+                color.text_primary,
+            );
+        }
+        None => {
+            paint::text_elided(
+                painter,
+                theme,
+                reading,
+                texts.get("deck.cue_none"),
+                tokens.text.body,
+                color.text_disabled,
+            );
+        }
+    }
+
+    // Second row: the type. A cue becomes a loop of the selected size, which needs a tempo.
+    let has_tempo = snapshot.grid.bpm().is_some();
+    let kind = selected.map(|(_, cue)| cue.kind());
+    let choices = CueKind::ALL.map(|option| Choice {
+        label: texts.get(cue_kind_key(option)),
+        enabled: option != CueKind::Loop || has_tempo || kind == Some(CueKind::Loop),
+    });
+    let name = named("deck.cue_type_name");
+    choice::select(
+        cx,
+        Rect::from_min_size(
+            egui::pos2(area.left(), second_top),
+            egui::vec2(CUE_TYPE_WIDTH, height),
+        ),
+        id(("deck-cue-type", deck.index())),
+        SelectSpec {
+            name: &name,
+            choices: &choices,
+            current: kind.and_then(|kind| CueKind::ALL.iter().position(|other| *other == kind)),
+            enabled: selected.is_some(),
+        },
+        |index| {
+            Command::DeckCueTypeSet {
+                deck,
+                kind: CueKind::ALL[index],
+            }
+            .into()
+        },
+    );
+}
+
 /// The switch between the pages of the advanced panel, at the right end of their second
 /// row.
 fn page_selector(cx: &mut Cx<'_>, area: Rect, deck: DeckId, page: DeckPage) {
@@ -473,7 +925,7 @@ fn page_selector(cx: &mut Cx<'_>, area: Rect, deck: DeckId, page: DeckPage) {
     let texts = cx.texts;
     let tokens = &theme.tokens;
     let (_, second_top) = page_rows(area, tokens);
-    let pages = ["deck.page_move", "deck.page_grid"].map(|key| Choice {
+    let pages = ["deck.page_move", "deck.page_cue", "deck.page_grid"].map(|key| Choice {
         label: texts.get(key),
         enabled: true,
     });
@@ -524,8 +976,8 @@ impl Row {
     }
 }
 
-/// The two rows of the GRID page: the tempo, its tap and scale keys, the marker nudge and the
-/// lock; then the tempo steps and the marker keys.
+/// The two rows of the GRID page: the tempo with its step, scale and tap keys, the marker
+/// nudge and the lock; then the marker keys.
 fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
     let theme = cx.theme;
     let texts = cx.texts;
@@ -585,6 +1037,21 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         height,
         gap,
     };
+    let steps = [
+        (Glyph::Minus, "deck.grid_slower_name", -BPM_STEP),
+        (Glyph::Plus, "deck.grid_faster_name", BPM_STEP),
+    ];
+    for (index, (glyph, name, amount)) in steps.into_iter().enumerate() {
+        let rect = row.place(GRID_KEY_WIDTH);
+        let name = named(name);
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-step", deck.index(), index)),
+            KeySpec::icon(glyph, 14.0, &name).enabled(editable && has_tempo),
+            Press::Click(Command::DeckGridBpmStep { deck, amount }.into()),
+        );
+    }
     let text_keys = [
         (
             "deck.grid_half",
@@ -663,29 +1130,13 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         Press::Click(Command::DeckGridLockToggle { deck }.into()),
     );
 
-    // Second row: the tempo steps, then the markers.
+    // Second row: the markers.
     let mut row = Row {
         x: area.left(),
         top: second_top,
         height,
         gap,
     };
-    let steps = [
-        (Glyph::Minus, "deck.grid_slower_name", -BPM_STEP),
-        (Glyph::Plus, "deck.grid_faster_name", BPM_STEP),
-    ];
-    for (index, (glyph, name, amount)) in steps.into_iter().enumerate() {
-        let rect = row.place(GRID_KEY_WIDTH);
-        let name = named(name);
-        key::key(
-            cx,
-            rect,
-            id(("deck-grid-step", deck.index(), index)),
-            KeySpec::icon(glyph, 14.0, &name).enabled(editable && has_tempo),
-            Press::Click(Command::DeckGridBpmStep { deck, amount }.into()),
-        );
-    }
-    row.x += tokens.space.s4;
     let markers = [
         (
             "deck.grid_previous",

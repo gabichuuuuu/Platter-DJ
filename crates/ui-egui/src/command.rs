@@ -40,15 +40,17 @@ impl SettingsPage {
 pub enum DeckPage {
     #[default]
     Move,
+    Cue,
     Grid,
 }
 
 impl DeckPage {
-    pub const ALL: [Self; 2] = [Self::Move, Self::Grid];
+    pub const ALL: [Self; 3] = [Self::Move, Self::Cue, Self::Grid];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Move => "move",
+            Self::Cue => "cue",
             Self::Grid => "grid",
         }
     }
@@ -185,6 +187,11 @@ pub enum AppCommand {
         deck: DeckId,
         page: DeckPage,
     },
+    /// Switches the mapping mode of the hotcues of a deck: while it is on, the key of a
+    /// hotcue takes the selected cue.
+    DeckCueMapToggle {
+        deck: DeckId,
+    },
     MixerClipReset {
         meter: MeterId,
     },
@@ -223,7 +230,7 @@ const SLOTS: &[&str] = &[
     "headphones_right",
 ];
 const METERS: &[&str] = &["a", "b", "master"];
-const DECK_PAGES: &[&str] = &["move", "grid"];
+const DECK_PAGES: &[&str] = &["move", "cue", "grid"];
 /// Outputs a device may have, as far as the routing goes.
 pub const MAX_OUTPUTS: u16 = 64;
 const MAX_ROWS: f64 = 1_000_000.0;
@@ -345,6 +352,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "deck.page.set",
         label: "Show deck page",
         params: &[DECK, choice("page", DECK_PAGES)],
+    },
+    CommandSpec {
+        id: "deck.cue.map",
+        label: "Map cue to hotcue",
+        params: &[DECK],
     },
     CommandSpec {
         id: "mixer.clip.reset",
@@ -506,8 +518,9 @@ impl AppCommand {
             "deck.notice.dismiss" => Self::DeckNoticeDismiss { deck: read.deck()? },
             "deck.page.set" => Self::DeckPageSet {
                 deck: read.deck()?,
-                page: read.choice("page", &DeckPage::ALL, DeckPage::name, "move, grid")?,
+                page: read.choice("page", &DeckPage::ALL, DeckPage::name, "move, cue, grid")?,
             },
+            "deck.cue.map" => Self::DeckCueMapToggle { deck: read.deck()? },
             "mixer.clip.reset" => Self::MixerClipReset {
                 meter: read.choice("meter", &MeterId::ALL, MeterId::name, "a, b, master")?,
             },
@@ -540,6 +553,7 @@ impl AppCommand {
             Self::DeckTimeDisplayToggle { .. } => "deck.time_display.toggle",
             Self::DeckNoticeDismiss { .. } => "deck.notice.dismiss",
             Self::DeckPageSet { .. } => "deck.page.set",
+            Self::DeckCueMapToggle { .. } => "deck.cue.map",
             Self::MixerClipReset { .. } => "mixer.clip.reset",
         }
     }

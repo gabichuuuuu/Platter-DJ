@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use platter_core::{Bpm, DeckId, LoopRegion, SampleRate};
+use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{DeckSnapshot, Snapshot, TrackInfo, WaveformPeaks};
 
@@ -310,6 +310,22 @@ pub fn playing() -> Scene {
         end: 300.0,
     });
     engine.decks[1].looping.in_point = Some(31.0);
+    // Deck A has three stored cues: a named one, a fade out far back and the loop it plays,
+    // which is the selected one. Deck B has one.
+    let slot = |number: usize| HotcueSlot::ALL[number - 1];
+    let cues = &mut engine.decks[0].cues;
+    cues.store(slot(1), Cue::at(297.2));
+    cues.rename_selected(CueName::new("Break"));
+    cues.store(slot(5), Cue::at(120.0));
+    cues.retype_selected(CueKind::FadeOut, None);
+    cues.store(
+        slot(2),
+        Cue::looping(LoopRegion {
+            start: 298.08,
+            end: 300.0,
+        }),
+    );
+    engine.decks[1].cues.store(slot(3), Cue::at(31.0));
     let stream = StreamView {
         kind: OutputKind::Usb,
         sample_rate: 48_000,
