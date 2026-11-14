@@ -1,10 +1,13 @@
 //! The status header across the top of the window, and the notice below it when no audio
 //! device is playing.
 //!
-//! Components: `StatusHeader` and `Notice` in `docs/design/DESIGN.md`; placement from
-//! `docs/design/screens/M2-main.html` and `Startup-states.html`.
+//! Components: `StatusHeader`, `MasterClock` and `Notice` in `docs/design/DESIGN.md`;
+//! placement from `docs/design/screens/M2-main.html`, `Startup-states.html` and, for the
+//! master clock, `First-version.html`.
 
 use egui::{Align2, CornerRadius, Rect, Sense};
+use platter_core::Bpm;
+use platter_engine::{ClockMode, ClockSnapshot, Command};
 
 use crate::command::{AppCommand, SettingsPage};
 use crate::cx::{ControlKind, Cx, id};
@@ -13,13 +16,23 @@ use crate::icons::Glyph;
 use crate::model::{AudioProblem, AudioState, OutputKind, View};
 use crate::paint;
 use crate::shell::ViewState;
+use crate::widgets::choice::{self, Choice};
 use crate::widgets::key::{self, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec};
-use crate::widgets::value::button_info;
+use crate::widgets::value::{self, Steps, ValueSpec, button_info};
 
 /// Load above which the reading turns to the warning colour.
 const HIGH_LOAD: f32 = 0.7;
 const MASTER_METER_SEGMENTS: usize = 24;
+const CLOCK_KEY_HEIGHT: f32 = 24.0;
+const CLOCK_ICON_WIDTH: f32 = 28.0;
+const CLOCK_FIELD_WIDTH: f32 = 64.0;
+/// Beats per minute the arrows of the tempo field add or take away.
+const CLOCK_FIELD_STEP: f64 = 0.01;
+/// Beats per minute the step keys add or take away.
+const CLOCK_STEP: f64 = 1.0;
+/// How much the bend keys change the tempo of the clock while held.
+const CLOCK_BEND: f64 = 0.04;
 
 fn kind_key(kind: OutputKind) -> &'static str {
     match kind {
@@ -142,7 +155,7 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
                 color.text_primary
             };
             x = pair(x, cx.t("header.load"), &load, ink) + gap;
-            dropouts(cx, x, rect, stream.dropouts);
+            x = dropouts(cx, x, rect, stream.dropouts) + gap;
         }
         AudioState::Stopped(problem) => {
             let icon = Rect::from_min_size(egui::pos2(x, middle - 8.0), egui::vec2(16.0, 16.0));
@@ -219,7 +232,7 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         rect.min,
         egui::pos2(meter_rect.left() - tokens.space.s3 - 3.0, rect.bottom()),
     );
-    paint::text(
+    let master = paint::text(
         painter,
         theme,
         area,
@@ -228,10 +241,205 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         label,
         color.text_secondary,
     );
+    let span = Rect::from_x_y_ranges(x..=master.left() - gap, rect.y_range());
+    master_clock(cx, span, &view.engine.clock);
 }
 
-/// The dropout count: a reading that resets the count when it is operated.
-fn dropouts(cx: &mut Cx<'_>, x: f32, header: Rect, count: u64) {
+/// A piece of the master clock, by what decides its width.
+enum Piece<'a> {
+    Label(&'a str),
+    Field,
+    Modes([&'a str; 2]),
+    Key(&'a str),
+    Icon,
+}
+
+/// The master clock, centred in `span`: the tempo of the clock, Auto and Master, Tap, the
+/// step and bend keys, Snap and Quantize. Behaviour note: `docs/behavior/sync.md`.
+fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let near = tokens.space.s2;
+    let apart = tokens.space.s3;
+    let modes = [
+        texts.get("header.clock_auto"),
+        texts.get("header.clock_master"),
+    ];
+    // Each piece with the space before it.
+    let pieces = [
+        (0.0, Piece::Label(texts.get("header.tempo"))),
+        (apart, Piece::Field),
+        (apart, Piece::Modes(modes)),
+        (apart, Piece::Key(texts.get("header.tap"))),
+        (near, Piece::Icon),
+        (near, Piece::Icon),
+        (apart, Piece::Icon),
+        (near, Piece::Icon),
+        (apart, Piece::Key(texts.get("header.snap"))),
+        (near, Piece::Key(texts.get("header.quantize"))),
+    ];
+    let painter = cx.painter();
+    // As wide as `choice::segmented` makes each segment.
+    let segment = |label: &str| {
+        (paint::text_width(painter, theme, label, tokens.text.button) + 2.0 * tokens.space.s4)
+            .ceil()
+    };
+    let widths = pieces.each_ref().map(|(_, piece)| match piece {
+        Piece::Label(text) => paint::text_width(painter, theme, text, tokens.text.label),
+        Piece::Field => CLOCK_FIELD_WIDTH,
+        Piece::Modes(labels) => labels.iter().map(|label| segment(label)).sum::<f32>() + 2.0,
+        Piece::Key(label) => key::width_for(cx, label, CLOCK_ICON_WIDTH),
+        Piece::Icon => CLOCK_ICON_WIDTH,
+    });
+    let total: f32 = pieces
+        .iter()
+        .zip(&widths)
+        .map(|((before, _), width)| before + width)
+        .sum();
+    let mut x = span.left() + ((span.width() - total) / 2.0).max(0.0);
+    let top = span.center().y - CLOCK_KEY_HEIGHT / 2.0;
+    let mut rects = [Rect::NOTHING; 10];
+    for ((rect, (before, _)), width) in rects.iter_mut().zip(&pieces).zip(widths) {
+        x += before;
+        *rect = Rect::from_min_size(egui::pos2(x, top), egui::vec2(width, CLOCK_KEY_HEIGHT));
+        x += width;
+    }
+    let [
+        label,
+        field,
+        modes_rect,
+        tap,
+        down,
+        up,
+        slower,
+        faster,
+        snap,
+        quantize,
+    ] = rects;
+
+    // The tempo is the clock's own only while the clock is the tempo master.
+    let own = clock.master.is_none();
+    paint::text(
+        painter,
+        theme,
+        label,
+        Align2::LEFT_CENTER,
+        texts.get("header.tempo"),
+        tokens.text.label,
+        color.text_secondary,
+    );
+    let range = Bpm::MAX - Bpm::MIN;
+    let position = ((clock.bpm - Bpm::MIN) / range).clamp(0.0, 1.0);
+    value::field(
+        cx,
+        field,
+        id("clock-tempo"),
+        ValueSpec {
+            name: texts.get("header.tempo_name"),
+            position,
+            default: position,
+            steps: Steps {
+                small: CLOCK_FIELD_STEP / range,
+                fine: CLOCK_FIELD_STEP / 10.0 / range,
+                large: 1.0 / range,
+            },
+            enabled: own,
+        },
+        &format::bpm(clock.bpm),
+        |position| {
+            Command::ClockTempoSet {
+                bpm: Bpm::MIN + position * range,
+            }
+            .into()
+        },
+    );
+    let choices = modes.map(|label| Choice {
+        label,
+        enabled: true,
+    });
+    choice::segmented(
+        cx,
+        modes_rect,
+        id("clock-mode"),
+        &choices,
+        Some(usize::from(!clock.auto)),
+        |index| {
+            let mode = if index == 0 {
+                ClockMode::Auto
+            } else {
+                ClockMode::Master
+            };
+            Command::ClockModeSet { mode }.into()
+        },
+    );
+    key::key(
+        cx,
+        tap,
+        id("clock-tap"),
+        KeySpec::text(texts.get("header.tap")).enabled(own),
+        Press::Click(Command::ClockTap.into()),
+    );
+    let steps = [
+        (down, Glyph::Minus, "header.tempo_down_name", -CLOCK_STEP),
+        (up, Glyph::Plus, "header.tempo_up_name", CLOCK_STEP),
+    ];
+    for (index, (rect, glyph, name, amount)) in steps.into_iter().enumerate() {
+        key::key(
+            cx,
+            rect,
+            id(("clock-step", index)),
+            KeySpec::icon(glyph, 14.0, texts.get(name)).enabled(own),
+            Press::Click(Command::ClockTempoStep { amount }.into()),
+        );
+    }
+    let bends = [
+        (
+            slower,
+            Glyph::ChevronLeft,
+            "header.bend_slower_name",
+            -CLOCK_BEND,
+        ),
+        (
+            faster,
+            Glyph::ChevronRight,
+            "header.bend_faster_name",
+            CLOCK_BEND,
+        ),
+    ];
+    for (index, (rect, glyph, name, amount)) in bends.into_iter().enumerate() {
+        key::key(
+            cx,
+            rect,
+            id(("clock-bend", index)),
+            KeySpec::icon(glyph, 14.0, texts.get(name)).enabled(own),
+            Press::Hold {
+                down: Command::ClockBend { amount }.into(),
+                up: Command::ClockBend { amount: 0.0 }.into(),
+            },
+        );
+    }
+    let lit = color.text_primary;
+    key::key(
+        cx,
+        snap,
+        id("clock-snap"),
+        KeySpec::text(texts.get("header.snap")).lit(clock.snap.then_some(lit)),
+        Press::Click(Command::GlobalSnapToggle.into()),
+    );
+    key::key(
+        cx,
+        quantize,
+        id("clock-quantize"),
+        KeySpec::text(texts.get("header.quantize")).lit(clock.quantize.then_some(lit)),
+        Press::Click(Command::GlobalQuantizeToggle.into()),
+    );
+}
+
+/// The dropout count: a reading that resets the count when it is operated. Returns where it
+/// ends.
+fn dropouts(cx: &mut Cx<'_>, x: f32, header: Rect, count: u64) -> f32 {
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let color = &tokens.color;
@@ -284,6 +492,7 @@ fn dropouts(cx: &mut Cx<'_>, x: f32, header: Rect, count: u64) {
     if response.clicked() {
         cx.out.emit(action);
     }
+    hit.right()
 }
 
 /// The notice under the header when no device plays: what happened, what it means, and a
