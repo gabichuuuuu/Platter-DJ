@@ -46,10 +46,12 @@ impl Logger {
             .name("platter-log".to_owned())
             .spawn(move || {
                 for line in pending {
-                    // A full disk must not take the program down; the line is lost.
+                    // A full disk must not take the program down; the line is lost. Each
+                    // line reaches the disk at once: the last lines before a crash are the
+                    // ones that matter.
                     let _ = writeln!(file, "{line}");
+                    let _ = file.flush();
                 }
-                let _ = file.flush();
             })?;
         Ok(Self {
             lines: Some(lines),

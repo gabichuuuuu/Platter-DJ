@@ -7,6 +7,10 @@ pub struct SampleRate(u32);
 impl SampleRate {
     pub const MIN_HZ: u32 = 8_000;
     pub const MAX_HZ: u32 = 384_000;
+    /// The rate of compact discs.
+    pub const HZ_44100: Self = Self(44_100);
+    /// The rate most audio devices run at.
+    pub const HZ_48000: Self = Self(48_000);
 
     pub fn new(hz: u32) -> Result<Self, ValueError> {
         if (Self::MIN_HZ..=Self::MAX_HZ).contains(&hz) {
