@@ -19,3 +19,5 @@ shows them, no machine model, no local paths. "Not tested on hardware" is a vali
       reference product or from GPL or AGPL code.
 - [ ] Every new resource has a row in `ATTRIBUTION.md`.
 - [ ] `docs/parity.toml` is updated if the status of a function changes.
+- [ ] Depends on: <!-- #N of the pull request that goes first, or none -->
+- [ ] Fixes: <!-- Fixes #N for the issue it closes, or none -->

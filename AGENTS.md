@@ -171,6 +171,11 @@ for any other computer is allowed; a fact that points at this one is not.
   one pull request per crate or logical unit, opened in dependency order, lower layers first.
   Each has a Conventional Commit title, passes the gate and is squash-merged. A branch is pushed
   and a pull request opened only when the maintainer asks.
+- Pull request body: copy `.github/pull_request_template.md` and keep every line. Fill "What
+  changes and why", "How it was tested" (what was run and on what, described generically as
+  `CONTRIBUTING.md` asks; "Not tested on hardware" is a valid answer) and the `Depends on`
+  (#N or none) and `Fixes` (Fixes #N or none) lines. Tick a box only when it holds; a box that
+  does not hold stays empty and the description says why.
 - No tags and no rewriting of history.
 - A technical decision the rules leave open is recorded as a short ADR in `docs/decisions/`:
   context, options, choice, how it was measured.
