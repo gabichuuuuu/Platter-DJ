@@ -253,6 +253,29 @@ impl BeatGrid {
         Some(if phase < 1.0 { phase } else { 0.0 })
     }
 
+    /// The beat nearest to a position of `at` seconds, in the run of beats the position is
+    /// in, between zero and `end` seconds. Between two beats exactly, the later one. A grid
+    /// without tempo or markers has no beats.
+    pub fn nearest_beat(&self, at: f64, end: f64) -> Option<f64> {
+        let beat = self.bpm?.beat_seconds();
+        let phase = self.phase_at(at)?;
+        let (_, run_end) = self.run_at(at)?;
+        if !end.is_finite() {
+            return None;
+        }
+        let before = at - phase * beat;
+        // The next marker is a beat too, and starts a run of its own.
+        let after = (before + beat).min(run_end);
+        let inside = |seconds: f64| (0.0..=end).contains(&seconds);
+        match (inside(before), inside(after)) {
+            // A nanosecond either way is a tie: rounding must not pick the earlier beat.
+            (true, true) if at - before < after - at - 1e-9 => Some(before),
+            (_, true) => Some(after),
+            (true, false) => Some(before),
+            (false, false) => None,
+        }
+    }
+
     /// Where the run of beats that holds a position of `at` seconds starts and ends: from
     /// its marker to the next one. The first run has no start and the last one no end.
     pub fn run_at(&self, at: f64) -> Option<(f64, f64)> {
@@ -370,6 +393,29 @@ mod tests {
         assert!((phase(2.45) - 0.5).abs() < 1e-12);
         assert!((0.0..1.0).contains(&phase(1.0 - 1e-18)));
         assert_eq!(grid.phase_at(f64::NAN), None);
+    }
+
+    #[test]
+    fn the_nearest_beat_stays_in_the_run_and_in_the_track() {
+        assert_eq!(grid_with(&[1.0]).nearest_beat(1.2, 10.0), None, "no tempo");
+        let mut grid = grid_with(&[0.1, 2.2]);
+        grid.set_bpm(bpm(120.0));
+        let near = |at: f64| grid.nearest_beat(at, 10.0).unwrap();
+        assert!((near(1.3) - 1.1).abs() < 1e-12);
+        assert!((near(1.4) - 1.6).abs() < 1e-12);
+        assert!(
+            (near(0.85) - 1.1).abs() < 1e-12,
+            "the later one between two"
+        );
+        assert!((near(2.0) - 2.1).abs() < 1e-12);
+        assert!(
+            (near(2.18) - 2.2).abs() < 1e-12,
+            "the next marker is the next beat"
+        );
+        assert!((near(2.3) - 2.2).abs() < 1e-12);
+        assert!((near(0.05) - 0.1).abs() < 1e-12, "no beat before the track");
+        assert!((grid.nearest_beat(9.95, 9.9).unwrap() - 9.7).abs() < 1e-12);
+        assert_eq!(grid.nearest_beat(f64::NAN, 10.0), None);
     }
 
     #[test]

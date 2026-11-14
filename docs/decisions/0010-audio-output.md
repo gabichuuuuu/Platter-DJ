@@ -35,6 +35,9 @@ same event and counts once. The shared mode of WASAPI does not report output dro
 Windows the count comes from the timing alone.
 
 **Without a device.** `silent` runs the driver from a thread that sleeps one buffer at a time.
+Each buffer is due at a fixed time from the start. A timer that wakes late is made up for by
+running the buffers behind at once, up to 250 ms behind; a longer gap, such as a suspend or a
+debugger, makes the clock count from that moment instead of running a burst.
 The engine keeps working: tracks load, positions advance, meters read; nothing is heard. The
 alternative, an engine with no processor, would fill the command queue and leave the snapshot
 frozen.

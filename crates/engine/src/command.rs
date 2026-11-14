@@ -272,6 +272,10 @@ pub enum Command {
     GlobalSyncModeSet {
         mode: SyncMode,
     },
+    /// New cues and loops land on the nearest beat.
+    GlobalSnapToggle,
+    /// A playing deck that goes to a stored cue keeps its place in the beat.
+    GlobalQuantizeToggle,
 }
 
 /// Kind of a command parameter, for anything that builds commands from untyped input.
@@ -840,6 +844,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[number("amount", -MAX_NUDGE, MAX_NUDGE)],
     },
     CommandSpec {
+        id: "global.snap.toggle",
+        label: "Snap",
+        params: &[],
+    },
+    CommandSpec {
+        id: "global.quantize.toggle",
+        label: "Quantize",
+        params: &[],
+    },
+    CommandSpec {
         id: "global.sync.mode.set",
         label: "Set sync mode",
         params: &[ParamSpec {
@@ -1166,7 +1180,11 @@ impl Command {
             sync if sync.starts_with("clock.")
                 || matches!(
                     sync,
-                    "deck.sync.toggle" | "deck.master.set" | "global.sync.mode.set"
+                    "deck.sync.toggle"
+                        | "deck.master.set"
+                        | "global.sync.mode.set"
+                        | "global.snap.toggle"
+                        | "global.quantize.toggle"
                 ) =>
             {
                 return Self::sync_from_args(sync, &read);
@@ -1195,6 +1213,8 @@ impl Command {
             "global.sync.mode.set" => Self::GlobalSyncModeSet {
                 mode: read.sync_mode()?,
             },
+            "global.snap.toggle" => Self::GlobalSnapToggle,
+            "global.quantize.toggle" => Self::GlobalQuantizeToggle,
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
@@ -1376,6 +1396,8 @@ impl Command {
             Self::ClockTap => "clock.tap",
             Self::ClockBend { .. } => "clock.bend",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
+            Self::GlobalSnapToggle => "global.snap.toggle",
+            Self::GlobalQuantizeToggle => "global.quantize.toggle",
         }
     }
 }

@@ -28,7 +28,7 @@ while held, to correct the offset between two tracks by hand.
 | `deck.play`, `deck.pause`, `deck.play_pause` | Start, pause, toggle |
 | `deck.cue` | The CUE button, with `action` `press` or `release`; see below |
 | `deck.cup` | The CUP button, with `action` `press` or `release`; see below |
-| `deck.cue.set` | Stores the current position as the cue point |
+| `deck.cue.set` | Stores the current position as the cue point, or the nearest beat while Snap is on (`docs/behavior/sync.md`) |
 | `deck.cue.goto` | Returns to the cue point and pauses there |
 | `deck.seek` | Jumps to a position in seconds; past the end lands on the end |
 | `deck.tempo.set` | Speed as a ratio of the original, 0 (full stop) to 2 |

@@ -83,8 +83,8 @@ features = [
   { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "in_progress" },
   { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "in_progress" },
   { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "in_progress" },
-  { id = "snap", name = "SNAP", milestone = "M3", status = "planned" },
-  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "planned" },
+  { id = "snap", name = "SNAP", milestone = "M3", status = "in_progress" },
+  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "in_progress" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
   { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
 ]

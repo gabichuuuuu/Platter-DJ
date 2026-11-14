@@ -99,6 +99,10 @@ pub(super) struct DeckPlayer {
     cues_unreported: bool,
     tail: Option<Tail>,
     sync: bool,
+    /// New cues and loops land on the nearest beat.
+    snap: bool,
+    /// A playing deck that goes to a stored cue keeps its place in the beat.
+    quantize: bool,
     /// The place in its beat the clock is at on this frame, when the deck keeps its beats
     /// on those of the clock.
     beat_to_keep: Option<f64>,
@@ -129,6 +133,8 @@ impl DeckPlayer {
             cues_unreported: false,
             tail: None,
             sync: false,
+            snap: false,
+            quantize: false,
             beat_to_keep: None,
         }
     }
@@ -198,11 +204,79 @@ impl DeckPlayer {
         }
     }
 
+    /// Sets the floating cue at the play position or, with Snap, at the nearest beat; a
+    /// paused deck then moves there, so the cue key plays from it.
     pub(super) fn set_cue(&mut self) {
-        let end = self
-            .settled_audio()
-            .map_or(0.0, |audio| audio.frames() as f64);
-        self.set_cue_at(self.settled_position().clamp(0.0, end));
+        let Some(track) = self.settled_track() else {
+            self.set_cue_at(0.0);
+            return;
+        };
+        let at = self.settled_position().clamp(0.0, track.frames);
+        let cue = self.snapped(at, track);
+        self.set_cue_at(cue);
+        if cue != at && !self.playing {
+            self.pending_seek = Some(SeekTarget::Frame(cue));
+        }
+    }
+
+    pub(super) fn set_snap(&mut self, on: bool) {
+        self.snap = on;
+    }
+
+    pub(super) fn set_quantize(&mut self, on: bool) {
+        self.quantize = on;
+    }
+
+    /// The grid of the track the deck holds once the pending swap is applied.
+    fn settled_grid(&self) -> Option<&BeatGrid> {
+        if self.pending_swap.is_some() {
+            self.arriving_grid.as_ref()
+        } else {
+            Some(&self.grid)
+        }
+    }
+
+    /// Where a cue or a loop set at `frame` goes: with Snap on, the nearest beat.
+    fn snapped(&self, frame: f64, track: Track) -> f64 {
+        if !self.snap {
+            return frame;
+        }
+        self.settled_grid()
+            .and_then(|grid| grid.nearest_beat(frame / track.rate, track.frames / track.rate))
+            .map_or(frame, |seconds| {
+                (seconds * track.rate).clamp(0.0, track.frames)
+            })
+    }
+
+    /// Where a playing deck at `at` lands when it goes to a cue at `cue`: with Quantize on,
+    /// as far into the beat as it is now. `loop_frames` is the length of a stored loop,
+    /// which the deck has to land inside.
+    fn quantized(&self, cue: f64, at: f64, loop_frames: Option<f64>, track: Track) -> f64 {
+        let (true, Some(beat), Some(grid)) = (self.quantize, track.beat, self.settled_grid())
+        else {
+            return cue;
+        };
+        let phase = |frame: f64| grid.phase_at(frame / track.rate);
+        let (Some(cue_phase), Some(now)) = (phase(cue), phase(at)) else {
+            return cue;
+        };
+        let mut offset = beats_between(cue_phase, now);
+        if let Some(length) = loop_frames {
+            if length < beat {
+                return cue;
+            }
+            if offset < 0.0 {
+                offset += 1.0;
+            }
+        }
+        let mut target = cue + offset * beat;
+        if target < 0.0 {
+            target += beat;
+        }
+        if target > track.frames {
+            target -= beat;
+        }
+        target.clamp(0.0, track.frames)
     }
 
     fn set_cue_at(&mut self, cue: f64) {
@@ -332,7 +406,22 @@ impl DeckPlayer {
             return;
         };
         let at = self.settled_position().clamp(0.0, track.frames);
-        if let Some(target) = self.looper.edit(edit, at, track) {
+        let placed = match edit {
+            LoopEdit::In | LoopEdit::Out | LoopEdit::Toggle { .. } => self.snapped(at, track),
+            LoopEdit::Resize { .. } | LoopEdit::Move { .. } => at,
+        };
+        let before = self.looper.region();
+        let mut target = self.looper.edit(edit, placed, track);
+        // An end that Snap put elsewhere than the play position: the deck plays on to it,
+        // or, when it is already past it, goes on from where it is counted around the loop.
+        if edit == LoopEdit::Out && placed != at {
+            let after = self.looper.region();
+            target = after.filter(|_| after != before).and_then(|region| {
+                (at >= region.end && at >= region.start)
+                    .then(|| region.start + (at - region.start).rem_euclid(region.frames()))
+            });
+        }
+        if let Some(target) = target {
             self.jump_to(target);
         }
     }
@@ -449,7 +538,7 @@ impl DeckPlayer {
     fn cue_to_store(&self, at: f64, track: Track) -> Cue {
         match self.looper.state(track.rate).region {
             Some(region) => Cue::looping(region),
-            None => Cue::at(at / track.rate),
+            None => Cue::at(self.snapped(at, track) / track.rate),
         }
     }
 
@@ -458,13 +547,16 @@ impl DeckPlayer {
     /// its floating cue and plays until that key is released, as under the cue button.
     fn go_to_cue(&mut self, cue: Cue, track: Track, key: Option<HotcueSlot>) {
         let frame = (cue.position * track.rate).clamp(0.0, track.frames);
+        let mut loop_frames = None;
         if let Some(region) = cue.region() {
             // The end went through seconds and back: it may be a hair past the track.
             let end = (region.end * track.rate).min(track.frames);
             self.looper.set_region(Region { start: frame, end }, track);
+            loop_frames = Some(end - frame);
         }
         if self.playing && !self.cue_preview {
-            self.jump_to(frame);
+            let at = self.settled_position().clamp(0.0, track.frames);
+            self.jump_to(self.quantized(frame, at, loop_frames, track));
             return;
         }
         self.pending_seek = Some(SeekTarget::Frame(frame));

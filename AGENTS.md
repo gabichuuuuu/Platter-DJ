@@ -36,8 +36,8 @@ Do not reopen these on your own. If one proves unworkable, stop and explain why.
 | Privacy | No telemetry and no automatic reports. The application opens no network connection without an explicit user action. Crash logs stay local |
 | Measurement data | Only synthesised signals in the repository and in CI. Real corpora stay in a cache outside the repository; only aggregate results and the citation are committed |
 | Commits and versions | Conventional Commits and SemVer; 0.x until M4 closes |
-| Pull requests | Limited to collaborators for now (`docs/decisions/0001-pull-requests-limited-to-collaborators.md`) |
-| Remote | A private repository in the maintainer's GitHub account. Push, open a pull request or merge only when the maintainer asks. Never change its visibility |
+| Pull requests | Anyone may open one; only the maintainer merges, after review (`docs/decisions/0018-pull-requests-open-to-everyone.md`) |
+| Remote | The public repository `Platter-DJ` in the maintainer's GitHub account. Push, open a pull request or merge only when the maintainer asks. Never change its visibility |
 
 ## Non-negotiable rules
 
@@ -145,6 +145,11 @@ interface thread.
   one pull request per crate or logical unit, opened in dependency order, lower layers first.
   Each has a Conventional Commit title, passes the gate and is squash-merged. A branch is pushed
   and a pull request opened only when the maintainer asks.
+- Pull request body: copy `.github/pull_request_template.md` and keep every line. Fill "What
+  changes and why", "How it was tested" (what was run and on what, as
+  `CONTRIBUTING.md` asks; "Not tested on hardware" is a valid answer) and the `Depends on`
+  (#N or none) and `Fixes` (Fixes #N or none) lines. Tick a box only when it holds; a box that
+  does not hold stays empty and the description says why.
 - No tags and no rewriting of history.
 - A technical decision the rules leave open is recorded as a short ADR in `docs/decisions/`:
   context, options, choice, how it was measured.
