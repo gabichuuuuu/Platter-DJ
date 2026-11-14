@@ -1,17 +1,5 @@
 # Contributing to Platter
 
-<!-- external-prs-notice:start -->
-> **Status: external pull requests are not accepted for now.** Platter is in its first
-> milestones and has a single maintainer. Pull requests are limited to collaborators.
->
-> You can still help:
->
-> - Report a bug in an issue, with the steps to reproduce it.
-> - Propose an idea in Discussions.
-> - Send a controller report through its issue template: make, model, and whether it speaks
->   MIDI or HID.
-<!-- external-prs-notice:end -->
-
 This guide describes how contributions work. Read `AGENTS.md` first: its rules apply to every
 change, whoever or whatever writes it.
 

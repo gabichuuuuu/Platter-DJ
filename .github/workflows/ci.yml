@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   gate:
-    # While the repository is private, Actions minutes are limited and macOS consumes ten times
-    # more: pushes and pull requests run Linux and Windows, and macOS joins on the weekly
-    # schedule and on manual runs. Once the repository is public, every run uses all three.
+    # The repository is public, so every run uses all three systems. A private copy has limited
+    # Actions minutes and macOS consumes ten times more: there, pushes and pull requests run
+    # Linux and Windows, and macOS joins on the weekly schedule and on manual runs.
     strategy:
       fail-fast: false
       matrix:
