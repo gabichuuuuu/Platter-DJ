@@ -169,6 +169,11 @@ impl Shell {
         ]) {
             memory.update(levels, now);
         }
+        // The mapping mode of the hotcues ends with the cue it was about: deleted, or gone
+        // with its track.
+        for (mapping, deck) in self.state.cue_map.iter_mut().zip(&engine.decks) {
+            *mapping &= deck.cues.selected().is_some();
+        }
 
         let mut out = FrameOutput::default();
         let screen = ui.max_rect();

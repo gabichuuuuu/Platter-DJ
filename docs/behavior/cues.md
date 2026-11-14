@@ -99,7 +99,8 @@ is selected: the commands of the CUE page act on it.
   Store, Map and Delete. Its second row: the type of the selected cue, a list.
 - Map switches the mapping mode of the hotcues of the deck, a choice of the window:
   `deck.cue.map`. While it is on the key is lit, the pads have a dashed outline, and a press
-  on a pad sends `deck.hotcue.map` for it and ends the mode.
+  on a pad sends `deck.hotcue.map` for it and ends the mode. The mode also ends when no cue
+  is selected any more.
 - Both waveforms draw each stored cue as a line in the colour of its slot with its number on
   a flag at the top; the scrolling one writes its name beside the flag. The floating cue is a
   triangle at the bottom, in the colour of the play position. The length of a loop is

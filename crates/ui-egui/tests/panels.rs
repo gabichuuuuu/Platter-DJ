@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
-use platter_core::{DeckId, HotcueSlot};
+use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::Command;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
@@ -377,6 +377,57 @@ fn a_hotcue_in_the_mapping_mode_takes_the_selected_cue_and_ends_the_mode() {
             }),
             Action::App(AppCommand::DeckCueMapToggle { deck: DeckId::B }),
         ]
+    );
+}
+
+#[test]
+fn the_mapping_mode_ends_when_no_cue_is_selected() {
+    let mut state = states()
+        .into_iter()
+        .find(|state| state.name == "cues")
+        .unwrap();
+    // The selected cue of deck B is deleted while its hotcues wait for it.
+    let cues = &mut state.scene.engine.decks[1].cues;
+    let selected = cues.selected().unwrap();
+    cues.delete(selected);
+    let stage = Stage::new(&state);
+    let controls = stage.controls();
+    assert!(
+        controls
+            .iter()
+            .all(|control| control.command != "deck.hotcue.map")
+    );
+    let pads = controls
+        .iter()
+        .filter(|control| control.command == "deck.hotcue.trigger" && control.enabled)
+        .count();
+    assert_eq!(pads, 16, "the hotcues of both decks act again");
+    assert!(!stage.shell.state.cue_map[1]);
+}
+
+#[test]
+fn the_type_list_of_a_cue_picks_its_last_option() {
+    let state = states()
+        .into_iter()
+        .find(|state| state.name == "cues")
+        .unwrap();
+    let mut stage = Stage::new(&state);
+    // Deck B: its selected cue is of the type cue, and its grid has a tempo.
+    let list = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "deck.cue.type.set")
+        .next_back()
+        .unwrap();
+    assert!(stage.click(list.rect.center()).is_empty());
+    // The fifth row of the list that hangs below the field.
+    let row = list.rect.center_bottom() + egui::vec2(0.0, 2.0 + 14.0 + 28.0 * 4.0);
+    assert_eq!(
+        stage.click(row),
+        vec![Action::Engine(Command::DeckCueTypeSet {
+            deck: DeckId::B,
+            kind: CueKind::Loop,
+        })]
     );
 }
 
