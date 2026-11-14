@@ -4,7 +4,7 @@
 //! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
 //! `docs/behavior/cues.md`.
 
-use platter_core::{BeatGrid, Cue, CueKind, Cues, SampleRate};
+use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
@@ -66,6 +66,8 @@ pub(super) struct DeckPlayer {
     arriving_cue: Option<f64>,
     /// The cue button is held on a paused deck and the track plays until it is released.
     cue_preview: bool,
+    /// The hotcue whose key holds that preview, when it is not the cue button.
+    held_hotcue: Option<HotcueSlot>,
     /// The cue-play button is held: the deck waits at the cue point for its release.
     cup_held: bool,
     grid: BeatGrid,
@@ -97,6 +99,7 @@ impl DeckPlayer {
             pending_seek: None,
             arriving_cue: None,
             cue_preview: false,
+            held_hotcue: None,
             cup_held: false,
             grid: BeatGrid::default(),
             arriving_grid: None,
@@ -117,6 +120,7 @@ impl DeckPlayer {
         }
         self.playing = false;
         self.cue_preview = false;
+        self.held_hotcue = None;
         self.cup_held = false;
         self.pending_seek = None;
         self.arriving_cue = None;
@@ -140,6 +144,7 @@ impl DeckPlayer {
 
     pub(super) fn set_playing(&mut self, playing: bool) {
         self.cue_preview = false;
+        self.held_hotcue = None;
         self.playing = playing && self.will_be_loaded();
     }
 
@@ -192,8 +197,8 @@ impl DeckPlayer {
     /// and returns to the cue point when it is released.
     pub(super) fn cue_button(&mut self, pressed: bool) {
         if !pressed {
-            if self.cue_preview {
-                self.cue_preview = false;
+            // A preview a hotcue holds ends with the key of that hotcue.
+            if self.cue_preview && self.held_hotcue.is_none() {
                 self.goto_cue();
             }
             return;
@@ -207,6 +212,7 @@ impl DeckPlayer {
         } else if self.will_be_loaded() {
             self.playing = true;
             self.cue_preview = true;
+            self.held_hotcue = None;
         }
     }
 
@@ -215,6 +221,7 @@ impl DeckPlayer {
     pub(super) fn cup_button(&mut self, pressed: bool) {
         if pressed {
             self.cue_preview = false;
+            self.held_hotcue = None;
             self.goto_cue();
             self.cup_held = true;
         } else if self.cup_held {
@@ -226,6 +233,7 @@ impl DeckPlayer {
     pub(super) fn goto_cue(&mut self) {
         self.playing = false;
         self.cue_preview = false;
+        self.held_hotcue = None;
         self.pending_seek = Some(SeekTarget::Frame(self.settled_cue()));
     }
 
@@ -355,13 +363,20 @@ impl DeckPlayer {
             } => match cues.get(slot).copied() {
                 Some(cue) => {
                     cues.select(slot);
-                    self.go_to_cue(cue, track, true);
+                    self.go_to_cue(cue, track, Some(slot));
                 }
                 None => {
                     cues.store(slot, self.cue_to_store(at, track));
                 }
             },
-            CueEdit::Hotcue { pressed: false, .. } => self.cue_button(false),
+            CueEdit::Hotcue {
+                slot,
+                pressed: false,
+            } => {
+                if self.cue_preview && self.held_hotcue == Some(slot) {
+                    self.goto_cue();
+                }
+            }
             CueEdit::Store => {
                 if let Some(slot) = cues.first_free() {
                     let floating = self.settled_cue().clamp(0.0, track.frames);
@@ -388,7 +403,7 @@ impl DeckPlayer {
                 };
                 if let Some((slot, cue)) = slot.and_then(|slot| Some((slot, *cues.get(slot)?))) {
                     cues.select(slot);
-                    self.go_to_cue(cue, track, false);
+                    self.go_to_cue(cue, track, None);
                 }
             }
             CueEdit::Rename(name) => {
@@ -417,9 +432,9 @@ impl DeckPlayer {
     }
 
     /// Goes to a stored cue and switches on the loop it stores. A deck that plays goes on
-    /// from there. A paused one moves there and, with `hold`, takes the cue as its floating
-    /// cue and plays until the key is released, as under the cue button.
-    fn go_to_cue(&mut self, cue: Cue, track: Track, hold: bool) {
+    /// from there. A paused one moves there and, under the key of a hotcue, takes the cue as
+    /// its floating cue and plays until that key is released, as under the cue button.
+    fn go_to_cue(&mut self, cue: Cue, track: Track, key: Option<HotcueSlot>) {
         let frame = (cue.position * track.rate).clamp(0.0, track.frames);
         if let Some(region) = cue.region() {
             // The end went through seconds and back: it may be a hair past the track.
@@ -431,10 +446,11 @@ impl DeckPlayer {
             return;
         }
         self.pending_seek = Some(SeekTarget::Frame(frame));
-        if hold {
+        if key.is_some() {
             self.set_cue_at(frame);
             self.playing = true;
             self.cue_preview = true;
+            self.held_hotcue = key;
         }
     }
 

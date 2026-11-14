@@ -112,8 +112,9 @@ is selected: the commands of the CUE page act on it.
 | --- | --- |
 | Any of these commands on an empty deck | Nothing happens |
 | `slot` outside 1 to 8 or not a whole number | The command is rejected |
-| A release without a hold | Nothing happens |
-| A release of any hotcue while a hotcue or the cue key holds the deck playing | Ends the hold |
+| A release of a key that holds nothing | Nothing happens |
+| A press on an empty slot while a hotcue or the cue key holds the deck playing | Stores the play position; the hold goes on |
+| A stored hotcue pressed while another key holds the deck playing | The deck plays from the new cue and the hold is now of that hotcue; the release of the first key does nothing |
 | `deck.cue.store` with the eight slots taken | Nothing happens |
 | `deck.cue.select` with no cue on that side | Nothing happens |
 | Rename, type or delete without a selected cue | Nothing happens |

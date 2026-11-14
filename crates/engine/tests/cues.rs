@@ -195,6 +195,66 @@ fn play_during_the_hold_keeps_the_deck_playing() {
 }
 
 #[test]
+fn a_tap_on_an_empty_slot_leaves_the_hold_of_another_key_alone() {
+    let mut rig = bare("cue-hold-tap");
+    store_at(&mut rig, 1, 1.0);
+    key(&mut rig, 1, true);
+    rig.run(0.25);
+    tap(&mut rig, 2);
+    rig.run(0.25);
+    let held = deck(&mut rig);
+    assert!(held.playing, "the release of another slot ended the hold");
+    assert!(stored(&held.cues, 2).is_some_and(|at| (at - 1.25).abs() < 2.0 * FRAME));
+    key(&mut rig, 1, false);
+    rig.run(0.05);
+    let released = deck(&mut rig);
+    assert!(!released.playing);
+    assert!(close(released.position_seconds, 1.0));
+
+    // The same under the cue key: the deck stands on its floating cue, so the key plays.
+    rig.send(Command::DeckCue {
+        deck: A,
+        pressed: true,
+    });
+    rig.run(0.25);
+    tap(&mut rig, 3);
+    rig.run(0.25);
+    assert!(
+        deck(&mut rig).playing,
+        "the tap ended the hold of the cue key"
+    );
+    rig.send(Command::DeckCue {
+        deck: A,
+        pressed: false,
+    });
+    rig.run(0.05);
+    let released = deck(&mut rig);
+    assert!(!released.playing);
+    assert!(close(released.position_seconds, 1.0));
+}
+
+#[test]
+fn a_stored_hotcue_pressed_during_a_hold_takes_the_hold_over() {
+    let mut rig = bare("cue-hold-other");
+    store_at(&mut rig, 1, 1.0);
+    store_at(&mut rig, 2, 2.0);
+    key(&mut rig, 1, true);
+    rig.run(0.1);
+    key(&mut rig, 2, true);
+    rig.run(0.1);
+    key(&mut rig, 1, false);
+    rig.run(0.1);
+    let held = deck(&mut rig);
+    assert!(held.playing);
+    assert!(held.position_seconds > 2.0, "{}", held.position_seconds);
+    key(&mut rig, 2, false);
+    rig.run(0.05);
+    let released = deck(&mut rig);
+    assert!(!released.playing);
+    assert!(close(released.position_seconds, 2.0));
+}
+
+#[test]
 fn a_press_while_a_loop_is_on_stores_the_loop_and_a_later_press_brings_it_back() {
     let mut rig = rig("cue-stored-loop");
     seek(&mut rig, 1.0);
