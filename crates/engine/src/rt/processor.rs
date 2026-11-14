@@ -163,6 +163,16 @@ impl Processor {
             RtCommand::ClockStep { amount } => self.clock.step_bpm(amount),
             RtCommand::ClockBend { amount } => self.clock.set_bend(amount),
             RtCommand::KeepBeat { on } => self.keep_beat = on,
+            RtCommand::Snap { on } => {
+                for channel in &mut self.channels {
+                    channel.player.set_snap(on);
+                }
+            }
+            RtCommand::Quantize { on } => {
+                for channel in &mut self.channels {
+                    channel.player.set_quantize(on);
+                }
+            }
             mixer => self.apply_mixer(mixer),
         }
     }

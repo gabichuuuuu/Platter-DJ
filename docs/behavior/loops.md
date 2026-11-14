@@ -2,8 +2,8 @@
 
 A loop repeats a stretch of the track; a beatjump moves the play position by a number of
 beats without losing the beat. This note covers the loop of a deck, the jumps and the moves of
-the MOVE page. Loops stored in hotcues are in `docs/behavior/cues.md`; Quantize and Snap come
-with sync, later in M3.
+the MOVE page. Loops stored in hotcues are in `docs/behavior/cues.md`; Snap, which puts In,
+Out and a new loop on the beat, is in `docs/behavior/sync.md`.
 
 ## What the public manual says
 
@@ -107,8 +107,8 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
   ACTIVE button switches on the next stored loop. In Platter a loop that is switched off is
   gone, and `deck.loop.toggle` without a loop starts one of the selected size, the way its
   preset size buttons do. A loop is kept by storing it in a hotcue (`docs/behavior/cues.md`).
-- In, Out, the start of a loop and the jumps use the play position as it is. Landing on the
-  beat is Quantize and Snap, which come with sync.
+- In, Out and the start of a loop use the play position as it is unless Snap is on
+  (`docs/behavior/sync.md`).
 - The fine step is a time, 5 ms, so it also trims a loop made with In and Out on a track
   without a grid. The reference manual gives no value for its fine step, and its extra-fine
   step is left out.

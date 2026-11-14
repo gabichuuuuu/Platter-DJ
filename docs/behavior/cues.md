@@ -127,8 +127,8 @@ is selected: the commands of the CUE page act on it.
   Platter swaps the two, so no cue is lost.
 - The nudge buttons of the selected cue are left out: a cue is moved by deleting it and
   storing it again.
-- Cues are stored at the play position as it is. Landing on the beat is Snap, which comes
-  with sync.
+- Cues are stored at the play position as it is unless Snap is on, and a playing deck goes
+  to a cue as it is unless Quantize is on (`docs/behavior/sync.md`).
 - A deleted cue is gone: there is no undo yet.
 - The window cannot rename a cue yet: `deck.cue.rename` has no control until the text field
   of the browser search exists, later in M3, as with the tempo field of the grid.

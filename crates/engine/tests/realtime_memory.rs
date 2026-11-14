@@ -227,8 +227,18 @@ fn commands() -> Vec<Command> {
             deck: A,
             slot: HotcueSlot::ALL[0],
         },
-        // Sync: deck B follows deck A and moves onto its beat, then follows the clock.
+        // Sync: deck B follows deck A and moves onto its beat, then follows the clock. Both
+        // decks start again near their beginning, so they play through what follows.
+        Command::DeckSeek {
+            deck: A,
+            seconds: 0.2,
+        },
         Command::DeckPlay { deck: A },
+        Command::DeckGridBpmSet {
+            deck: A,
+            bpm: 120.0,
+        },
+        Command::DeckPlay { deck: B },
         Command::DeckGridBpmSet {
             deck: B,
             bpm: 100.0,
@@ -257,6 +267,27 @@ fn commands() -> Vec<Command> {
         Command::ClockModeSet {
             mode: ClockMode::Auto,
         },
+        Command::DeckSyncToggle { deck: B },
+        // Snap and Quantize: a cue and a loop on the beat, a quantized jump to a hotcue, on
+        // a deck that plays from near its beginning.
+        Command::DeckSeek {
+            deck: A,
+            seconds: 0.2,
+        },
+        Command::DeckPlay { deck: A },
+        Command::GlobalSnapToggle,
+        Command::GlobalQuantizeToggle,
+        Command::DeckCueSet { deck: A },
+        hotcue(3, true),
+        hotcue(3, false),
+        Command::DeckLoopToggle { deck: A },
+        hotcue(4, true),
+        hotcue(4, false),
+        Command::DeckLoopToggle { deck: A },
+        hotcue(3, true),
+        hotcue(3, false),
+        hotcue(4, true),
+        hotcue(4, false),
         Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },

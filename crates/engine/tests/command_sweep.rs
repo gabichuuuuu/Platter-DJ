@@ -144,6 +144,8 @@ fn sync_command() -> impl Strategy<Value = Command> {
         1 => proptest::strategy::Just(Command::ClockTap),
         1 => number().prop_map(|amount| Command::ClockBend { amount }),
         1 => sync_mode.prop_map(|mode| Command::GlobalSyncModeSet { mode }),
+        1 => proptest::strategy::Just(Command::GlobalSnapToggle),
+        1 => proptest::strategy::Just(Command::GlobalQuantizeToggle),
     ]
 }
 
