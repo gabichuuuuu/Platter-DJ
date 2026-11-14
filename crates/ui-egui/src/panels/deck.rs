@@ -1,17 +1,19 @@
-//! A deck: its header, the overview of its track, the transport keys and the tempo control.
+//! A deck: its header, the overview of its track, the loop controls, a page of the advanced
+//! panel, the transport keys and the tempo control.
 //!
-//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `GridEditor` and `Notice` in
-//! `docs/design/DESIGN.md`; placement from `docs/design/screens/M2-main.html` and, for the
-//! grid row, `docs/design/screens/First-version.html`. Behaviour notes:
-//! `docs/behavior/transport.md` and `docs/behavior/beatgrid.md`.
+//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `LoopControls`, `MovePanel`,
+//! `GridEditor` and `Notice` in `docs/design/DESIGN.md`; placement from
+//! `docs/design/screens/M2-main.html` and, for the loop row and the pages,
+//! `docs/design/screens/First-version.html`. Behaviour notes: `docs/behavior/transport.md`,
+//! `docs/behavior/beatgrid.md` and `docs/behavior/loops.md`.
 
 use std::path::PathBuf;
 
 use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
 use platter_core::{Bpm, DeckId};
-use platter_engine::{BpmScale, Command, DeckSnapshot};
+use platter_engine::{BpmScale, Command, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep};
 
-use crate::command::AppCommand;
+use crate::command::{Action, AppCommand, DeckPage};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
@@ -19,6 +21,8 @@ use crate::model::{DeckNotice, View};
 use crate::paint;
 use crate::panels::waveform::{self, deck_color};
 use crate::shell::ViewState;
+use crate::tokens::{TextStyle, Tokens};
+use crate::widgets::choice::{self, Choice};
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, Steps, ValueSpec};
 
@@ -35,6 +39,10 @@ const DEFAULT_FIELD_BPM: f64 = 120.0;
 const GRID_ROW_HEIGHT: f32 = 24.0;
 const GRID_KEY_WIDTH: f32 = 24.0;
 const BPM_FIELD_WIDTH: f32 = 64.0;
+const LOOP_ROW_HEIGHT: f32 = 28.0;
+const ARROW_WIDTH: f32 = 28.0;
+const LOOP_SIZE_WIDTH: f32 = 48.0;
+const MOVE_SIZE_WIDTH: f32 = 40.0;
 
 /// The name a track is shown by: its title tag, or the name of its file.
 fn title_of(snapshot: &DeckSnapshot) -> Option<String> {
@@ -113,8 +121,390 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         deck_notice(cx, area, deck, notice);
     }
     transport(cx, left, deck, snapshot);
-    grid_page(cx, left, deck, snapshot);
+    loop_controls(cx, left, deck, snapshot);
+    let page = state.deck_page[deck.index()];
+    match page {
+        DeckPage::Move => move_page(cx, left, deck, snapshot),
+        DeckPage::Grid => grid_page(cx, left, deck, snapshot),
+    }
+    page_selector(cx, left, deck, page);
     tempo(cx, tempo_column, deck, snapshot);
+}
+
+/// The tops of the two rows of a page of the advanced panel, above the transport keys at
+/// the bottom of `area`.
+fn page_rows(area: Rect, tokens: &Tokens) -> (f32, f32) {
+    let second = area.bottom() - tokens.size.transport_h - tokens.space.s3 - GRID_ROW_HEIGHT;
+    (second - tokens.space.s2 - GRID_ROW_HEIGHT, second)
+}
+
+/// One arrow of a stepper: its name, whether it has somewhere to step to, and what it sends.
+struct Arrow<'a> {
+    name: &'a str,
+    enabled: bool,
+    action: Action,
+}
+
+/// A reading between an arrow that steps it down and one that steps it up, along `row`.
+fn stepper(
+    cx: &mut Cx<'_>,
+    row: &mut Row,
+    salt: (&'static str, usize),
+    reading: (&str, TextStyle, f32),
+    arrows: [Arrow<'_>; 2],
+) {
+    let color = &cx.theme.tokens.color;
+    let (text, style, width) = reading;
+    let [down, up] = arrows;
+    let active = down.enabled || up.enabled;
+    let rect = row.place(ARROW_WIDTH);
+    key::key(
+        cx,
+        rect,
+        id((salt, 0)),
+        KeySpec::icon(Glyph::ChevronLeft, 14.0, down.name).enabled(down.enabled),
+        Press::Click(down.action),
+    );
+    let rect = row.place(width);
+    let ink = if active {
+        color.text_primary
+    } else {
+        color.text_disabled
+    };
+    paint::text(
+        cx.painter(),
+        cx.theme,
+        rect,
+        Align2::CENTER_CENTER,
+        text,
+        style,
+        ink,
+    );
+    let rect = row.place(ARROW_WIDTH);
+    key::key(
+        cx,
+        rect,
+        id((salt, 1)),
+        KeySpec::icon(Glyph::ChevronRight, 14.0, up.name).enabled(up.enabled),
+        Press::Click(up.action),
+    );
+}
+
+/// Whether one jump or move of the deck has a length: the fine steps always have, the
+/// sizes in beats need a tempo, and the length of the loop needs the loop or a tempo.
+fn step_has_length(snapshot: &DeckSnapshot) -> bool {
+    let controls = &snapshot.controls;
+    let has_tempo = snapshot.grid.bpm().is_some();
+    controls.move_fine
+        || match controls.move_size {
+            MoveSize::Beats(_) => has_tempo,
+            MoveSize::Loop => has_tempo || snapshot.looping.region.is_some(),
+        }
+}
+
+/// What the move size reads: the fine step, a size in beats or the loop.
+fn move_size_text(cx: &Cx<'_>, snapshot: &DeckSnapshot) -> String {
+    let controls = &snapshot.controls;
+    if controls.move_fine {
+        return cx.texts.get("deck.move_fine_step").to_owned();
+    }
+    match controls.move_size {
+        MoveSize::Beats(size) => waveform::size_text(cx.texts, size),
+        MoveSize::Loop => cx.texts.get("deck.move_size_loop").to_owned(),
+    }
+}
+
+/// The loop row, above the page of the advanced panel: the loop size between its arrows,
+/// In, Out and Active, and at the right end the beatjump keys around the move size.
+fn loop_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let letter = deck.letter().to_string();
+    let named = |key: &str| texts.format(key, &[("deck", &letter)]);
+    let controls = &snapshot.controls;
+    let looping = &snapshot.looping;
+    let loaded = is_ready(snapshot);
+    let has_tempo = snapshot.grid.bpm().is_some();
+    let on = looping.region.is_some();
+    let lit = tokens.color.loop_region;
+    let (first_top, _) = page_rows(area, tokens);
+    let top = first_top - tokens.space.s3 - LOOP_ROW_HEIGHT;
+    let gap = tokens.space.s2;
+    let mut row = Row {
+        x: area.left(),
+        top,
+        height: LOOP_ROW_HEIGHT,
+        gap,
+    };
+
+    let size = controls.loop_size;
+    let size_text = waveform::size_text(texts, size);
+    let smaller = named("deck.loop_smaller_name");
+    let larger = named("deck.loop_larger_name");
+    let step = |direction| Command::DeckLoopSizeStep { deck, direction }.into();
+    stepper(
+        cx,
+        &mut row,
+        ("deck-loop-size", deck.index()),
+        (&size_text, tokens.text.tempo, LOOP_SIZE_WIDTH),
+        [
+            Arrow {
+                name: &smaller,
+                enabled: size.smaller().is_some(),
+                action: step(SizeStep::Down),
+            },
+            Arrow {
+                name: &larger,
+                enabled: size.larger().is_some(),
+                action: step(SizeStep::Up),
+            },
+        ],
+    );
+    row.x += tokens.space.s3;
+    let keys = [
+        (
+            "deck.loop_in",
+            "deck.loop_in_name",
+            Command::DeckLoopIn { deck },
+            loaded,
+            looping.in_point.is_some(),
+        ),
+        (
+            "deck.loop_out",
+            "deck.loop_out_name",
+            Command::DeckLoopOut { deck },
+            loaded && (on || looping.in_point.is_some()),
+            false,
+        ),
+        (
+            "deck.loop_active",
+            "deck.loop_active_name",
+            Command::DeckLoopToggle { deck },
+            loaded && (on || has_tempo),
+            on,
+        ),
+    ];
+    for (index, (label, name, command, enabled, is_lit)) in keys.into_iter().enumerate() {
+        let label = texts.get(label);
+        let rect = row.place(key::width_for(cx, label, 36.0));
+        let name = named(name);
+        let mut spec = KeySpec::text(label).enabled(enabled);
+        spec.name = &name;
+        spec.lit = is_lit.then_some(lit);
+        key::key(
+            cx,
+            rect,
+            id(("deck-loop-key", deck.index(), index)),
+            spec,
+            Press::Click(command.into()),
+        );
+    }
+
+    // The beatjump: back, the move size, forward, at the right end of the row.
+    let jump = loaded && step_has_length(snapshot);
+    let reading = move_size_text(cx, snapshot);
+    let mut row = Row {
+        x: area.right() - 2.0 * (ARROW_WIDTH + gap) - MOVE_SIZE_WIDTH,
+        top,
+        height: LOOP_ROW_HEIGHT,
+        gap,
+    };
+    let jumps = [
+        ("deck.jump_back", "deck.jump_back_name", Direction::Back),
+        (
+            "deck.jump_forward",
+            "deck.jump_forward_name",
+            Direction::Forward,
+        ),
+    ];
+    for (index, (label, name, direction)) in jumps.into_iter().enumerate() {
+        if index == 1 {
+            let rect = row.place(MOVE_SIZE_WIDTH);
+            let ink = if jump {
+                tokens.color.text_primary
+            } else {
+                tokens.color.text_disabled
+            };
+            paint::text(
+                cx.painter(),
+                theme,
+                rect,
+                Align2::CENTER_CENTER,
+                &reading,
+                tokens.text.readout,
+                ink,
+            );
+        }
+        let rect = row.place(ARROW_WIDTH);
+        let name = named(name);
+        let mut spec = KeySpec::text(texts.get(label)).enabled(jump);
+        spec.name = &name;
+        key::key(
+            cx,
+            rect,
+            id(("deck-jump", deck.index(), index)),
+            spec,
+            Press::Click(Command::DeckBeatjump { deck, direction }.into()),
+        );
+    }
+}
+
+/// The two rows of the MOVE page: what the moves act on; then the move size between its
+/// arrows, the two move keys and the fine steps.
+fn move_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let letter = deck.letter().to_string();
+    let named = |key: &str| texts.format(key, &[("deck", &letter)]);
+    let controls = &snapshot.controls;
+    let loaded = is_ready(snapshot);
+    let (first_top, second_top) = page_rows(area, tokens);
+    let gap = tokens.space.s2;
+
+    let modes = [
+        "deck.move_mode_beatjump",
+        "deck.move_mode_loop",
+        "deck.move_mode_loop_in",
+        "deck.move_mode_loop_out",
+    ]
+    .map(|key| Choice {
+        label: texts.get(key),
+        enabled: true,
+    });
+    let first = Rect::from_min_size(
+        egui::pos2(area.left(), first_top),
+        egui::vec2(area.width(), GRID_ROW_HEIGHT),
+    );
+    choice::segmented(
+        cx,
+        first,
+        id(("deck-move-mode", deck.index())),
+        &modes,
+        MoveMode::ALL
+            .iter()
+            .position(|mode| *mode == controls.move_mode),
+        |index| {
+            Command::DeckMoveModeSet {
+                deck,
+                mode: MoveMode::ALL[index],
+            }
+            .into()
+        },
+    );
+
+    let mut row = Row {
+        x: area.left(),
+        top: second_top,
+        height: GRID_ROW_HEIGHT,
+        gap,
+    };
+    let reading = move_size_text(cx, snapshot);
+    let smaller = named("deck.move_smaller_name");
+    let larger = named("deck.move_larger_name");
+    let step = |direction| Command::DeckMoveSizeStep { deck, direction }.into();
+    let can_step =
+        |direction| !controls.move_fine && controls.move_size.stepped(direction).is_some();
+    stepper(
+        cx,
+        &mut row,
+        ("deck-move-size", deck.index()),
+        (&reading, tokens.text.readout, MOVE_SIZE_WIDTH),
+        [
+            Arrow {
+                name: &smaller,
+                enabled: can_step(SizeStep::Down),
+                action: step(SizeStep::Down),
+            },
+            Arrow {
+                name: &larger,
+                enabled: can_step(SizeStep::Up),
+                action: step(SizeStep::Up),
+            },
+        ],
+    );
+    row.x += tokens.space.s3;
+    // A move of the loop needs the loop.
+    let moves = loaded
+        && step_has_length(snapshot)
+        && (controls.move_mode == MoveMode::Beatjump || snapshot.looping.region.is_some());
+    let keys = [
+        ("deck.jump_back", "deck.move_back_name", Direction::Back),
+        (
+            "deck.jump_forward",
+            "deck.move_forward_name",
+            Direction::Forward,
+        ),
+    ];
+    for (index, (label, name, direction)) in keys.into_iter().enumerate() {
+        let rect = row.place(ARROW_WIDTH);
+        let name = named(name);
+        let mut spec = KeySpec::text(texts.get(label)).enabled(moves);
+        spec.name = &name;
+        key::key(
+            cx,
+            rect,
+            id(("deck-move", deck.index(), index)),
+            spec,
+            Press::Click(Command::DeckMove { deck, direction }.into()),
+        );
+    }
+    row.x += tokens.space.s3;
+    let fine = texts.get("deck.move_fine");
+    let rect = row.place(key::width_for(cx, fine, 36.0));
+    let name = named("deck.move_fine_name");
+    let mut spec = KeySpec::text(fine);
+    spec.name = &name;
+    spec.lit = controls.move_fine.then_some(tokens.color.text_primary);
+    key::key(
+        cx,
+        rect,
+        id(("deck-move-fine", deck.index())),
+        spec,
+        Press::Click(Command::DeckMoveFineToggle { deck }.into()),
+    );
+}
+
+/// The switch between the pages of the advanced panel, at the right end of their second
+/// row.
+fn page_selector(cx: &mut Cx<'_>, area: Rect, deck: DeckId, page: DeckPage) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let (_, second_top) = page_rows(area, tokens);
+    let pages = ["deck.page_move", "deck.page_grid"].map(|key| Choice {
+        label: texts.get(key),
+        enabled: true,
+    });
+    // The width the segmented control gives itself: its labels, their padding and its
+    // outline.
+    let width: f32 = pages
+        .iter()
+        .map(|page| {
+            let text = paint::text_width(cx.painter(), theme, page.label, tokens.text.button);
+            (text + 2.0 * tokens.space.s4).ceil()
+        })
+        .sum::<f32>()
+        + 2.0;
+    let rect = Rect::from_min_size(
+        egui::pos2(area.right() - width, second_top),
+        egui::vec2(width, GRID_ROW_HEIGHT),
+    );
+    choice::segmented(
+        cx,
+        rect,
+        id(("deck-page", deck.index())),
+        &pages,
+        DeckPage::ALL.iter().position(|other| *other == page),
+        |index| {
+            AppCommand::DeckPageSet {
+                deck,
+                page: DeckPage::ALL[index],
+            }
+            .into()
+        },
+    );
 }
 
 /// Places keys one after another along a row.
@@ -134,9 +524,8 @@ impl Row {
     }
 }
 
-/// The two rows of the GRID page, above the transport keys at the bottom of `area`: the
-/// tempo, its tap and scale keys, the marker nudge and the lock; then the tempo steps and the
-/// marker keys.
+/// The two rows of the GRID page: the tempo, its tap and scale keys, the marker nudge and the
+/// lock; then the tempo steps and the marker keys.
 fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
     let theme = cx.theme;
     let texts = cx.texts;
@@ -148,8 +537,7 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
     let has_tempo = grid.bpm().is_some();
     let has_markers = !grid.markers().is_empty();
     let height = GRID_ROW_HEIGHT;
-    let second_top = area.bottom() - tokens.size.transport_h - tokens.space.s3 - height;
-    let first_top = second_top - tokens.space.s2 - height;
+    let (first_top, second_top) = page_rows(area, tokens);
     let gap = tokens.space.s2;
     let named = |key: &str| texts.format(key, &[("deck", &letter)]);
 

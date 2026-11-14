@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use platter_core::{Bpm, DeckId, SampleRate};
+use platter_core::{Bpm, DeckId, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{DeckSnapshot, Snapshot, TrackInfo, WaveformPeaks};
 
@@ -304,6 +304,12 @@ pub fn playing() -> Scene {
     engine.decks[1].controls.fader = 0.45;
     engine.decks[1].controls.pre_listen = true;
     engine.decks[1].controls.eq_kill[0] = true;
+    // Deck A plays inside a loop of four beats; deck B has an in point that waits.
+    engine.decks[0].looping.region = Some(LoopRegion {
+        start: 298.08,
+        end: 300.0,
+    });
+    engine.decks[1].looping.in_point = Some(31.0);
     let stream = StreamView {
         kind: OutputKind::Usb,
         sample_rate: 48_000,

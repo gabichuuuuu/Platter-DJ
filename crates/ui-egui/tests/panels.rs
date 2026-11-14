@@ -12,7 +12,7 @@ use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::DeckId;
 use platter_engine::Command;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, SettingsPage};
+use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::DeckNotice;
@@ -80,6 +80,9 @@ impl Stage {
         let mut shell = Shell::new(Language::English).unwrap();
         shell.set_texts(texts);
         shell.state.settings_page = state.page;
+        // Deck A, whose grid is not locked, shows the GRID page and deck B the MOVE page, so
+        // both are operated.
+        shell.state.deck_page = [DeckPage::Grid, DeckPage::Move];
         let ctx = egui::Context::default();
         shell.install(&ctx);
         let mut stage = Self {
@@ -635,6 +638,15 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "deck.grid.marker.previous",
         "deck.grid.marker.next",
         "deck.grid.lock.toggle",
+        "deck.loop.toggle",
+        "deck.loop.in",
+        "deck.loop.out",
+        "deck.loop.size.step",
+        "deck.beatjump",
+        "deck.move",
+        "deck.move.mode.set",
+        "deck.move.size.step",
+        "deck.move.fine.toggle",
         "mixer.gain.set",
         "mixer.eq.set",
         "mixer.eq.kill.toggle",
