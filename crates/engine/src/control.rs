@@ -163,6 +163,10 @@ pub struct ClockSnapshot {
     pub master: Option<DeckId>,
     /// Tempo the synced decks follow, in beats per minute.
     pub bpm: f64,
+    /// New cues and loops land on the nearest beat.
+    pub snap: bool,
+    /// A playing deck that goes to a stored cue keeps its place in the beat.
+    pub quantize: bool,
 }
 
 impl Default for ClockSnapshot {
@@ -173,6 +177,8 @@ impl Default for ClockSnapshot {
             sync_mode: SyncMode::default(),
             master: None,
             bpm: published.clock_bpm.get(),
+            snap: false,
+            quantize: false,
         }
     }
 }
@@ -272,6 +278,8 @@ pub struct Engine {
     /// The tempo master is chosen automatically.
     clock_auto: bool,
     sync_mode: SyncMode,
+    snap: bool,
+    quantize: bool,
     clock_tap: TapTempo,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
@@ -292,6 +300,8 @@ impl Engine {
             mixer: MixerControls::default(),
             clock_auto: true,
             sync_mode: SyncMode::default(),
+            snap: false,
+            quantize: false,
             clock_tap: TapTempo::default(),
             swaps_in_flight: 0,
             loads_running: 0,
@@ -328,6 +338,10 @@ impl Engine {
             RtCommand::KeepBeat {
                 on: previous.sync_mode == SyncMode::Beat,
             },
+            RtCommand::Snap { on: previous.snap },
+            RtCommand::Quantize {
+                on: previous.quantize,
+            },
         ];
         // The tempo of a deck that was the tempo master may be one a clock does not take.
         clock.extend(
@@ -344,6 +358,8 @@ impl Engine {
         }
         engine.clock_auto = previous.clock_auto;
         engine.sync_mode = previous.sync_mode;
+        engine.snap = previous.snap;
+        engine.quantize = previous.quantize;
         (engine, processor)
     }
 
@@ -540,6 +556,18 @@ impl Engine {
             Command::ClockBend { amount } => {
                 let amount = ValueError::check("amount", amount, -MAX_NUDGE, MAX_NUDGE)? as f32;
                 RtCommand::ClockBend { amount }
+            }
+            Command::GlobalSnapToggle => {
+                let on = !self.snap;
+                self.send(RtCommand::Snap { on })?;
+                self.snap = on;
+                return Ok(());
+            }
+            Command::GlobalQuantizeToggle => {
+                let on = !self.quantize;
+                self.send(RtCommand::Quantize { on })?;
+                self.quantize = on;
+                return Ok(());
             }
             Command::GlobalSyncModeSet { mode } => {
                 let on = mode == SyncMode::Beat;
@@ -818,6 +846,8 @@ impl Engine {
                 sync_mode: self.sync_mode,
                 master: shared.master.get(),
                 bpm: shared.clock_bpm.get(),
+                snap: self.snap,
+                quantize: self.quantize,
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),

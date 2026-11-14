@@ -66,8 +66,9 @@ its own code, graphics and sounds.
   damaged input only, as the project has no encoder for them.
 - The beatgrid is set by hand on the GRID page of each deck: nothing detects the tempo yet,
   the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
-- Loops, beatjumps and the moves of a loop start at the play position as it is: nothing
-  puts them on the beat until Quantize exists. Nobody has listened to them yet.
+- Loops, cues and the moves of a loop start at the play position as it is unless Snap and
+  Quantize are on, and those have no controls in the window yet. Nobody has listened to
+  loops or jumps yet.
 - Stored cues are lost when the track is loaded again, the fade and load types are labels
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
 - Sync, the tempo master and the master clock exist in the engine only: the window has no

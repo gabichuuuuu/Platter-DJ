@@ -234,6 +234,14 @@ pub enum RtCommand {
     KeepBeat {
         on: bool,
     },
+    /// New cues and loops of both decks land on the nearest beat.
+    Snap {
+        on: bool,
+    },
+    /// A playing deck that goes to a stored cue keeps its place in the beat.
+    Quantize {
+        on: bool,
+    },
 }
 
 /// An edit of a beatgrid. The ones that need a place use the play position.

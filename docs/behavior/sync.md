@@ -2,8 +2,8 @@
 
 Sync makes a deck play at the tempo of another one, or of a clock, without the DJ matching it
 by hand. This note covers the tempo master, the master clock, the sync of a deck in its two
-modes and the phase meter. Snap and Quantize come in a later part of M3 and get their own
-section here; the beatgrid sync reads is in `docs/behavior/beatgrid.md`.
+modes, the phase meter, and Snap and Quantize, which put cues, loops and jumps on the beat.
+The beatgrid all of them read is in `docs/behavior/beatgrid.md`.
 
 ## What the public manual says
 
@@ -29,6 +29,9 @@ The master panel shows the tempo of the clock, which can be typed, and has a tap
 buttons that bend the clock slower or faster for a moment, and buttons that step its tempo
 down and up. Everything sync does depends on the beatgrid of the track, not on its cues.
 
+With SNAP on, cue points and loops are set to the closest beat. With QUANT on, a jump to a
+cue point or a stored loop keeps the track in sync.
+
 ## What Platter does
 
 The master clock has a tempo and counts beats; it starts at 120 BPM. The tempo master is the
@@ -45,6 +48,8 @@ the speed of the deck.
 | `clock.tap` | One tap; the fourth one in a row sets the tempo of the clock |
 | `clock.bend` | `amount` -0.5 to 0.5: the clock runs that fraction slower or faster until it is set back to 0 |
 | `global.sync.mode.set` | `mode` `tempo` or `beat`: what sync locks |
+| `global.snap.toggle` | Switches Snap on or off |
+| `global.quantize.toggle` | Switches Quantize on or off |
 
 ### The tempo master
 
@@ -91,9 +96,40 @@ the speed of the deck.
   (`docs/behavior/beatgrid.md`) and inside the loop that is on.
 - The tempo master is left alone too: its beats are the reference.
 
+### Snap
+
+- Snap starts off. While it is on, a cue or a loop that is set lands on the beat of the grid
+  of the deck nearest to where it would be set: the floating cue (`deck.cue.set` and the cue
+  key on a paused deck), a hotcue stored into an empty slot, `deck.cue.store`, In, Out and the
+  start of a loop from `deck.loop.toggle`.
+- A paused deck whose floating cue is set this way also moves to it, so the next press of the
+  cue key plays from there.
+- An Out that lands after the play position lets the deck play on into the end of the loop.
+  One that lands before it sends the deck as far into the loop as it is past the end, so it
+  stays on the beat.
+- The nearest beat is taken in the run of beats the position is in: it is never past the next
+  marker. A beat before the start of the track or after its end is not taken; the beat on the
+  other side is.
+- A deck without a tempo in its grid places them where they are, as without Snap.
+- Moves of a loop or of its ends, a change of the size of a loop and the markers of the grid
+  are not snapped: they keep their own steps.
+
+### Quantize
+
+- Quantize starts off. While it is on, a playing deck that goes to a stored cue (a hotcue,
+  `deck.cue.select`) lands as far into the beat as it was before: at the cue plus the offset
+  of the play position in its beat, from half a beat before the cue to half a beat after it.
+- A stored loop is landed in from its start up to one beat after it, so the deck is inside
+  the loop. A loop shorter than a beat is gone to at its start.
+- The offset is measured with the grid of the deck, so it keeps the deck on the beat of the
+  tempo master only when the deck was on it.
+- A paused deck, and a deck without a tempo, go to the cue itself.
+- A beatjump already keeps the place in the beat; a seek, a click in a waveform or a jump to
+  the floating cue are not quantized.
+
 ### What the snapshot shows
 
-- For the clock: its mode, the tempo master, its tempo and the sync mode.
+- For the clock: its mode, the tempo master, its tempo, the sync mode, Snap and Quantize.
 - For each deck: whether its sync is on, its speed as a ratio of the original, and its phase:
   how far its beat is from the beat of the clock, from -0.5 (behind) to 0.5 (ahead) of a
   beat. A deck without a tempo has no phase.
@@ -108,6 +144,11 @@ unit.
 - The design system lists the commands of the clock without one that sets its tempo to a
   value and without one for the sync mode. `clock.tempo.set` and `global.sync.mode.set` are
   added for them.
+- The reference manual does not say what Snap does to a deck that is paused. Platter moves
+  the deck to its new floating cue, as the cue key would otherwise set it again on every
+  press.
+- The reference manual does not say where a quantized jump lands. Platter keeps the offset
+  of the deck in its beat, the way a beatjump does.
 - The sync mode starts as `beat`. That is the choice of Platter; the reference manual was
   not read for its default.
 - The reference manual does not say what speed a deck has after its sync goes off. Platter
@@ -137,11 +178,14 @@ unit.
 | `deck.tempo.range.cycle` on a synced deck | The range changes; the speed does not |
 | The tempo master sits in a loop that is not a whole number of beats | The clock counts on at its tempo and takes the beats of the deck again when the loop ends |
 | A run of beats with no room for the move | The deck is not moved until it is in a run that has room |
-| A change of sample rate of the audio device | Mode, sync mode, tempo of the clock and the sync of each deck are kept; the tempo master is chosen again |
+| Snap on and a position exactly between two beats | The later beat |
+| Quantize on and a hotcue near the start of the track with the deck late in its beat | The beat after the cue, so it stays in the track |
+| Quantize on and a cue on a marker that is off the beat of the run before it, with the deck early in its beat | The deck lands before the marker, in the run before, so off the beats of the cue's run |
+| A change of sample rate of the audio device | Mode, sync mode, Snap, Quantize, tempo of the clock and the sync of each deck are kept; the tempo master is chosen again |
 
 ## Tests
 
-`crates/core/src/grid.rs` for the phase of a position in a grid;
+`crates/core/src/grid.rs` for the phase of a position, its run and its nearest beat;
 `crates/engine/src/rt/clock.rs` for the choice of the tempo master;
-`crates/engine/tests/sync.rs` for the commands, with the offset between two decks measured
-in frames after a render.
+`crates/engine/tests/sync.rs` for the commands of sync, with the offset between two decks
+measured in frames after a render; `crates/engine/tests/snap.rs` for Snap and Quantize.
