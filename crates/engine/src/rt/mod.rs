@@ -12,6 +12,7 @@ mod deck;
 mod processor;
 mod shared;
 mod strip;
+mod tone;
 
 use std::sync::Arc;
 
@@ -62,6 +63,25 @@ impl TrackAudio {
     }
 }
 
+/// An output pair of the engine. The master is the first two channels of the device; the
+/// headphones are the third and the fourth, when the device has them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Output {
+    Master,
+    Headphones,
+}
+
+impl Output {
+    pub const ALL: [Self; 2] = [Self::Master, Self::Headphones];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Master => "master",
+            Self::Headphones => "headphones",
+        }
+    }
+}
+
 /// What the control side asks of the processor. Values are already validated and converted;
 /// the processor applies them as they are.
 #[derive(Debug)]
@@ -87,6 +107,14 @@ pub enum RtCommand {
     CueGoto {
         deck: DeckId,
     },
+    CueButton {
+        deck: DeckId,
+        pressed: bool,
+    },
+    CupButton {
+        deck: DeckId,
+        pressed: bool,
+    },
     Seek {
         deck: DeckId,
         seconds: f64,
@@ -108,9 +136,23 @@ pub enum RtCommand {
         band: Band,
         gain: f32,
     },
+    EqCut {
+        deck: DeckId,
+        band: Band,
+        cut: bool,
+    },
     Filter {
         deck: DeckId,
         position: f32,
+    },
+    Balance {
+        deck: DeckId,
+        position: f32,
+    },
+    /// Sends the deck to the headphones, before its fader.
+    PreListen {
+        deck: DeckId,
+        on: bool,
     },
     Fader {
         deck: DeckId,
@@ -124,6 +166,16 @@ pub enum RtCommand {
     },
     MasterGain {
         linear: f32,
+    },
+    /// Balance in the headphones: `0.0` is the pre-listened decks alone, `1.0` the master.
+    HeadphoneMix {
+        position: f32,
+    },
+    HeadphoneGain {
+        linear: f32,
+    },
+    TestTone {
+        output: Output,
     },
 }
 

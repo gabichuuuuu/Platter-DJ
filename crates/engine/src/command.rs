@@ -13,6 +13,8 @@ use platter_core::{DeckId, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
+use crate::rt::Output;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     /// Loads a file into a deck, in the background.
@@ -40,6 +42,17 @@ pub enum Command {
     DeckCueGoto {
         deck: DeckId,
     },
+    /// The cue button, pressed or released. What it does depends on whether the deck is
+    /// playing and on where it is: see `docs/behavior/transport.md`.
+    DeckCue {
+        deck: DeckId,
+        pressed: bool,
+    },
+    /// The cue-play button: pressing returns to the cue point, releasing starts playback.
+    DeckCup {
+        deck: DeckId,
+        pressed: bool,
+    },
     DeckSeek {
         deck: DeckId,
         seconds: f64,
@@ -54,6 +67,10 @@ pub enum Command {
         deck: DeckId,
         amount: f64,
     },
+    /// Moves to the next range of the tempo fader.
+    DeckTempoRangeCycle {
+        deck: DeckId,
+    },
     MixerGainSet {
         deck: DeckId,
         db: f64,
@@ -64,10 +81,32 @@ pub enum Command {
         band: Band,
         position: f64,
     },
+    /// Removes a band completely, or gives it back to its knob.
+    MixerEqKillToggle {
+        deck: DeckId,
+        band: Band,
+    },
     /// Knob position `-1.0..=1.0`: low-pass below zero, high-pass above, off at zero.
     MixerFilterSet {
         deck: DeckId,
         position: f64,
+    },
+    /// Knob position `-1.0..=1.0`: left below zero, right above, both sides at zero.
+    MixerPanSet {
+        deck: DeckId,
+        position: f64,
+    },
+    /// Sends the deck to the headphones, or stops sending it.
+    MixerCueToggle {
+        deck: DeckId,
+    },
+    /// Balance in the headphones, `0.0..=1.0`: the pre-listened decks alone at zero, the
+    /// master alone at one.
+    MixerCueMixSet {
+        position: f64,
+    },
+    MixerCueVolumeSet {
+        db: f64,
     },
     /// Fader position `0.0..=1.0`.
     MixerFaderSet {
@@ -83,6 +122,10 @@ pub enum Command {
     },
     MasterGainSet {
         db: f64,
+    },
+    /// Plays a short tone on one output, to check the routing.
+    MasterTestTone {
+        output: Output,
     },
 }
 
@@ -126,9 +169,23 @@ pub const MAX_SEEK_SECONDS: f64 = 86_400.0;
 pub const MAX_NUDGE: f64 = 0.5;
 pub const MAX_CHANNEL_GAIN_DB: f64 = 12.0;
 pub const MAX_MASTER_GAIN_DB: f64 = 12.0;
+pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
 const MIN_GAIN_DB: f64 = -90.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
+const OUTPUTS: &[&str] = &["master", "headphones"];
+const BUTTON_ACTIONS: &[&str] = &["press", "release"];
+
+const BAND: ParamSpec = ParamSpec {
+    name: "band",
+    kind: ParamKind::Choice(BANDS),
+};
+
+/// Whether a button that acts while held is being pressed or released.
+const BUTTON_ACTION: ParamSpec = ParamSpec {
+    name: "action",
+    kind: ParamKind::Choice(BUTTON_ACTIONS),
+};
 
 /// Every command, in the order a list shows them.
 pub const SPECS: &[CommandSpec] = &[
@@ -174,6 +231,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.cue",
+        label: "Cue",
+        params: &[DECK, BUTTON_ACTION],
+    },
+    CommandSpec {
+        id: "deck.cup",
+        label: "Cue and play",
+        params: &[DECK, BUTTON_ACTION],
+    },
+    CommandSpec {
         id: "deck.seek",
         label: "Jump to position",
         params: &[DECK, number("seconds", 0.0, MAX_SEEK_SECONDS)],
@@ -189,6 +256,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK, number("amount", -MAX_NUDGE, MAX_NUDGE)],
     },
     CommandSpec {
+        id: "deck.tempo.range.cycle",
+        label: "Next tempo range",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "mixer.gain.set",
         label: "Set channel gain",
         params: &[DECK, number("db", MIN_GAIN_DB, MAX_CHANNEL_GAIN_DB)],
@@ -196,19 +268,37 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "mixer.eq.set",
         label: "Set equaliser band",
-        params: &[
-            DECK,
-            ParamSpec {
-                name: "band",
-                kind: ParamKind::Choice(BANDS),
-            },
-            number("position", 0.0, 1.0),
-        ],
+        params: &[DECK, BAND, number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "mixer.eq.kill.toggle",
+        label: "Kill equaliser band",
+        params: &[DECK, BAND],
     },
     CommandSpec {
         id: "mixer.filter.set",
         label: "Set channel filter",
         params: &[DECK, number("position", -1.0, 1.0)],
+    },
+    CommandSpec {
+        id: "mixer.pan.set",
+        label: "Set channel pan",
+        params: &[DECK, number("position", -1.0, 1.0)],
+    },
+    CommandSpec {
+        id: "mixer.cue.toggle",
+        label: "Pre-listen",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "mixer.cue.mix.set",
+        label: "Set headphone mix",
+        params: &[number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "mixer.cue.volume.set",
+        label: "Set headphone volume",
+        params: &[number("db", MIN_GAIN_DB, MAX_HEADPHONE_GAIN_DB)],
     },
     CommandSpec {
         id: "mixer.fader.set",
@@ -232,6 +322,14 @@ pub const SPECS: &[CommandSpec] = &[
         id: "master.gain.set",
         label: "Set main volume",
         params: &[number("db", MIN_GAIN_DB, MAX_MASTER_GAIN_DB)],
+    },
+    CommandSpec {
+        id: "master.test_tone.play",
+        label: "Play test tone",
+        params: &[ParamSpec {
+            name: "output",
+            kind: ParamKind::Choice(OUTPUTS),
+        }],
     },
 ];
 
@@ -342,6 +440,28 @@ impl Reader<'_> {
             })),
         }
     }
+
+    fn pressed(&self) -> Result<bool, CommandError> {
+        match self.text("action")? {
+            "press" => Ok(true),
+            "release" => Ok(false),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "action",
+                expected: "press, release",
+            })),
+        }
+    }
+
+    fn output(&self) -> Result<Output, CommandError> {
+        match self.text("output")? {
+            "master" => Ok(Output::Master),
+            "headphones" => Ok(Output::Headphones),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "output",
+                expected: "master, headphones",
+            })),
+        }
+    }
 }
 
 impl Command {
@@ -376,6 +496,14 @@ impl Command {
             "deck.play_pause" => Self::DeckPlayPause { deck: read.deck()? },
             "deck.cue.set" => Self::DeckCueSet { deck: read.deck()? },
             "deck.cue.goto" => Self::DeckCueGoto { deck: read.deck()? },
+            "deck.cue" => Self::DeckCue {
+                deck: read.deck()?,
+                pressed: read.pressed()?,
+            },
+            "deck.cup" => Self::DeckCup {
+                deck: read.deck()?,
+                pressed: read.pressed()?,
+            },
             "deck.seek" => Self::DeckSeek {
                 deck: read.deck()?,
                 seconds: read.number("seconds")?,
@@ -388,9 +516,34 @@ impl Command {
                 deck: read.deck()?,
                 amount: read.number("amount")?,
             },
+            "deck.tempo.range.cycle" => Self::DeckTempoRangeCycle { deck: read.deck()? },
+            mixer => return Self::mixer_from_args(mixer, &read),
+        })
+    }
+
+    fn mixer_from_args(id: &str, read: &Reader<'_>) -> Result<Self, CommandError> {
+        Ok(match id {
             "mixer.gain.set" => Self::MixerGainSet {
                 deck: read.deck()?,
                 db: read.number("db")?,
+            },
+            "mixer.eq.kill.toggle" => Self::MixerEqKillToggle {
+                deck: read.deck()?,
+                band: read.band()?,
+            },
+            "mixer.pan.set" => Self::MixerPanSet {
+                deck: read.deck()?,
+                position: read.number("position")?,
+            },
+            "mixer.cue.toggle" => Self::MixerCueToggle { deck: read.deck()? },
+            "mixer.cue.mix.set" => Self::MixerCueMixSet {
+                position: read.number("position")?,
+            },
+            "mixer.cue.volume.set" => Self::MixerCueVolumeSet {
+                db: read.number("db")?,
+            },
+            "master.test_tone.play" => Self::MasterTestTone {
+                output: read.output()?,
             },
             "mixer.eq.set" => Self::MixerEqSet {
                 deck: read.deck()?,
@@ -428,16 +581,25 @@ impl Command {
             Self::DeckPlayPause { .. } => "deck.play_pause",
             Self::DeckCueSet { .. } => "deck.cue.set",
             Self::DeckCueGoto { .. } => "deck.cue.goto",
+            Self::DeckCue { .. } => "deck.cue",
+            Self::DeckCup { .. } => "deck.cup",
             Self::DeckSeek { .. } => "deck.seek",
             Self::DeckTempoSet { .. } => "deck.tempo.set",
             Self::DeckNudge { .. } => "deck.nudge",
+            Self::DeckTempoRangeCycle { .. } => "deck.tempo.range.cycle",
             Self::MixerGainSet { .. } => "mixer.gain.set",
             Self::MixerEqSet { .. } => "mixer.eq.set",
+            Self::MixerEqKillToggle { .. } => "mixer.eq.kill.toggle",
             Self::MixerFilterSet { .. } => "mixer.filter.set",
+            Self::MixerPanSet { .. } => "mixer.pan.set",
+            Self::MixerCueToggle { .. } => "mixer.cue.toggle",
+            Self::MixerCueMixSet { .. } => "mixer.cue.mix.set",
+            Self::MixerCueVolumeSet { .. } => "mixer.cue.volume.set",
             Self::MixerFaderSet { .. } => "mixer.fader.set",
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
             Self::MasterGainSet { .. } => "master.gain.set",
+            Self::MasterTestTone { .. } => "master.test_tone.play",
         }
     }
 }

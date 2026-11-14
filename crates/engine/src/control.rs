@@ -6,20 +6,31 @@
 
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use platter_core::{DeckId, Gain, SampleRate, Tempo, ValueError};
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
-use platter_dsp::eq::band_gain;
+use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::eq::{Band, band_gain};
 
 use crate::command::{
-    Command, MAX_CHANNEL_GAIN_DB, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS,
+    Command, MAX_CHANNEL_GAIN_DB, MAX_HEADPHONE_GAIN_DB, MAX_MASTER_GAIN_DB, MAX_NUDGE,
+    MAX_SEEK_SECONDS,
 };
+use crate::peaks::WaveformPeaks;
 use crate::rt::{self, COMMAND_CAPACITY, ControlEnds, Processor, RtCommand, TrackAudio};
+
+/// Ranges of the tempo fader, as a fraction of the original speed either way.
+pub const TEMPO_RANGES: [f64; 3] = [0.08, 0.16, 0.5];
+
+/// Fader position that leaves the level untouched. The travel above it adds gain.
+pub const FADER_UNITY: f64 = 0.75;
 
 /// What the interface shows about a loaded track.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackInfo {
+    pub path: PathBuf,
     pub container: Container,
     pub sample_rate: SampleRate,
     /// Channels of the file; the engine plays it as stereo.
@@ -63,24 +74,86 @@ impl From<ValueError> for EngineError {
     }
 }
 
+/// Where the controls of a deck and of its mixer channel stand. The values are the ones the
+/// commands carry, so a control drawn from them sits where the last command put it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeckControls {
+    /// Playback speed as a ratio of the original.
+    pub tempo_ratio: f64,
+    /// Range of the tempo fader, one of [`TEMPO_RANGES`].
+    pub tempo_range: f64,
+    pub gain_db: f64,
+    /// Positions of the low, mid and high knobs, `0.0..=1.0`.
+    pub eq: [f64; 3],
+    pub eq_kill: [bool; 3],
+    pub filter: f64,
+    pub pan: f64,
+    pub fader: f64,
+    /// The deck is sent to the headphones.
+    pub pre_listen: bool,
+}
+
+impl Default for DeckControls {
+    fn default() -> Self {
+        Self {
+            tempo_ratio: 1.0,
+            tempo_range: TEMPO_RANGES[0],
+            gain_db: 0.0,
+            eq: [0.5; 3],
+            eq_kill: [false; 3],
+            filter: 0.0,
+            pan: 0.0,
+            fader: FADER_UNITY,
+            pre_listen: false,
+        }
+    }
+}
+
+/// Where the controls shared by both decks stand.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixerControls {
+    pub crossfader: f64,
+    pub crossfader_curve: CrossfaderCurve,
+    pub master_gain_db: f64,
+    /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
+    pub headphone_mix: f64,
+    pub headphone_gain_db: f64,
+}
+
+impl Default for MixerControls {
+    fn default() -> Self {
+        Self {
+            crossfader: 0.5,
+            crossfader_curve: CrossfaderCurve::default(),
+            master_gain_db: 0.0,
+            headphone_mix: 0.0,
+            headphone_gain_db: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeckSnapshot {
     pub track: Option<TrackInfo>,
+    /// Waveform data of the loaded track.
+    pub peaks: Option<Arc<WaveformPeaks>>,
     /// A file is being decoded for this deck.
     pub loading: bool,
     pub playing: bool,
     pub position_seconds: f64,
     pub cue_seconds: f64,
-    /// Post-fader peak level, linear.
-    pub level: f32,
+    pub controls: DeckControls,
+    /// Post-fader peak level of the left and the right side, linear.
+    pub levels: [f32; 2],
 }
 
 /// State of the engine at one moment, for the interface to draw.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub decks: [DeckSnapshot; 2],
-    /// Peak level of the master output, linear.
-    pub master_level: f32,
+    pub mixer: MixerControls,
+    /// Peak level of the left and the right side of the master output, linear.
+    pub master_levels: [f32; 2],
     /// Gain the safety limiter is applying; below one while it works.
     pub limiter_gain: f32,
 }
@@ -88,20 +161,29 @@ pub struct Snapshot {
 #[derive(Default)]
 struct DeckControl {
     track: Option<TrackInfo>,
+    peaks: Option<Arc<WaveformPeaks>>,
     loading: bool,
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
+    controls: DeckControls,
+}
+
+struct Loaded {
+    audio: TrackAudio,
+    info: TrackInfo,
+    peaks: WaveformPeaks,
 }
 
 struct LoadResult {
     deck: DeckId,
     generation: u64,
-    result: Result<(TrackAudio, TrackInfo), DecodeError>,
+    result: Result<Loaded, DecodeError>,
 }
 
 pub struct Engine {
     ends: ControlEnds,
     decks: [DeckControl; 2],
+    mixer: MixerControls,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
     loads_running: usize,
@@ -118,11 +200,33 @@ impl Engine {
         let engine = Self {
             ends,
             decks: Default::default(),
+            mixer: MixerControls::default(),
             swaps_in_flight: 0,
             loads_running: 0,
             finished_loads,
             load_reports,
         };
+        (engine, processor)
+    }
+
+    /// Builds an engine at `rate` whose controls stand where those of `previous` stood, and
+    /// its processor. The audio device changes its sample rate by replacing the processor;
+    /// this keeps the mixer as the user left it. Tracks are not carried over: they are
+    /// loaded again by whoever calls this.
+    pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
+        let (mut engine, processor) = Self::new(rate);
+        // A fresh queue holds every one of these commands, so none can be refused.
+        for deck in DeckId::ALL {
+            let controls = previous.decks[deck.index()].controls.clone();
+            for command in controls.as_commands(deck) {
+                let _ = engine.send(command);
+            }
+            engine.decks[deck.index()].controls = controls;
+        }
+        for command in previous.mixer.as_commands() {
+            let _ = engine.send(command);
+        }
+        engine.mixer = previous.mixer.clone();
         (engine, processor)
     }
 
@@ -136,60 +240,139 @@ impl Engine {
             Command::DeckPlayPause { deck } => self.send(RtCommand::TogglePlay { deck }),
             Command::DeckCueSet { deck } => self.send(RtCommand::CueSet { deck }),
             Command::DeckCueGoto { deck } => self.send(RtCommand::CueGoto { deck }),
+            Command::DeckCue { deck, pressed } => self.send(RtCommand::CueButton { deck, pressed }),
+            Command::DeckCup { deck, pressed } => self.send(RtCommand::CupButton { deck, pressed }),
             Command::DeckSeek { deck, seconds } => {
                 let seconds = ValueError::check("seconds", seconds, 0.0, MAX_SEEK_SECONDS)?;
                 self.send(RtCommand::Seek { deck, seconds })
             }
-            Command::DeckTempoSet { deck, ratio } => {
-                let ratio = Tempo::from_ratio(ratio)?.ratio() as f32;
-                self.send(RtCommand::Tempo { deck, ratio })
-            }
+            Command::DeckTempoSet { deck, ratio } => self.set_tempo(deck, ratio),
             Command::DeckNudge { deck, amount } => {
                 let amount = ValueError::check("amount", amount, -MAX_NUDGE, MAX_NUDGE)? as f32;
                 self.send(RtCommand::Nudge { deck, amount })
             }
-            mixer => self.dispatch_mixer(mixer),
+            Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
+            mixer => self.dispatch_channel(mixer),
         }
     }
 
-    fn dispatch_mixer(&mut self, command: Command) -> Result<(), EngineError> {
-        let command = match command {
-            Command::MixerGainSet { deck, db } => RtCommand::Gain {
-                deck,
-                linear: gain_up_to(db, MAX_CHANNEL_GAIN_DB)?,
-            },
+    fn set_tempo(&mut self, deck: DeckId, ratio: f64) -> Result<(), EngineError> {
+        let ratio = Tempo::from_ratio(ratio)?.ratio();
+        self.send(RtCommand::Tempo {
+            deck,
+            ratio: ratio as f32,
+        })?;
+        self.decks[deck.index()].controls.tempo_ratio = ratio;
+        Ok(())
+    }
+
+    /// Moves to the next range. A tempo the new range cannot reach moves to its edge, so
+    /// the fader and the speed never disagree.
+    fn cycle_tempo_range(&mut self, deck: DeckId) -> Result<(), EngineError> {
+        let controls = &self.decks[deck.index()].controls;
+        let current = TEMPO_RANGES
+            .iter()
+            .position(|range| *range == controls.tempo_range)
+            .unwrap_or(0);
+        let range = TEMPO_RANGES[(current + 1) % TEMPO_RANGES.len()];
+        let reachable = controls.tempo_ratio.clamp(1.0 - range, 1.0 + range);
+        if reachable != controls.tempo_ratio {
+            self.set_tempo(deck, reachable)?;
+        }
+        self.decks[deck.index()].controls.tempo_range = range;
+        Ok(())
+    }
+
+    /// The commands of one mixer channel.
+    fn dispatch_channel(&mut self, command: Command) -> Result<(), EngineError> {
+        match command {
+            Command::MixerGainSet { deck, db } => {
+                let linear = gain_up_to(db, MAX_CHANNEL_GAIN_DB)?;
+                self.send(RtCommand::Gain { deck, linear })?;
+                self.decks[deck.index()].controls.gain_db = db.max(Gain::MIN_DB);
+            }
             Command::MixerEqSet {
                 deck,
                 band,
                 position,
-            } => RtCommand::Eq {
-                deck,
-                band,
-                gain: band_gain(ValueError::check("position", position, 0.0, 1.0)? as f32),
-            },
-            Command::MixerFilterSet { deck, position } => RtCommand::Filter {
-                deck,
-                position: ValueError::check("position", position, -1.0, 1.0)? as f32,
-            },
-            Command::MixerFaderSet { deck, position } => {
-                let travel = Gain::from_fraction(position)?.linear();
-                // A squared taper: the upper part of the travel covers the useful range.
-                RtCommand::Fader {
-                    deck,
-                    gain: travel * travel,
-                }
+            } => {
+                let position = ValueError::check("position", position, 0.0, 1.0)?;
+                let gain = band_gain(position as f32);
+                self.send(RtCommand::Eq { deck, band, gain })?;
+                self.decks[deck.index()].controls.eq[band as usize] = position;
             }
-            Command::MixerCrossfaderSet { position } => RtCommand::Crossfader {
-                position: ValueError::check("position", position, 0.0, 1.0)? as f32,
-            },
-            Command::MixerCrossfaderCurveSet { curve } => RtCommand::CrossfaderCurve { curve },
-            Command::MasterGainSet { db } => RtCommand::MasterGain {
-                linear: gain_up_to(db, MAX_MASTER_GAIN_DB)?,
-            },
-            // The deck commands are handled by `dispatch`.
-            _ => return Ok(()),
-        };
-        self.send(command)
+            Command::MixerEqKillToggle { deck, band } => {
+                let cut = !self.decks[deck.index()].controls.eq_kill[band as usize];
+                self.send(RtCommand::EqCut { deck, band, cut })?;
+                self.decks[deck.index()].controls.eq_kill[band as usize] = cut;
+            }
+            Command::MixerFilterSet { deck, position } => {
+                let position = ValueError::check("position", position, -1.0, 1.0)?;
+                self.send(RtCommand::Filter {
+                    deck,
+                    position: position as f32,
+                })?;
+                self.decks[deck.index()].controls.filter = position;
+            }
+            Command::MixerPanSet { deck, position } => {
+                let position = ValueError::check("position", position, -1.0, 1.0)?;
+                self.send(RtCommand::Balance {
+                    deck,
+                    position: position as f32,
+                })?;
+                self.decks[deck.index()].controls.pan = position;
+            }
+            Command::MixerFaderSet { deck, position } => {
+                let gain = fader_gain(position)?;
+                self.send(RtCommand::Fader { deck, gain })?;
+                self.decks[deck.index()].controls.fader = position;
+            }
+            Command::MixerCueToggle { deck } => {
+                let on = !self.decks[deck.index()].controls.pre_listen;
+                self.send(RtCommand::PreListen { deck, on })?;
+                self.decks[deck.index()].controls.pre_listen = on;
+            }
+            shared => return self.dispatch_shared(shared),
+        }
+        Ok(())
+    }
+
+    /// The commands of the controls both decks share.
+    fn dispatch_shared(&mut self, command: Command) -> Result<(), EngineError> {
+        match command {
+            Command::MixerCrossfaderSet { position } => {
+                let position = ValueError::check("position", position, 0.0, 1.0)?;
+                self.send(RtCommand::Crossfader {
+                    position: position as f32,
+                })?;
+                self.mixer.crossfader = position;
+            }
+            Command::MixerCrossfaderCurveSet { curve } => {
+                self.send(RtCommand::CrossfaderCurve { curve })?;
+                self.mixer.crossfader_curve = curve;
+            }
+            Command::MixerCueMixSet { position } => {
+                let position = ValueError::check("position", position, 0.0, 1.0)?;
+                self.send(RtCommand::HeadphoneMix {
+                    position: position as f32,
+                })?;
+                self.mixer.headphone_mix = position;
+            }
+            Command::MixerCueVolumeSet { db } => {
+                let linear = gain_up_to(db, MAX_HEADPHONE_GAIN_DB)?;
+                self.send(RtCommand::HeadphoneGain { linear })?;
+                self.mixer.headphone_gain_db = db.max(Gain::MIN_DB);
+            }
+            Command::MasterGainSet { db } => {
+                let linear = gain_up_to(db, MAX_MASTER_GAIN_DB)?;
+                self.send(RtCommand::MasterGain { linear })?;
+                self.mixer.master_gain_db = db.max(Gain::MIN_DB);
+            }
+            Command::MasterTestTone { output } => self.send(RtCommand::TestTone { output })?,
+            // Every other command is handled before this point.
+            _ => {}
+        }
+        Ok(())
     }
 
     fn send(&mut self, command: RtCommand) -> Result<(), EngineError> {
@@ -225,7 +408,7 @@ impl Engine {
         std::thread::Builder::new()
             .name("platter-load".to_owned())
             .spawn(move || {
-                let result = decode_file(&path).map(prepare);
+                let result = decode_file(&path).map(|decoded| prepare(decoded, path));
                 // The engine may be gone by now; then nobody waits for the result.
                 let _ = reports.send(LoadResult {
                     deck,
@@ -245,6 +428,7 @@ impl Engine {
         state.generation += 1;
         state.loading = false;
         state.track = None;
+        state.peaks = None;
         Ok(())
     }
 
@@ -281,15 +465,20 @@ impl Engine {
         }
         self.decks[deck.index()].loading = false;
         let failed = |message: String| Some(Event::LoadFailed { deck, message });
-        let (audio, info) = match finished.result {
+        let loaded = match finished.result {
             Ok(loaded) => loaded,
             Err(error) => return failed(error.to_string()),
         };
-        if let Err(error) = self.send_swap(deck, Some(audio)) {
+        if let Err(error) = self.send_swap(deck, Some(loaded.audio)) {
             return failed(error.to_string());
         }
-        self.decks[deck.index()].track = Some(info.clone());
-        Some(Event::Loaded { deck, info })
+        let state = &mut self.decks[deck.index()];
+        state.track = Some(loaded.info.clone());
+        state.peaks = Some(Arc::new(loaded.peaks));
+        Some(Event::Loaded {
+            deck,
+            info: loaded.info,
+        })
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -298,18 +487,89 @@ impl Engine {
             let (control, published) = (&self.decks[id.index()], &shared.decks[id.index()]);
             DeckSnapshot {
                 track: control.track.clone(),
+                peaks: control.peaks.clone(),
                 loading: control.loading,
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
-                level: published.level.get(),
+                controls: control.controls.clone(),
+                levels: [published.levels[0].get(), published.levels[1].get()],
             }
         };
         Snapshot {
             decks: [deck(DeckId::A), deck(DeckId::B)],
-            master_level: shared.master_level.get(),
+            mixer: self.mixer.clone(),
+            master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
         }
+    }
+}
+
+impl DeckControls {
+    /// What the processor needs to stand where these controls stand.
+    fn as_commands(&self, deck: DeckId) -> Vec<RtCommand> {
+        let mut commands = vec![
+            RtCommand::Tempo {
+                deck,
+                ratio: self.tempo_ratio as f32,
+            },
+            RtCommand::Gain {
+                deck,
+                linear: Gain::from_db(self.gain_db).map_or(1.0, Gain::linear),
+            },
+            RtCommand::Filter {
+                deck,
+                position: self.filter as f32,
+            },
+            RtCommand::Balance {
+                deck,
+                position: self.pan as f32,
+            },
+            RtCommand::Fader {
+                deck,
+                gain: fader_gain(self.fader).unwrap_or(1.0),
+            },
+            RtCommand::PreListen {
+                deck,
+                on: self.pre_listen,
+            },
+        ];
+        for band in [Band::Low, Band::Mid, Band::High] {
+            commands.push(RtCommand::Eq {
+                deck,
+                band,
+                gain: band_gain(self.eq[band as usize] as f32),
+            });
+            commands.push(RtCommand::EqCut {
+                deck,
+                band,
+                cut: self.eq_kill[band as usize],
+            });
+        }
+        commands
+    }
+}
+
+impl MixerControls {
+    fn as_commands(&self) -> [RtCommand; 5] {
+        let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
+        [
+            RtCommand::Crossfader {
+                position: self.crossfader as f32,
+            },
+            RtCommand::CrossfaderCurve {
+                curve: self.crossfader_curve,
+            },
+            RtCommand::MasterGain {
+                linear: linear(self.master_gain_db),
+            },
+            RtCommand::HeadphoneMix {
+                position: self.headphone_mix as f32,
+            },
+            RtCommand::HeadphoneGain {
+                linear: linear(self.headphone_gain_db),
+            },
+        ]
     }
 }
 
@@ -324,8 +584,16 @@ fn gain_up_to(db: f64, max_db: f64) -> Result<f32, ValueError> {
     Gain::from_db(db).map(Gain::linear)
 }
 
-fn prepare(decoded: DecodedAudio) -> (TrackAudio, TrackInfo) {
+/// Gain of a fader position. A squared taper around [`FADER_UNITY`]: silence at the bottom,
+/// no change at three quarters of the travel and about 5 dB of gain at the top.
+fn fader_gain(position: f64) -> Result<f32, ValueError> {
+    let travel = f64::from(Gain::from_fraction(position)?.linear()) / FADER_UNITY;
+    Ok((travel * travel) as f32)
+}
+
+fn prepare(decoded: DecodedAudio, path: PathBuf) -> Loaded {
     let info = TrackInfo {
+        path,
         container: decoded.container,
         sample_rate: decoded.sample_rate,
         channels: decoded.channels,
@@ -333,5 +601,11 @@ fn prepare(decoded: DecodedAudio) -> (TrackAudio, TrackInfo) {
         tags: decoded.tags.clone(),
     };
     let rate = decoded.sample_rate;
-    (TrackAudio::new(rate, decoded.into_stereo()), info)
+    let stereo = decoded.into_stereo();
+    let peaks = WaveformPeaks::compute(&stereo, rate);
+    Loaded {
+        audio: TrackAudio::new(rate, stereo),
+        info,
+        peaks,
+    }
 }

@@ -7,7 +7,7 @@ mod common;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
-use platter_engine::{Band, Command, CrossfaderCurve};
+use platter_engine::{Band, Command, CrossfaderCurve, Output};
 use platter_testkit::alloc::{CountingAllocator, count};
 
 #[global_allocator]
@@ -62,6 +62,44 @@ fn commands() -> Vec<Command> {
             curve: CrossfaderCurve::Sharp,
         },
         Command::MasterGainSet { db: 12.0 },
+        Command::MixerEqKillToggle {
+            deck: A,
+            band: Band::Low,
+        },
+        Command::MixerPanSet {
+            deck: B,
+            position: -0.6,
+        },
+        Command::MixerCueToggle { deck: B },
+        Command::MixerCueMixSet { position: 0.4 },
+        Command::MixerCueVolumeSet { db: -6.0 },
+        Command::MasterTestTone {
+            output: Output::Headphones,
+        },
+        Command::MasterTestTone {
+            output: Output::Master,
+        },
+        Command::DeckTempoRangeCycle { deck: A },
+        Command::DeckCue {
+            deck: A,
+            pressed: true,
+        },
+        Command::DeckCue {
+            deck: A,
+            pressed: true,
+        },
+        Command::DeckCue {
+            deck: A,
+            pressed: false,
+        },
+        Command::DeckCup {
+            deck: B,
+            pressed: true,
+        },
+        Command::DeckCup {
+            deck: B,
+            pressed: false,
+        },
         Command::DeckPlay { deck: A },
         Command::DeckEject { deck: B },
         Command::DeckPause { deck: A },
@@ -77,11 +115,12 @@ fn process_neither_allocates_nor_frees() {
     let mut rig = Rig::new();
     rig.load(DeckId::A, sine_file("memory-a", 440.0, 3.0, 0.5, RATE));
     rig.load(DeckId::B, sine_file("memory-b", 660.0, 3.0, 0.5, 44_100));
-    let mut block = vec![0.0f32; 512 * 2];
+    // Four channels, so the headphone path runs too.
+    let mut block = vec![0.0f32; 512 * 4];
     let mut events = 0;
     let mut run = |rig: &mut Rig, blocks: usize| {
         for _ in 0..blocks {
-            let (_, counted) = count(|| rig.processor.process(&mut block, 2));
+            let (_, counted) = count(|| rig.processor.process(&mut block, 4));
             events += counted;
         }
     };

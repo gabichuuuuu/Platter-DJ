@@ -36,6 +36,12 @@ pub(super) struct DeckPlayer {
     // is applied before a seek: the seek belongs to the track that arrives.
     pending_swap: Option<Option<TrackAudio>>,
     pending_seek: Option<SeekTarget>,
+    /// Cue point set for a track that is still arriving, in its frames.
+    arriving_cue: Option<f64>,
+    /// The cue button is held on a paused deck and the track plays until it is released.
+    cue_preview: bool,
+    /// The cue-play button is held: the deck waits at the cue point for its release.
+    cup_held: bool,
 }
 
 impl DeckPlayer {
@@ -51,6 +57,9 @@ impl DeckPlayer {
             nudge: Smoothed::new(0.0, rate, SPEED_RAMP_MS),
             pending_swap: None,
             pending_seek: None,
+            arriving_cue: None,
+            cue_preview: false,
+            cup_held: false,
         }
     }
 
@@ -62,41 +71,111 @@ impl DeckPlayer {
             retire(superseded, retired);
         }
         self.playing = false;
+        self.cue_preview = false;
+        self.cup_held = false;
         self.pending_seek = None;
+        self.arriving_cue = None;
         self.pending_swap = Some(audio);
     }
 
-    /// Whether the deck holds a track once the pending swap is applied.
-    fn will_be_loaded(&self) -> bool {
+    /// The track the deck holds once the pending swap is applied.
+    fn settled_audio(&self) -> Option<&TrackAudio> {
         match &self.pending_swap {
-            Some(arriving) => arriving.is_some(),
-            None => self.audio.is_some(),
+            Some(arriving) => arriving.as_ref(),
+            None => self.audio.as_ref(),
         }
     }
 
+    fn will_be_loaded(&self) -> bool {
+        self.settled_audio().is_some()
+    }
+
     pub(super) fn set_playing(&mut self, playing: bool) {
+        self.cue_preview = false;
         self.playing = playing && self.will_be_loaded();
     }
 
+    /// Play pressed while the cue button holds a preview keeps the deck playing after the
+    /// cue button is released.
     pub(super) fn toggle_playing(&mut self) {
-        self.set_playing(!self.playing);
+        let keep_playing = self.cue_preview;
+        self.set_playing(keep_playing || !self.playing);
+    }
+
+    /// Where the deck is once the pending changes are applied, in frames of the track it
+    /// will hold.
+    fn settled_position(&self) -> f64 {
+        match (self.pending_seek, self.settled_audio()) {
+            (Some(SeekTarget::Frame(frame)), _) => frame,
+            (Some(SeekTarget::Seconds(seconds)), Some(audio)) => seconds * audio.rate().as_f64(),
+            _ if self.pending_swap.is_some() => 0.0,
+            _ => self.position,
+        }
+    }
+
+    /// The cue point once the pending swap is applied: a track that arrives has it at its
+    /// beginning unless it was set since.
+    fn settled_cue(&self) -> f64 {
+        if self.pending_swap.is_some() {
+            self.arriving_cue.unwrap_or(0.0)
+        } else {
+            self.cue
+        }
     }
 
     pub(super) fn set_cue(&mut self) {
-        if self.pending_swap.is_none() {
-            self.cue = self.position;
+        let end = self
+            .settled_audio()
+            .map_or(0.0, |audio| audio.frames() as f64);
+        let cue = self.settled_position().clamp(0.0, end);
+        if self.pending_swap.is_some() {
+            self.arriving_cue = Some(cue);
+        } else {
+            self.cue = cue;
+        }
+    }
+
+    /// The cue button. While the deck plays, pressing it returns to the cue point and
+    /// pauses. On a paused deck away from the cue point, pressing it moves the cue point
+    /// there. On a paused deck at the cue point, the track plays while the button is held
+    /// and returns to the cue point when it is released.
+    pub(super) fn cue_button(&mut self, pressed: bool) {
+        if !pressed {
+            if self.cue_preview {
+                self.cue_preview = false;
+                self.goto_cue();
+            }
+            return;
+        }
+        if self.playing {
+            if !self.cue_preview {
+                self.goto_cue();
+            }
+        } else if (self.settled_position() - self.settled_cue()).abs() >= 1.0 {
+            self.set_cue();
+        } else if self.will_be_loaded() {
+            self.playing = true;
+            self.cue_preview = true;
+        }
+    }
+
+    /// The cue-play button: pressing it returns to the cue point and waits there; releasing
+    /// it starts playback.
+    pub(super) fn cup_button(&mut self, pressed: bool) {
+        if pressed {
+            self.cue_preview = false;
+            self.goto_cue();
+            self.cup_held = true;
+        } else if self.cup_held {
+            self.cup_held = false;
+            self.set_playing(true);
         }
     }
 
     pub(super) fn goto_cue(&mut self) {
         self.playing = false;
-        // The cue of a track that is still arriving is its beginning.
-        let cue = if self.pending_swap.is_some() {
-            0.0
-        } else {
-            self.cue
-        };
-        self.pending_seek = Some(SeekTarget::Frame(cue));
+        self.cue_preview = false;
+        self.pending_seek = Some(SeekTarget::Frame(self.settled_cue()));
     }
 
     pub(super) fn seek_seconds(&mut self, seconds: f64) {
@@ -141,7 +220,7 @@ impl DeckPlayer {
             let previous = std::mem::replace(&mut self.audio, arriving);
             retire(previous, retired);
             self.position = 0.0;
-            self.cue = 0.0;
+            self.cue = self.arriving_cue.take().unwrap_or(0.0);
         }
         if let Some(target) = self.pending_seek.take()
             && let Some(audio) = &self.audio

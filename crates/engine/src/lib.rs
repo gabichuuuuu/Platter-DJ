@@ -7,14 +7,19 @@
 
 pub mod command;
 mod control;
+mod peaks;
 mod render;
 pub mod rt;
 mod wav;
 
 pub use command::{Command, CommandError};
-pub use control::{DeckSnapshot, Engine, EngineError, Event, Snapshot, TrackInfo};
+pub use control::{
+    DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY, MixerControls, Snapshot,
+    TEMPO_RANGES, TrackInfo,
+};
+pub use peaks::WaveformPeaks;
 pub use platter_dsp::crossfade::CrossfaderCurve;
 pub use platter_dsp::eq::Band;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
-pub use rt::Processor;
+pub use rt::{Output, Processor};
 pub use wav::WavWriter;

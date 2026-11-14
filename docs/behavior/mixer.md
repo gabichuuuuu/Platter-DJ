@@ -1,59 +1,90 @@
 # Mixer
 
-The inventory places the mixer controls in M2, with the interface. M1 delivers the engine
-commands behind them; this note covers those commands and is completed in M2.
+The mixer channels, the crossfader and the headphone output. M1 delivered gain, equaliser,
+filter, fader and crossfader; M2 adds the kill buttons, pan, pre-listening and the controls of
+the interface.
 
 ## What the public manual says
 
-Sections of the reference manual:
+Sections of the reference manual, read on 13 November 2026:
 
 - *Overview*, section *Mixer channel*
 - *Overview*, section *Crossfade controls*
+- *Advanced usage tutorials*, section *Using the cue channel for mixing*
 - *Preferences*, section *Mixer page*
 
-Each channel has a gain knob that sets the level before the fader, three equaliser knobs for
-high, mid and low, a kill button per band that removes the band completely, and a channel
-fader. The crossfader blends the two sides, and a preference shapes its curve continuously
-from smooth to sharp. The preferences also offer several equaliser types and filter types.
-The section of the manual on the mixer channel does not describe the one-knob filter; the
-behaviour below (low-pass one way, high-pass the other) is Platter's own definition.
+Each channel has a gain knob that sets the level before the fader, a level meter that also
+shows clipping, three equaliser knobs for high, mid and low, a kill button per band that
+removes the band completely, a pan knob that sets the balance between the left and the right
+side, and a channel fader. A cue button sends the channel to the headphone cue channel, which
+needs an audio device with more than one output pair. For the headphones, a volume knob sets
+the level and a mix knob sets the balance between the cued channels and the main mix: turned
+one way the cued channels, turned the other way the main mix. The crossfader blends the two
+sides, and a preference shapes its curve continuously from smooth to sharp. The preferences
+also offer several equaliser types and filter types. The section of the manual on the mixer
+channel does not describe the one-knob filter; the behaviour below (low-pass one way,
+high-pass the other) is Platter's own definition.
 
-## What Platter does in M1
+## What Platter does
 
-Signal path of a channel: gain, equaliser, filter, fader, meter. Then the crossfader, the sum
-of both sides and the master section (`docs/behavior/master.md`).
+Signal path of a channel: gain, equaliser, filter, fader, pan, meter. Then the crossfader, the
+sum of both sides and the master section (`docs/behavior/master.md`). The headphones take each
+pre-listened channel after its filter and before its fader.
 
 | Command | Effect |
 | --- | --- |
 | `mixer.gain.set` | Channel gain in decibels, silence to +12 dB |
 | `mixer.eq.set` | Position of a band knob, 0 to 1: 0 removes the band, 0.5 leaves it untouched, 1 boosts it by 12 dB |
+| `mixer.eq.kill.toggle` | Removes a band completely, or gives it back to its knob |
 | `mixer.filter.set` | Position of the filter knob, -1 to 1: low-pass below zero, high-pass above, no effect at zero |
-| `mixer.fader.set` | Fader position, 0 to 1, with a squared taper; 0 is silence |
+| `mixer.pan.set` | Position of the pan knob, -1 (left) to 1 (right) |
+| `mixer.fader.set` | Fader position, 0 to 1 |
+| `mixer.cue.toggle` | Sends the channel to the headphones, or stops sending it |
+| `mixer.cue.mix.set` | Headphone mix, 0 (pre-listened channels alone) to 1 (master alone) |
+| `mixer.cue.volume.set` | Headphone volume in decibels, silence to +12 dB |
 | `mixer.crossfader.set` | Position, 0 (deck A alone) to 1 (deck B alone) |
 | `mixer.crossfader.curve.set` | `smooth` (equal power), `linear` or `sharp` |
 
-- Every parameter follows a 10 ms ramp; none of them steps.
+- Every parameter follows a 10 ms ramp; none of them steps. That includes the kill buttons
+  and the pre-listen buttons.
 - The equaliser splits the signal at 250 Hz and 2.5 kHz
-  (`docs/decisions/0005-equaliser-topology.md`).
+  (`docs/decisions/0005-equaliser-topology.md`). A killed band keeps the position of its knob
+  and returns to it when the kill is released.
 - The filter sweeps its corner exponentially: the low-pass from 20 kHz down to 60 Hz, the
   high-pass from 20 Hz up to 10 kHz (`docs/decisions/0006-channel-filter.md`).
+- Pan is a balance control: at the centre both sides pass untouched; turning to one side
+  fades the other side out in a straight line, down to silence at the end. The side the knob
+  points at never gets louder.
+- The fader has a squared taper around unity at three quarters of its travel: silence at the
+  bottom, no change at 0.75 and 5 dB of gain at the top. It starts at unity.
+- The meter of a channel reads the peak of each side after the fader and the pan.
+- The headphones are the third and the fourth output of the device. Their signal is the sum
+  of the pre-listened channels and the master, weighted by the mix knob in a straight line,
+  times the volume, through a safety limiter of their own. With a device of fewer than four
+  outputs there is no headphone signal, and the interface says so.
 
 ## Differences
 
-- A band is removed by turning its knob to zero. The kill buttons and the pan control are M2.
 - The crossfader has three named curves instead of a continuous control.
 - One equaliser model and one filter model; the others are M4.
+- The pan knob and the pre-listen button are always visible; the reference product shows them
+  only in some layouts.
+- The fader adds up to 5 dB above its unity mark.
 
 ## Edge cases
 
 | Input | Result |
 | --- | --- |
 | A position or a gain outside its range, or not a number | The command is rejected; nothing changes |
-| All three bands at zero | Exact silence from the channel |
+| All three bands at zero or killed | Exact silence from the channel |
 | Filter at exactly zero | The signal passes bit for bit |
 | Crossfader at an end | The far side is exactly silent, with every curve |
+| Pan at an end | The far side is exactly silent |
+| Pre-listening or a headphone test tone on a device with two outputs | Nothing reaches the outputs |
+| Everything turned up in the headphones | The output stays inside full scale |
 
 ## Tests
 
-`crates/dsp/src/eq.rs`, `crates/dsp/src/filter.rs`, `crates/dsp/src/crossfade.rs` and
-`crates/engine/tests/mixer.rs`.
+`crates/dsp/src/eq.rs`, `crates/dsp/src/filter.rs`, `crates/dsp/src/crossfade.rs`,
+`crates/dsp/src/balance.rs`, `crates/engine/tests/mixer.rs` and
+`crates/engine/tests/monitoring.rs`.

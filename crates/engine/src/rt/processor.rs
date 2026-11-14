@@ -1,4 +1,4 @@
-//! The processor: two decks, the mixer and the master section.
+//! The processor: two decks, the mixer, the master section and the headphone output.
 
 use std::sync::Arc;
 
@@ -12,13 +12,19 @@ use rtrb::{Consumer, Producer};
 
 use super::deck::DeckPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
-use super::{COMMAND_CAPACITY, Retired, RtCommand, Shared};
+use super::tone::TestTone;
+use super::{COMMAND_CAPACITY, Output, Retired, RtCommand, Shared};
+
+/// Channels a device needs for the headphones to have their own pair.
+const CHANNELS_WITH_HEADPHONES: usize = 4;
 
 struct Channel {
     player: DeckPlayer,
     strip: ChannelStrip,
     /// Gain the crossfader gives this side.
     crossfade: Smoothed,
+    /// One while the deck is sent to the headphones, zero otherwise.
+    pre_listen: Smoothed,
 }
 
 pub struct Processor {
@@ -31,6 +37,10 @@ pub struct Processor {
     master_gain: Smoothed,
     limiter: Limiter,
     master_meter: PeakMeter,
+    headphone_mix: Smoothed,
+    headphone_gain: Smoothed,
+    headphone_limiter: Limiter,
+    tone: TestTone,
 }
 
 impl Processor {
@@ -43,10 +53,12 @@ impl Processor {
         let position = 0.5;
         let curve = CrossfaderCurve::default();
         let (left, right) = curve.gains(position);
+        let parameter = |value| Smoothed::new(value, rate, PARAMETER_RAMP_MS);
         let channel = |crossfade| Channel {
             player: DeckPlayer::new(rate),
             strip: ChannelStrip::new(rate),
-            crossfade: Smoothed::new(crossfade, rate, PARAMETER_RAMP_MS),
+            crossfade: parameter(crossfade),
+            pre_listen: parameter(0.0),
         };
         Self {
             commands,
@@ -55,31 +67,41 @@ impl Processor {
             channels: [channel(left), channel(right)],
             crossfader_position: position,
             crossfader_curve: curve,
-            master_gain: Smoothed::new(1.0, rate, PARAMETER_RAMP_MS),
+            master_gain: parameter(1.0),
             limiter: Limiter::new(rate),
             master_meter: PeakMeter::new(rate),
+            headphone_mix: parameter(0.0),
+            headphone_gain: parameter(1.0),
+            headphone_limiter: Limiter::new(rate),
+            tone: TestTone::new(rate),
         }
     }
 
     /// Fills `output`, interleaved with `channels` channels per frame, with the next block
-    /// of the mix. The master goes to the first two channels; one channel gets the sum of
-    /// both sides at half level; further channels are silent. This is the function the
-    /// audio callback calls, and the deviceless render calls the same one.
+    /// of the mix. The master goes to the first two channels and, when there are four or
+    /// more, the headphones go to the third and the fourth; one channel gets the sum of
+    /// both sides of the master at half level; further channels are silent. This is the
+    /// function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
         if channels == 0 {
             output.fill(0.0);
             return;
         }
+        let with_headphones = channels >= CHANNELS_WITH_HEADPHONES;
         let mut frames = output.chunks_exact_mut(channels);
         for frame in &mut frames {
-            let [left, right] = self.next_frame();
+            let ([left, right], headphones) = self.next_frame(with_headphones);
             match frame {
                 [only] => *only = 0.5 * (left + right),
                 [first, second, rest @ ..] => {
                     *first = left;
                     *second = right;
                     rest.fill(0.0);
+                    if let [third, fourth, ..] = rest {
+                        *third = headphones[0];
+                        *fourth = headphones[1];
+                    }
                 }
                 [] => {}
             }
@@ -109,13 +131,27 @@ impl Processor {
             RtCommand::TogglePlay { deck } => self.player(deck).toggle_playing(),
             RtCommand::CueSet { deck } => self.player(deck).set_cue(),
             RtCommand::CueGoto { deck } => self.player(deck).goto_cue(),
+            RtCommand::CueButton { deck, pressed } => self.player(deck).cue_button(pressed),
+            RtCommand::CupButton { deck, pressed } => self.player(deck).cup_button(pressed),
             RtCommand::Seek { deck, seconds } => self.player(deck).seek_seconds(seconds),
             RtCommand::Tempo { deck, ratio } => self.player(deck).set_tempo(ratio),
             RtCommand::Nudge { deck, amount } => self.player(deck).set_nudge(amount),
+            mixer => self.apply_mixer(mixer),
+        }
+    }
+
+    fn apply_mixer(&mut self, command: RtCommand) {
+        match command {
             RtCommand::Gain { deck, linear } => self.strip(deck).set_gain(linear),
             RtCommand::Eq { deck, band, gain } => self.strip(deck).set_eq(band, gain),
+            RtCommand::EqCut { deck, band, cut } => self.strip(deck).set_eq_cut(band, cut),
             RtCommand::Filter { deck, position } => self.strip(deck).set_filter(position),
+            RtCommand::Balance { deck, position } => self.strip(deck).set_balance(position),
             RtCommand::Fader { deck, gain } => self.strip(deck).set_fader(gain),
+            RtCommand::PreListen { deck, on } => {
+                let target = if on { 1.0 } else { 0.0 };
+                self.channels[deck.index()].pre_listen.set(target);
+            }
             RtCommand::Crossfader { position } => {
                 self.crossfader_position = position;
                 self.retarget_crossfader();
@@ -125,6 +161,11 @@ impl Processor {
                 self.retarget_crossfader();
             }
             RtCommand::MasterGain { linear } => self.master_gain.set(linear),
+            RtCommand::HeadphoneMix { position } => self.headphone_mix.set(position),
+            RtCommand::HeadphoneGain { linear } => self.headphone_gain.set(linear),
+            RtCommand::TestTone { output } => self.tone.play(output),
+            // The deck commands are handled by `apply`.
+            _ => {}
         }
     }
 
@@ -143,19 +184,40 @@ impl Processor {
         self.channels[1].crossfade.set(right);
     }
 
-    fn next_frame(&mut self) -> Frame {
+    /// The next frame of the master and of the headphones. Without headphones their frame
+    /// is silence and their part of the path is skipped, parameter ramps included.
+    fn next_frame(&mut self, with_headphones: bool) -> (Frame, Frame) {
         let mut mix = [0.0f32; 2];
+        let mut pre_listened = [0.0f32; 2];
         for channel in &mut self.channels {
             let played = channel.player.next(&mut self.retired);
             let strip = channel.strip.process(played);
             let side = channel.crossfade.advance();
-            mix[0] += strip[0] * side;
-            mix[1] += strip[1] * side;
+            mix[0] += strip.post[0] * side;
+            mix[1] += strip.post[1] * side;
+            if with_headphones {
+                let send = channel.pre_listen.advance();
+                pre_listened[0] += strip.pre[0] * send;
+                pre_listened[1] += strip.pre[1] * send;
+            }
         }
         let gain = self.master_gain.advance();
-        let output = self.limiter.process([mix[0] * gain, mix[1] * gain]);
-        self.master_meter.feed(output);
-        output
+        let tone = self.tone.next(Output::Master);
+        let master = self
+            .limiter
+            .process([mix[0] * gain + tone, mix[1] * gain + tone]);
+        self.master_meter.feed(master);
+        if !with_headphones {
+            return (master, [0.0; 2]);
+        }
+        let balance = self.headphone_mix.advance();
+        let gain = self.headphone_gain.advance();
+        let tone = self.tone.next(Output::Headphones);
+        let blend = |index: usize| pre_listened[index] * (1.0 - balance) + master[index] * balance;
+        let headphones = self
+            .headphone_limiter
+            .process([blend(0) * gain + tone, blend(1) * gain + tone]);
+        (master, headphones)
     }
 
     fn publish(&self) {
@@ -164,9 +226,13 @@ impl Processor {
             shared.playing.set(channel.player.is_playing());
             shared.position.set(channel.player.position_seconds());
             shared.cue.set(channel.player.cue_seconds());
-            shared.level.set(channel.strip.level());
+            let levels = channel.strip.levels();
+            shared.levels[0].set(levels[0]);
+            shared.levels[1].set(levels[1]);
         }
-        self.shared.master_level.set(self.master_meter.level());
+        let levels = self.master_meter.levels();
+        self.shared.master_levels[0].set(levels[0]);
+        self.shared.master_levels[1].set(levels[1]);
         self.shared.limiter_gain.set(self.limiter.gain());
     }
 }

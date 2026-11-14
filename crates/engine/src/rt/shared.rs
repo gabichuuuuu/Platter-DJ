@@ -52,15 +52,15 @@ pub struct DeckShared {
     pub position: AtomicF64,
     /// Cue point in seconds of track time.
     pub cue: AtomicF64,
-    /// Post-fader peak level, linear.
-    pub level: AtomicF32,
+    /// Post-fader peak level of the left and the right side, linear.
+    pub levels: [AtomicF32; 2],
 }
 
 #[derive(Debug, Default)]
 pub struct Shared {
     pub decks: [DeckShared; 2],
-    /// Peak level of the master output, linear.
-    pub master_level: AtomicF32,
+    /// Peak level of the left and the right side of the master output, linear.
+    pub master_levels: [AtomicF32; 2],
     /// Gain the limiter is applying: one when it is idle, lower while it works. It reads
     /// zero until the first block has been processed.
     pub limiter_gain: AtomicF32,

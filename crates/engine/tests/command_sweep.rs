@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
 use platter_engine::command::{Args, SPECS, Value};
-use platter_engine::{Band, Command, CrossfaderCurve};
+use platter_engine::{Band, Command, CrossfaderCurve, Output, TEMPO_RANGES};
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
 /// Three files to load: two tracks and one that does not exist.
@@ -47,34 +47,55 @@ fn deck() -> impl Strategy<Value = DeckId> {
     prop::sample::select(DeckId::ALL.to_vec())
 }
 
+fn band() -> impl Strategy<Value = Band> {
+    prop::sample::select(vec![Band::Low, Band::Mid, Band::High])
+}
+
+/// The commands of the controls that M2 added.
+fn later_command() -> impl Strategy<Value = Command> {
+    let output = prop::sample::select(Output::ALL.to_vec());
+    prop_oneof![
+        (deck(), any::<bool>()).prop_map(|(deck, pressed)| Command::DeckCue { deck, pressed }),
+        (deck(), any::<bool>()).prop_map(|(deck, pressed)| Command::DeckCup { deck, pressed }),
+        deck().prop_map(|deck| Command::DeckTempoRangeCycle { deck }),
+        (deck(), band()).prop_map(|(deck, band)| Command::MixerEqKillToggle { deck, band }),
+        (deck(), number()).prop_map(|(deck, position)| Command::MixerPanSet { deck, position }),
+        deck().prop_map(|deck| Command::MixerCueToggle { deck }),
+        number().prop_map(|position| Command::MixerCueMixSet { position }),
+        number().prop_map(|db| Command::MixerCueVolumeSet { db }),
+        output.prop_map(|output| Command::MasterTestTone { output }),
+    ]
+}
+
 fn command() -> impl Strategy<Value = Command> {
-    let band = prop::sample::select(vec![Band::Low, Band::Mid, Band::High]);
+    let band = band();
     let curve = prop::sample::select(CrossfaderCurve::ALL.to_vec());
     prop_oneof![
-        (deck(), 0usize..3).prop_map(|(deck, file)| Command::DeckLoad {
+        6 => later_command(),
+        1 => (deck(), 0usize..3).prop_map(|(deck, file)| Command::DeckLoad {
             deck,
             path: files()[file].clone()
         }),
-        deck().prop_map(|deck| Command::DeckEject { deck }),
-        deck().prop_map(|deck| Command::DeckPlay { deck }),
-        deck().prop_map(|deck| Command::DeckPause { deck }),
-        deck().prop_map(|deck| Command::DeckPlayPause { deck }),
-        deck().prop_map(|deck| Command::DeckCueSet { deck }),
-        deck().prop_map(|deck| Command::DeckCueGoto { deck }),
-        (deck(), number()).prop_map(|(deck, seconds)| Command::DeckSeek { deck, seconds }),
-        (deck(), number()).prop_map(|(deck, ratio)| Command::DeckTempoSet { deck, ratio }),
-        (deck(), number()).prop_map(|(deck, amount)| Command::DeckNudge { deck, amount }),
-        (deck(), number()).prop_map(|(deck, db)| Command::MixerGainSet { deck, db }),
-        (deck(), band, number()).prop_map(|(deck, band, position)| Command::MixerEqSet {
+        1 => deck().prop_map(|deck| Command::DeckEject { deck }),
+        1 => deck().prop_map(|deck| Command::DeckPlay { deck }),
+        1 => deck().prop_map(|deck| Command::DeckPause { deck }),
+        1 => deck().prop_map(|deck| Command::DeckPlayPause { deck }),
+        1 => deck().prop_map(|deck| Command::DeckCueSet { deck }),
+        1 => deck().prop_map(|deck| Command::DeckCueGoto { deck }),
+        1 => (deck(), number()).prop_map(|(deck, seconds)| Command::DeckSeek { deck, seconds }),
+        1 => (deck(), number()).prop_map(|(deck, ratio)| Command::DeckTempoSet { deck, ratio }),
+        1 => (deck(), number()).prop_map(|(deck, amount)| Command::DeckNudge { deck, amount }),
+        1 => (deck(), number()).prop_map(|(deck, db)| Command::MixerGainSet { deck, db }),
+        1 => (deck(), band, number()).prop_map(|(deck, band, position)| Command::MixerEqSet {
             deck,
             band,
             position
         }),
-        (deck(), number()).prop_map(|(deck, position)| Command::MixerFilterSet { deck, position }),
-        (deck(), number()).prop_map(|(deck, position)| Command::MixerFaderSet { deck, position }),
-        number().prop_map(|position| Command::MixerCrossfaderSet { position }),
-        curve.prop_map(|curve| Command::MixerCrossfaderCurveSet { curve }),
-        number().prop_map(|db| Command::MasterGainSet { db }),
+        1 => (deck(), number()).prop_map(|(deck, position)| Command::MixerFilterSet { deck, position }),
+        1 => (deck(), number()).prop_map(|(deck, position)| Command::MixerFaderSet { deck, position }),
+        1 => number().prop_map(|position| Command::MixerCrossfaderSet { position }),
+        1 => curve.prop_map(|curve| Command::MixerCrossfaderCurveSet { curve }),
+        1 => number().prop_map(|db| Command::MasterGainSet { db }),
     ]
 }
 
@@ -82,8 +103,18 @@ fn value() -> impl Strategy<Value = Value> {
     prop_oneof![
         number().prop_map(Value::Number),
         "[a-z./ ]{0,8}".prop_map(Value::Text),
-        prop::sample::select(vec!["a", "b", "low", "high", "sharp"])
-            .prop_map(|text| Value::Text(text.to_owned())),
+        prop::sample::select(vec![
+            "a",
+            "b",
+            "low",
+            "high",
+            "sharp",
+            "press",
+            "release",
+            "master",
+            "headphones",
+        ])
+        .prop_map(|text| Value::Text(text.to_owned())),
     ]
 }
 
@@ -92,7 +123,7 @@ proptest! {
 
     #[test]
     fn no_command_sequence_breaks_the_output(
-        steps in prop::collection::vec((command(), 0usize..1_500, 1usize..5), 1..40),
+        steps in prop::collection::vec((command(), 0usize..1_500, 1usize..7), 1..40),
     ) {
         let mut rig = Rig::new();
         let mut block = Vec::new();
@@ -110,9 +141,14 @@ proptest! {
         let snapshot = rig.engine.snapshot();
         for deck in &snapshot.decks {
             assert!(deck.position_seconds.is_finite() && deck.position_seconds >= 0.0);
-            assert!(deck.cue_seconds.is_finite() && deck.level.is_finite());
+            assert!(deck.cue_seconds.is_finite());
+            assert!(deck.levels.iter().all(|level| level.is_finite()));
+            // deck.tempo.set takes the whole span of a tempo whatever the range of the fader
+            // is, so only that span holds here; the range pulls the tempo in when it changes.
+            assert!(TEMPO_RANGES.contains(&deck.controls.tempo_range));
+            assert!((0.0..=2.0).contains(&deck.controls.tempo_ratio));
         }
-        assert!(snapshot.master_level.is_finite() && snapshot.master_level <= 1.0);
+        assert!(snapshot.master_levels.iter().all(|level| level.is_finite() && *level <= 1.0));
     }
 
     #[test]

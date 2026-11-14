@@ -11,7 +11,7 @@ A main knob sets the volume of the main output. A limiter protects that output f
 it can be switched off, and the level meter of the main output shows when it is working. A
 preference chooses the limiter type, one of which is a third-party maximiser.
 
-## What Platter does in M1
+## What Platter does
 
 - `master.gain.set` sets the main volume in decibels, from silence (-90 dB or below) to
   +12 dB. The change follows a 10 ms ramp.
@@ -19,8 +19,13 @@ preference chooses the limiter type, one of which is a third-party maximiser.
   inside full scale: when a frame would exceed it, the gain of both channels drops at once to
   the value that puts the peak exactly at full scale, and then recovers over about 200 ms.
   Design and trade-offs: `docs/decisions/0007-safety-limiter.md`.
-- The state snapshot carries the peak level of the main output and the gain the limiter is
-  applying, for the meter of M2.
+- The state snapshot carries the peak level of each side of the main output and the gain the
+  limiter is applying. The interface draws the master meter from them, in the mixer and in
+  the status header.
+- `master.test_tone.play` plays a 440 Hz tone for one second, 18 dB below full scale, on the
+  output it names: `master` (the first two outputs of the device) or `headphones` (the third
+  and the fourth). It checks the routing of the audio device; the volume knobs do not affect
+  it. On a device with two outputs the headphone tone is not played.
 
 ## Differences
 
@@ -40,5 +45,7 @@ preference chooses the limiter type, one of which is a third-party maximiser.
 
 ## Tests
 
-`crates/dsp/src/limiter.rs` and `crates/engine/tests/mixer.rs` (`main_volume_is_in_decibels`,
-`the_limiter_keeps_an_overloaded_mix_inside_full_scale`).
+`crates/dsp/src/limiter.rs`, `crates/engine/tests/mixer.rs` (`main_volume_is_in_decibels`,
+`the_limiter_keeps_an_overloaded_mix_inside_full_scale`) and
+`crates/engine/tests/monitoring.rs`
+(`the_test_tone_plays_for_a_second_on_the_output_it_is_sent_to`).

@@ -62,10 +62,15 @@ impl Rig {
 
     /// Processes `seconds` of audio and returns it as interleaved stereo.
     pub fn run_stereo(&mut self, seconds: f64) -> Vec<f32> {
+        self.run_channels(seconds, 2)
+    }
+
+    /// Processes `seconds` of audio for a device with `channels` outputs.
+    pub fn run_channels(&mut self, seconds: f64, channels: usize) -> Vec<f32> {
         let frames = (seconds * f64::from(RATE)).round() as usize;
-        let mut output = vec![0.0; frames * 2];
-        for block in output.chunks_mut(BLOCK_FRAMES * 2) {
-            self.processor.process(block, 2);
+        let mut output = vec![0.0; frames * channels];
+        for block in output.chunks_mut(BLOCK_FRAMES * channels) {
+            self.processor.process(block, channels);
         }
         output
     }

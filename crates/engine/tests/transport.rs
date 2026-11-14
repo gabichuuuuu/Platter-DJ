@@ -28,7 +28,7 @@ fn a_playing_deck_reproduces_its_track() {
     let snapshot = rig.engine.snapshot();
     assert!(snapshot.decks[0].playing);
     assert!((snapshot.decks[0].position_seconds - 1.0).abs() < 0.01);
-    assert!((snapshot.decks[0].level - 0.5).abs() < 0.01);
+    assert!((snapshot.decks[0].levels[0] - 0.5).abs() < 0.01);
 }
 
 #[test]
@@ -285,4 +285,125 @@ fn commands_with_values_out_of_range_are_rejected() {
     for command in rejected {
         assert!(rig.engine.dispatch(command.clone()).is_err(), "{command:?}");
     }
+}
+
+fn cue(pressed: bool) -> Command {
+    Command::DeckCue { deck: A, pressed }
+}
+
+fn cup(pressed: bool) -> Command {
+    Command::DeckCup { deck: A, pressed }
+}
+
+#[test]
+fn the_cue_button_on_a_playing_deck_returns_to_the_cue_point_and_pauses() {
+    let mut rig = Rig::with_deck_a(sine_file("cue-playing", 440.0, 4.0, 0.5, RATE));
+    rig.send(Command::DeckSeek {
+        deck: A,
+        seconds: 1.0,
+    });
+    rig.run(0.05);
+    rig.send(Command::DeckCueSet { deck: A });
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.5);
+    rig.send(cue(true));
+    let after = rig.run(0.5);
+    rig.send(cue(false));
+    rig.run(0.1);
+    let snapshot = rig.engine.snapshot();
+    assert!(!snapshot.decks[0].playing);
+    assert!((snapshot.decks[0].position_seconds - 1.0).abs() < 1e-6);
+    assert!(after[14_400..].iter().all(|sample| *sample == 0.0));
+    assert!(max_step(&after) < sine_step(440.0, 0.5) + 0.5 / 240.0);
+}
+
+#[test]
+fn the_cue_button_on_a_paused_deck_moves_the_cue_point() {
+    let mut rig = Rig::with_deck_a(sine_file("cue-paused", 440.0, 4.0, 0.5, RATE));
+    rig.send(Command::DeckSeek {
+        deck: A,
+        seconds: 2.5,
+    });
+    rig.send(cue(true));
+    let output = rig.run(0.2);
+    rig.send(cue(false));
+    rig.run(0.1);
+    let snapshot = rig.engine.snapshot();
+    assert!((snapshot.decks[0].cue_seconds - 2.5).abs() < 1e-6);
+    assert!((snapshot.decks[0].position_seconds - 2.5).abs() < 1e-6);
+    // Setting the point makes no sound.
+    assert!(!snapshot.decks[0].playing);
+    assert!(output.iter().all(|sample| *sample == 0.0));
+}
+
+#[test]
+fn holding_the_cue_button_at_the_cue_point_plays_until_it_is_released() {
+    let mut rig = Rig::with_deck_a(sine_file("cue-preview", 440.0, 4.0, 0.5, RATE));
+    rig.send(cue(true));
+    let held = rig.run(0.5);
+    assert!(rig.engine.snapshot().decks[0].playing);
+    let fit = sine_fit(&held[4_800..], 440.0, f64::from(RATE));
+    assert!((fit.amplitude - 0.5).abs() < 0.005, "{}", fit.amplitude);
+    rig.send(cue(false));
+    let released = rig.run(0.5);
+    let snapshot = rig.engine.snapshot();
+    assert!(!snapshot.decks[0].playing);
+    assert_eq!(snapshot.decks[0].position_seconds, 0.0);
+    assert!(released[14_400..].iter().all(|sample| *sample == 0.0));
+    assert!(max_step(&released) < sine_step(440.0, 0.5) + 0.5 / 240.0);
+}
+
+#[test]
+fn play_during_a_cue_preview_keeps_the_deck_playing() {
+    let mut rig = Rig::with_deck_a(sine_file("cue-keep", 440.0, 4.0, 0.5, RATE));
+    rig.send(cue(true));
+    rig.run(0.2);
+    rig.send(Command::DeckPlayPause { deck: A });
+    rig.send(cue(false));
+    rig.run(0.3);
+    let snapshot = rig.engine.snapshot();
+    assert!(snapshot.decks[0].playing);
+    assert!((snapshot.decks[0].position_seconds - 0.5).abs() < 0.01);
+}
+
+#[test]
+fn the_cue_play_button_waits_at_the_cue_point_and_plays_on_release() {
+    let mut rig = Rig::with_deck_a(sine_file("cup", 440.0, 4.0, 0.5, RATE));
+    rig.send(Command::DeckSeek {
+        deck: A,
+        seconds: 1.0,
+    });
+    rig.run(0.05);
+    rig.send(Command::DeckCueSet { deck: A });
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.5);
+    rig.send(cup(true));
+    let held = rig.run(0.5);
+    let snapshot = rig.engine.snapshot();
+    assert!(!snapshot.decks[0].playing);
+    assert!((snapshot.decks[0].position_seconds - 1.0).abs() < 1e-6);
+    assert!(held[14_400..].iter().all(|sample| *sample == 0.0));
+    rig.send(cup(false));
+    let released = rig.run(0.5);
+    let snapshot = rig.engine.snapshot();
+    assert!(snapshot.decks[0].playing);
+    assert!((snapshot.decks[0].position_seconds - 1.5).abs() < 0.01);
+    let whole: Vec<f32> = held.into_iter().chain(released).collect();
+    assert!(max_step(&whole) < sine_step(440.0, 0.5) + 0.5 / 240.0);
+}
+
+#[test]
+fn cue_buttons_do_nothing_on_an_empty_deck_or_released_alone() {
+    let mut rig = Rig::new();
+    for command in [cue(true), cue(false), cup(true), cup(false)] {
+        rig.send(command);
+        assert!(rig.run(0.05).iter().all(|sample| *sample == 0.0));
+        assert!(!rig.engine.snapshot().decks[0].playing);
+    }
+    // A release without a press changes nothing on a loaded deck either.
+    rig.load(A, sine_file("cue-release-alone", 440.0, 1.0, 0.5, RATE));
+    rig.send(cup(false));
+    rig.send(cue(false));
+    rig.run(0.05);
+    assert!(!rig.engine.snapshot().decks[0].playing);
 }
