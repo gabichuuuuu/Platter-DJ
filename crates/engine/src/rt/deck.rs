@@ -2,23 +2,39 @@
 //!
 //! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
 //! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
-//! `docs/behavior/cues.md`.
+//! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`.
 
-use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate};
+use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo};
 use platter_dsp::Frame;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
+use super::clock::{Candidate, Lead, Pulse};
 use super::looper::{Looper, Region, Track};
 use super::{CueEdit, GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
-const SPEED_RAMP_MS: f32 = 20.0;
+pub(super) const SPEED_RAMP_MS: f32 = 20.0;
 /// Length of the crossfade at a jump that keeps the time: a beatjump or the return of a
 /// loop to its start.
 const SPLICE_SECONDS: f64 = 0.005;
+/// Offset from the beat of the clock, in beats, above which a deck that keeps the beat
+/// moves there at once. At 120 beats per minute it is 16 ms, where two beats start to be
+/// heard apart.
+const ALIGN_BEATS: f64 = 1.0 / 32.0;
+/// Speed a deck gains per beat it is behind the clock, and the most it gains or loses.
+const PULL_PER_BEAT: f64 = 2.0;
+const MAX_PULL: f64 = 0.02;
+/// A loop this close to a whole number of beats keeps the beat.
+const WHOLE_BEATS_TOLERANCE: f64 = 1e-6;
+
+/// The shortest way from one place in the beat to another, in beats: from minus a half up
+/// to a half.
+fn beats_between(from: f64, to: f64) -> f64 {
+    (to - from + 0.5).rem_euclid(1.0) - 0.5
+}
 
 /// What the deck was playing before a jump that keeps the time. It goes on from where it
 /// was while it fades out under what the deck plays now.
@@ -82,6 +98,10 @@ pub(super) struct DeckPlayer {
     /// The cues changed since the control side last got them.
     cues_unreported: bool,
     tail: Option<Tail>,
+    sync: bool,
+    /// The place in its beat the clock is at on this frame, when the deck keeps its beats
+    /// on those of the clock.
+    beat_to_keep: Option<f64>,
 }
 
 impl DeckPlayer {
@@ -108,6 +128,8 @@ impl DeckPlayer {
             cues: Cues::default(),
             cues_unreported: false,
             tail: None,
+            sync: false,
+            beat_to_keep: None,
         }
     }
 
@@ -492,6 +514,163 @@ impl DeckPlayer {
         self.tempo.set(ratio);
     }
 
+    pub(super) fn toggle_sync(&mut self) {
+        self.sync = !self.sync;
+    }
+
+    pub(super) fn is_synced(&self) -> bool {
+        self.sync
+    }
+
+    /// Speed the deck is set to, as a ratio of the original.
+    pub(super) fn speed(&self) -> f32 {
+        self.tempo.target()
+    }
+
+    /// What the choice of the tempo master needs to know, about the track the deck holds
+    /// once the pending swap is applied.
+    pub(super) fn candidate(&self) -> Candidate {
+        let eligible = self
+            .settled_track()
+            .is_some_and(|track| track.beat.is_some());
+        Candidate {
+            eligible,
+            live: eligible && self.playing && !self.cue_preview,
+            synced: self.sync,
+        }
+    }
+
+    /// The tempo of the deck and the place in its beat, when its grid has a tempo.
+    fn pulse(&self) -> Option<Pulse> {
+        if self.pending_swap.is_some() {
+            return None;
+        }
+        let audio = self.audio.as_ref()?;
+        let speed = f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()));
+        Some(Pulse {
+            bpm: self.grid.bpm()?.value() * speed,
+            phase: self.grid.phase_at(self.position / audio.rate().as_f64())?,
+        })
+    }
+
+    /// What the deck gives the clock as its tempo master.
+    pub(super) fn lead(&self) -> Option<Lead> {
+        Some(Lead {
+            pulse: self.pulse()?,
+            // A deck held playing by a cue key is on its way back to the cue.
+            keeps_the_beat: self.playing && !self.cue_preview && self.loop_keeps_the_beat(),
+        })
+    }
+
+    /// A loop that is not a whole number of beats long takes the deck off the beat on
+    /// every pass.
+    fn loop_keeps_the_beat(&self) -> bool {
+        let (Some(region), Some(track)) = (self.looper.region(), self.settled_track()) else {
+            return true;
+        };
+        track.beat.is_none_or(|beat| {
+            let beats = region.frames() / beat;
+            beats.round() >= 1.0 && (beats - beats.round()).abs() < WHOLE_BEATS_TOLERANCE
+        })
+    }
+
+    /// Whether a clock sets the speed of the deck: its sync is on and its grid has a tempo.
+    /// The tempo master is told apart by the processor.
+    pub(super) fn can_follow(&self) -> bool {
+        self.sync && self.pulse().is_some()
+    }
+
+    /// Sets the speed of a synced deck to the tempo of the clock for the next frame, and
+    /// with `keep_beat` has it keep its beats on those of the clock. Without a clock the
+    /// deck follows nothing.
+    pub(super) fn follow(&mut self, clock: Option<Pulse>, keep_beat: bool) {
+        self.beat_to_keep = None;
+        let (Some(clock), true, None) = (clock, self.sync, &self.pending_swap) else {
+            return;
+        };
+        let Some(bpm) = self.grid.bpm() else {
+            return;
+        };
+        let ratio = clock.bpm / bpm.value();
+        if !ratio.is_finite() {
+            return;
+        }
+        let reachable = (Tempo::MIN_RATIO..=Tempo::MAX_RATIO).contains(&ratio);
+        self.tempo
+            .set(ratio.clamp(Tempo::MIN_RATIO, Tempo::MAX_RATIO) as f32);
+        // A deck that cannot reach the tempo cannot stay on the beat either.
+        if keep_beat && reachable {
+            self.beat_to_keep = Some(clock.phase);
+        }
+    }
+
+    /// How far the beat of the deck is from that of the clock, in beats: negative behind,
+    /// positive ahead.
+    pub(super) fn beats_ahead(&self, clock: Pulse) -> Option<f64> {
+        Some(beats_between(clock.phase, self.pulse()?.phase))
+    }
+
+    /// Keeps the beats of the deck on those of the clock: a large offset by moving there,
+    /// a small one by the factor on the speed this returns.
+    fn pull_to_the_beat(&mut self) -> f64 {
+        let Some(clock) = self.beat_to_keep else {
+            return 1.0;
+        };
+        // A deck held playing by a cue key plays from its cue, wherever the beat is.
+        let steady = self.playing
+            && !self.cue_preview
+            && self.pending_swap.is_none()
+            && self.pending_seek.is_none()
+            && self.nudge.target() == 0.0
+            && self.nudge.is_settled();
+        if !steady || !self.loop_keeps_the_beat() {
+            return 1.0;
+        }
+        let (Some(track), Some(pulse)) = (self.settled_track(), self.pulse()) else {
+            return 1.0;
+        };
+        let Some(beat) = track.beat else {
+            return 1.0;
+        };
+        let behind = beats_between(pulse.phase, clock);
+        if behind.abs() <= ALIGN_BEATS {
+            return 1.0 + (behind * PULL_PER_BEAT).clamp(-MAX_PULL, MAX_PULL);
+        }
+        // One move at a time: the crossfade of the one before has to end first. And none
+        // while the speed still ramps to the tempo of the clock: the ramp would take the
+        // deck off the beat again.
+        if self.tail.is_none()
+            && self.tempo.is_settled()
+            && let Some(target) = self.on_the_beat(self.position + behind * beat, beat, track)
+        {
+            self.jump_to(target);
+        }
+        1.0
+    }
+
+    /// The frame nearest to `target` with the same place in the beat that the deck can go
+    /// to: inside the track, inside the run of beats the deck is in, whose beats are the
+    /// ones the offset was measured on, and inside the loop that holds the deck.
+    fn on_the_beat(&self, target: f64, beat: f64, track: Track) -> Option<f64> {
+        let (start, end) = self.grid.run_at(self.position / track.rate)?;
+        let run = (start * track.rate).max(0.0)..(end * track.rate).min(track.frames);
+        let inside = |frame: f64| run.contains(&frame);
+        let target = [target, target + beat, target - beat]
+            .into_iter()
+            .find(|frame| inside(*frame))?;
+        let Some(region) = self.looper.region() else {
+            return Some(target);
+        };
+        if !(region.start..region.end).contains(&self.position) {
+            return Some(target);
+        }
+        // The loop is a whole number of beats long, so its length keeps the place.
+        let length = region.frames();
+        [target, target - length, target + length]
+            .into_iter()
+            .find(|frame| (region.start..region.end).contains(frame))
+    }
+
     pub(super) fn set_nudge(&mut self, amount: f32) {
         self.nudge.set(amount);
     }
@@ -503,14 +682,18 @@ impl DeckPlayer {
         let gain = self.fade.advance();
         if gain == 0.0 {
             self.tail = None;
+            // A change of speed needs no ramp while nothing sounds.
+            self.tempo.advance();
             self.apply_pending(retired);
             return [0.0; 2];
         }
+        let pull = self.pull_to_the_beat();
         let Some(audio) = &self.audio else {
             return [0.0; 2];
         };
         let mut frame = read(audio, self.position);
-        let speed = f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance()));
+        let speed =
+            f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance())) * pull;
         let step = speed * audio.rate().as_f64() / self.engine_rate;
         if let Some(tail) = &mut self.tail {
             tail.level -= tail.decay;

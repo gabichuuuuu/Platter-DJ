@@ -30,10 +30,10 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has started with the beatgrid and the loops.** The desktop
-> application opens, loads tracks and plays them through a sound card, its tests pass, and
-> the maintainer has listened to it. It is not yet a tool to play a set with: there is no
-> sync and no library.
+> **Milestone M2 is complete; M3 has started with the beatgrid, the loops and the cues.** The
+> desktop application opens, loads tracks and plays them through a sound card, its tests
+> pass, and the maintainer has listened to it. It is not yet a tool to play a set with: sync
+> has no controls in the window yet and there is no library.
 
 ### What exists today
 
@@ -70,7 +70,11 @@ its own code, graphics and sounds.
   puts them on the beat until Quantize exists. Nobody has listened to them yet.
 - Stored cues are lost when the track is loaded again, the fade and load types are labels
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
-- No sync, no key lock, no collection, no MIDI: those are milestone M3.
+- Sync, the tempo master and the master clock exist in the engine only: the window has no
+  controls for them, its tempo readout does not show the speed of a synced deck, and nobody
+  has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
+  sync.
+- No key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.

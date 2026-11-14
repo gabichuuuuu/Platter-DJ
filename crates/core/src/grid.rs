@@ -238,6 +238,37 @@ impl BeatGrid {
         }
     }
 
+    /// How far into its beat a position of `at` seconds is, from zero up to one. The beats
+    /// are those of [`Self::for_each_beat`]: counted from the last marker on or before the
+    /// position, or back from the first one. A grid without tempo or markers has no beats.
+    pub fn phase_at(&self, at: f64) -> Option<f64> {
+        let (bpm, markers) = (self.bpm?, self.markers());
+        if !at.is_finite() {
+            return None;
+        }
+        let run = markers.partition_point(|marker| *marker <= at);
+        let marker = markers.get(run.saturating_sub(1))?;
+        let phase = ((at - marker) / bpm.beat_seconds()).rem_euclid(1.0);
+        // The remainder of a tiny negative number rounds up to one.
+        Some(if phase < 1.0 { phase } else { 0.0 })
+    }
+
+    /// Where the run of beats that holds a position of `at` seconds starts and ends: from
+    /// its marker to the next one. The first run has no start and the last one no end.
+    pub fn run_at(&self, at: f64) -> Option<(f64, f64)> {
+        let markers = self.markers();
+        if self.bpm.is_none() || markers.is_empty() || !at.is_finite() {
+            return None;
+        }
+        let run = markers.partition_point(|marker| *marker <= at).max(1);
+        let start = if run == 1 {
+            f64::NEG_INFINITY
+        } else {
+            markers.get(run - 1).copied()?
+        };
+        Some((start, markers.get(run).copied().unwrap_or(f64::INFINITY)))
+    }
+
     /// Index of the marker a position stands on, or of the last one before it.
     fn on_or_before(&self, at: f64) -> Option<usize> {
         if !at.is_finite() {
@@ -316,6 +347,40 @@ mod tests {
         grid.set_bpm(bpm(20.0));
         assert!(!grid.step_bpm(-0.01));
         assert!(!grid.scale_bpm(f64::NAN));
+    }
+
+    #[test]
+    fn the_phase_counts_from_the_marker_of_each_run() {
+        assert_eq!(BeatGrid::default().phase_at(1.0), None);
+        assert_eq!(grid_with(&[1.0]).phase_at(1.0), None, "no tempo");
+        let mut grid = grid_with(&[1.0, 2.2]);
+        grid.set_bpm(bpm(120.0));
+        let phase = |at: f64| grid.phase_at(at).unwrap();
+        assert_eq!(phase(1.0), 0.0);
+        assert!((phase(1.25) - 0.5).abs() < 1e-12);
+        assert!(
+            (phase(0.875) - 0.75).abs() < 1e-12,
+            "back from the first marker"
+        );
+        assert!(
+            (phase(2.1) - 0.2).abs() < 1e-12,
+            "still the run of the first marker"
+        );
+        assert_eq!(phase(2.2), 0.0, "the second marker starts its own run");
+        assert!((phase(2.45) - 0.5).abs() < 1e-12);
+        assert!((0.0..1.0).contains(&phase(1.0 - 1e-18)));
+        assert_eq!(grid.phase_at(f64::NAN), None);
+    }
+
+    #[test]
+    fn a_run_goes_from_its_marker_to_the_next() {
+        assert_eq!(grid_with(&[1.0]).run_at(1.0), None, "no tempo");
+        let mut grid = grid_with(&[1.0, 2.2]);
+        grid.set_bpm(bpm(120.0));
+        assert_eq!(grid.run_at(0.5), Some((f64::NEG_INFINITY, 2.2)));
+        assert_eq!(grid.run_at(2.1), Some((f64::NEG_INFINITY, 2.2)));
+        assert_eq!(grid.run_at(2.2), Some((2.2, f64::INFINITY)));
+        assert_eq!(grid.run_at(f64::NAN), None);
     }
 
     #[test]

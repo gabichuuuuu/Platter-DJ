@@ -77,12 +77,12 @@ features = [
 id = "sync"
 title = "Sync"
 features = [
-  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "planned" },
-  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "planned" },
-  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "planned" },
-  { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "planned" },
-  { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "planned" },
-  { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "planned" },
+  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "in_progress" },
+  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "in_progress" },
+  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "in_progress" },
+  { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "in_progress" },
+  { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "in_progress" },
+  { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "in_progress" },
   { id = "snap", name = "SNAP", milestone = "M3", status = "planned" },
   { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "planned" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
