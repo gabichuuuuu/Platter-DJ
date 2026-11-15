@@ -168,6 +168,8 @@ pub struct ClockSnapshot {
     pub snap: bool,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     pub quantize: bool,
+    /// A click on every beat of the clock, on the headphones.
+    pub metronome: bool,
 }
 
 impl Default for ClockSnapshot {
@@ -180,6 +182,7 @@ impl Default for ClockSnapshot {
             bpm: published.clock_bpm.get(),
             snap: false,
             quantize: false,
+            metronome: false,
         }
     }
 }
@@ -303,6 +306,7 @@ pub struct Engine {
     sync_mode: SyncMode,
     snap: bool,
     quantize: bool,
+    metronome: bool,
     clock_tap: TapTempo,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
@@ -332,6 +336,7 @@ impl Engine {
             sync_mode: SyncMode::default(),
             snap: false,
             quantize: false,
+            metronome: false,
             clock_tap: TapTempo::default(),
             swaps_in_flight: 0,
             loads_running: 0,
@@ -373,6 +378,9 @@ impl Engine {
             RtCommand::Quantize {
                 on: previous.quantize,
             },
+            RtCommand::Metronome {
+                on: previous.metronome,
+            },
         ];
         // The tempo of a deck that was the tempo master may be one a clock does not take.
         clock.extend(
@@ -391,6 +399,7 @@ impl Engine {
         engine.sync_mode = previous.sync_mode;
         engine.snap = previous.snap;
         engine.quantize = previous.quantize;
+        engine.metronome = previous.metronome;
         (engine, processor)
     }
 
@@ -620,6 +629,12 @@ impl Engine {
                 let on = !self.quantize;
                 self.send(RtCommand::Quantize { on })?;
                 self.quantize = on;
+                return Ok(());
+            }
+            Command::ClockMetronomeToggle => {
+                let on = !self.metronome;
+                self.send(RtCommand::Metronome { on })?;
+                self.metronome = on;
                 return Ok(());
             }
             Command::GlobalSyncModeSet { mode } => {
@@ -962,6 +977,7 @@ impl Engine {
                 bpm: shared.clock_bpm.get(),
                 snap: self.snap,
                 quantize: self.quantize,
+                metronome: self.metronome,
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
