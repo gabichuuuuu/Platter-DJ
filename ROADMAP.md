@@ -70,6 +70,25 @@ Pending from M2:
 - The clock of the status header, once the local time zone can be read
   (`docs/behavior/interface.md`, Differences).
 
+Checks waiting for equipment or material the project does not have yet. Each one stays here
+until it is done and its result is written in the note or the decision it names:
+
+- **A MIDI controller.** Open a real input, receive its messages and drive the engine through
+  a mapping, on Windows first, then on macOS and Linux, whose MIDI backends are only compiled
+  in CI. Also: two devices with the same name, and a device unplugged while open
+  (`docs/decisions/0025-midi-ports.md`, `docs/decisions/0024-midi-mappings.md`).
+- **Listening with real tracks.** Key lock, including the attack of kicks and the start of
+  each pass of a short loop (`docs/decisions/0021-key-lock-stretch.md`); sync and the master
+  clock; loops, beatjump and hotcues. Until then the README says nobody has listened to them.
+- **An audio device at 96 kHz.** Key lock in the callback at that rate.
+- **Tracks with known tempo and key.** The measurement of tempo, beatgrid and key detection
+  that the decisions of this milestone ask for, on a corpus kept outside the repository.
+- **A real music collection.** The time and the result of importing a large folder; links
+  on Windows, which need a privilege to create and were checked by hand with a junction only
+  (`docs/decisions/0023-folder-import.md`).
+- **macOS and Linux machines.** Everything above runs on Windows; the other systems only build
+  and pass the tests in CI.
+
 ### M4. Full feature level
 
 Four decks, layouts per task and custom layouts, effect units and the per-channel mixer effect,
