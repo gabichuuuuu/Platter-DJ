@@ -30,10 +30,10 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has started with the beatgrid, the loops and the cues.** The
+> **Milestone M2 is complete; M3 has the beatgrid, the loops, the cues and sync.** The
 > desktop application opens, loads tracks and plays them through a sound card, its tests
-> pass, and the maintainer has listened to it. It is not yet a tool to play a set with: sync
-> has no controls in the window yet and there is no library.
+> pass, and the maintainer has listened to it. It is not yet a tool to play a set with: the
+> tempo is not detected and there is no library.
 
 ### What exists today
 
@@ -42,8 +42,9 @@ its own code, graphics and sounds.
   gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three
   curves, meters and a master with a safety limiter; pre-listening on a second output pair;
   loops of a preset size or between an in and an out point, beatjumps and the moves of a
-  loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them; a
-  file selector; audio and general preferences; keyboard shortcuts in a file the user
+  loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them; SYNC,
+  MASTER and a phase meter per deck, and a master clock with Snap and Quantize; a file
+  selector; audio and general preferences; keyboard shortcuts in a file the user
   edits; English and Spanish.
 - `platter-cli info <file>` and `platter-cli render --script <mix.toml> --out <mix.wav>`: file
   information, and a scripted mix rendered to a WAV file without a sound card.
@@ -66,15 +67,12 @@ its own code, graphics and sounds.
   damaged input only, as the project has no encoder for them.
 - The beatgrid is set by hand on the GRID page of each deck: nothing detects the tempo yet,
   the tempo field cannot be typed into, and the grid is lost when the track is loaded again.
-- Loops, cues and the moves of a loop start at the play position as it is unless Snap and
-  Quantize are on, and those have no controls in the window yet. Nobody has listened to
-  loops or jumps yet.
+- Nobody has listened to loops or jumps yet.
 - Stored cues are lost when the track is loaded again, the fade and load types are labels
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
-- Sync, the tempo master and the master clock exist in the engine only: the window has no
-  controls for them, its tempo readout does not show the speed of a synced deck, and nobody
-  has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
-  sync.
+- Nobody has listened to sync yet. A deck needs a tempo tapped or stepped into its grid
+  before it can sync, the tempo of the clock cannot be typed, the sync mode has no control in
+  the window, and the master clock has no metronome yet.
 - The store of the library (collection, playlists and history) exists as a crate only: nothing
   in the application uses it yet and nothing imports tracks into it.
 - No key lock, no browser of the collection, no MIDI: those are milestone M3.
