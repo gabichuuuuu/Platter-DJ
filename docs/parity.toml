@@ -20,7 +20,7 @@ features = [
   { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
   { id = "fullscreen", name = "Full screen", milestone = "M3", status = "in_progress" },
-  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "planned" },
+  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "in_progress" },
   { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "planned" },
   { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "planned" },
   { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "planned" },

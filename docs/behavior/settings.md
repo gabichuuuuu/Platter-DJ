@@ -56,6 +56,7 @@ shortcuts of the decks and the mixer rest.
 | Setting | Command | Notes |
 | --- | --- | --- |
 | Language | `app.language.set` | English or Spanish; takes effect at once |
+| Tooltips | `app.tooltips.toggle` | A key, lit while the keys show their tooltips (`docs/behavior/interface.md`) |
 | Crossfader curve | `mixer.crossfader.curve.set` | Smooth, linear or sharp |
 | Keyboard | `app.keymap.open` | The list of shortcuts, read-only, and a key that opens the shortcut file |
 
@@ -87,7 +88,7 @@ Platter keeps its files in a folder of its own inside the configuration folder o
 
 | File | Content |
 | --- | --- |
-| `settings.toml` | Language, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Mixer page, the folder the file selector showed last and its extra roots |
+| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Mixer page, the folder the file selector showed last and its extra roots |
 | `keymap.toml` | The keyboard shortcuts (`docs/behavior/keyboard.md`) |
 | `platter.log` | The log of the last run |
 

@@ -59,6 +59,8 @@ pub struct Settings {
     pub buffer_frames: u32,
     pub routing: Routing,
     pub crossfader_curve: CrossfaderCurve,
+    /// The keys show their tooltips.
+    pub tooltips: bool,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
     pub mixer_mode: MixerMode,
     pub autogain: bool,
@@ -82,6 +84,7 @@ impl Default for Settings {
             buffer_frames: 256,
             routing: Routing::default(),
             crossfader_curve: CrossfaderCurve::default(),
+            tooltips: true,
             mixer_mode: MixerMode::Internal,
             autogain: true,
             external_eq_gain: false,
@@ -122,6 +125,7 @@ impl Settings {
             language: text(Some(&root), "language")
                 .and_then(|code| Language::from_code(&code))
                 .unwrap_or(defaults.language),
+            tooltips: flag(Some(&root), "tooltips").unwrap_or(defaults.tooltips),
             device: text(audio, "device").filter(|name| !name.is_empty()),
             sample_rate: number(audio, "sample_rate")
                 .filter(|rate| SAMPLE_RATES.contains(rate))
@@ -213,6 +217,7 @@ impl Settings {
             "language".to_owned(),
             toml::Value::String(self.language.code().to_owned()),
         );
+        root.insert("tooltips".to_owned(), toml::Value::Boolean(self.tooltips));
         root.insert("audio".to_owned(), toml::Value::Table(audio));
         root.insert("mixer".to_owned(), toml::Value::Table(mixer));
         let mut browser = toml::Table::new();
@@ -278,6 +283,7 @@ mod tests {
                 headphones: [0, 1],
             },
             crossfader_curve: CrossfaderCurve::Sharp,
+            tooltips: false,
             mixer_mode: MixerMode::External,
             autogain: false,
             external_eq_gain: true,

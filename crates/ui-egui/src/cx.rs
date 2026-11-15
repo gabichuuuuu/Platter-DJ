@@ -4,6 +4,7 @@ use egui::{Id, Key, Modifiers, Painter, Rect, Sense};
 
 use crate::command::Action;
 use crate::i18n::Texts;
+use crate::keymap::Keymap;
 use crate::theme::Theme;
 
 /// How a control is operated.
@@ -73,6 +74,8 @@ pub struct Cx<'a> {
     pub out: &'a mut FrameOutput,
     /// False for what lies behind an open dialog: it is drawn and cannot be operated.
     pub interactive: bool,
+    /// The shortcuts the tooltips name; `None` while tooltips are off.
+    pub help: Option<&'a Keymap>,
 }
 
 impl<'a> Cx<'a> {
@@ -107,6 +110,7 @@ impl<'a> Cx<'a> {
             texts: self.texts,
             out: self.out,
             interactive: self.interactive,
+            help: self.help,
         }
     }
 

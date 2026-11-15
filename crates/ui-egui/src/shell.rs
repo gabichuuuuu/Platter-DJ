@@ -189,6 +189,7 @@ impl Shell {
                 texts: &self.texts,
                 out: &mut out,
                 interactive: dialog.is_none(),
+                help: view.settings.tooltips.then_some(view.keymap),
             };
             header::header(&mut cx, zones.header, view, &state);
             if let (Some(rect), AudioState::Stopped(problem)) = (zones.notice, &view.audio.state) {
@@ -216,6 +217,7 @@ impl Shell {
                 texts: &self.texts,
                 out: &mut out,
                 interactive: true,
+                help: view.settings.tooltips.then_some(view.keymap),
             };
             settings::settings(&mut cx, rect, page, view, &mut state.settings);
             let escape = ui.input(|input| input.key_pressed(Key::Escape));

@@ -151,6 +151,8 @@ pub enum AppCommand {
     KeymapOpen,
     /// Shows the window on the whole screen, or as a window again.
     FullscreenToggle,
+    /// Turns the tooltips of the keys on or off.
+    TooltipsToggle,
     /// Shows a folder in the file list.
     BrowserNavigate {
         path: PathBuf,
@@ -269,6 +271,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "app.fullscreen.toggle",
         label: "Full screen",
+        params: &[],
+    },
+    CommandSpec {
+        id: "app.tooltips.toggle",
+        label: "Tooltips",
         params: &[],
     },
     CommandSpec {
@@ -478,6 +485,7 @@ impl AppCommand {
             },
             "app.keymap.open" => Self::KeymapOpen,
             "app.fullscreen.toggle" => Self::FullscreenToggle,
+            "app.tooltips.toggle" => Self::TooltipsToggle,
             "audio.device.set" => {
                 let device = read.text("device")?;
                 Self::AudioDeviceSet {
@@ -547,6 +555,7 @@ impl AppCommand {
             Self::LanguageSet { .. } => "app.language.set",
             Self::KeymapOpen => "app.keymap.open",
             Self::FullscreenToggle => "app.fullscreen.toggle",
+            Self::TooltipsToggle => "app.tooltips.toggle",
             Self::AudioDeviceSet { .. } => "audio.device.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",

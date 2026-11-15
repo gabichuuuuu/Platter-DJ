@@ -275,6 +275,7 @@ fn settings() -> SettingsView {
         routing: [0, 1, 2, 3],
         language: Language::English,
         fullscreen: false,
+        tooltips: true,
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
     }

@@ -562,8 +562,19 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>, memory: &mut Setti
         egui::vec2(280.0, tokens.size.button_h),
     );
     help(cx, language_control, texts.get("settings.language_help"));
+    switch(
+        cx,
+        page,
+        top + 50.0,
+        Switch {
+            name: "settings.tooltips",
+            help: "settings.tooltips_help",
+            on: view.settings.tooltips,
+            action: AppCommand::TooltipsToggle.into(),
+        },
+    );
 
-    let top = section(cx, page, 127.0, "settings.mixer_section");
+    let top = section(cx, page, 177.0, "settings.mixer_section");
     let control = setting(cx, page, top, "settings.crossfader_curve");
     let curve_labels = CrossfaderCurve::ALL.map(|curve| {
         texts.get(match curve {
@@ -600,7 +611,7 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>, memory: &mut Setti
         texts.get("settings.curve_help"),
     );
 
-    let top = section(cx, page, 234.0, "settings.keyboard_section");
+    let top = section(cx, page, 284.0, "settings.keyboard_section");
     let painter = cx.painter();
     let table = Rect::from_min_max(
         egui::pos2(page.left() + LABEL_X, page.top() + top),
@@ -831,7 +842,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
             name: "settings.autogain",
             help: "settings.autogain_help",
             on: mixer.autogain,
-            command: Command::MixerAutogainToggle,
+            action: Command::MixerAutogainToggle.into(),
         },
     );
 
@@ -844,7 +855,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
             name: "settings.external_eq_gain",
             help: "settings.external_help",
             on: mixer.external_eq_gain,
-            command: Command::MixerExternalEqGainToggle,
+            action: Command::MixerExternalEqGainToggle.into(),
         },
     );
     switch(
@@ -855,7 +866,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
             name: "settings.external_master_volume",
             help: "settings.external_help",
             on: mixer.external_master_volume,
-            command: Command::MixerExternalMasterVolumeToggle,
+            action: Command::MixerExternalMasterVolumeToggle.into(),
         },
     );
 
@@ -895,7 +906,7 @@ struct Switch {
     name: &'static str,
     help: &'static str,
     on: bool,
-    command: Command,
+    action: Action,
 }
 
 fn switch(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch) {
@@ -918,7 +929,7 @@ fn switch(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch) {
         rect,
         id(("settings-switch", switch.name)),
         spec,
-        Press::Click(switch.command.into()),
+        Press::Click(switch.action),
     );
     help(
         cx,

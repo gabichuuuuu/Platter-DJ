@@ -425,6 +425,10 @@ impl PlatterApp {
             AppCommand::SettingsRestoreDefaults => self.restore_defaults(),
             AppCommand::KeymapOpen => self.open_keymap(),
             AppCommand::FullscreenToggle => self.fullscreen_wanted = Some(!self.fullscreen),
+            AppCommand::TooltipsToggle => {
+                self.settings.tooltips = !self.settings.tooltips;
+                self.save_settings();
+            }
             AppCommand::DeckNoticeDismiss { deck } => self.notices[deck.index()] = None,
             _ => {}
         }
@@ -582,6 +586,7 @@ impl PlatterApp {
             ],
             language: self.settings.language,
             fullscreen: self.fullscreen,
+            tooltips: self.settings.tooltips,
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
         }

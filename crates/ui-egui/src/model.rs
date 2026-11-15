@@ -112,6 +112,8 @@ pub struct SettingsView {
     pub language: Language,
     /// The window covers the whole screen.
     pub fullscreen: bool,
+    /// The keys show their tooltips.
+    pub tooltips: bool,
     /// Names of the two files of the user, as the pages mention them.
     pub settings_file: String,
     pub keymap_file: String,
