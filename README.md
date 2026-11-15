@@ -71,8 +71,11 @@ its own code, graphics and sounds.
 - Stored cues are lost when the track is loaded again, the fade and load types are labels
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
 - Nobody has listened to sync yet. A deck needs a tempo tapped or stepped into its grid
-  before it can sync, the tempo of the clock cannot be typed, the sync mode has no control in
-  the window, and the master clock has no metronome yet.
+  before it can sync, the tempo of the clock cannot be typed, and the sync mode has no control
+  in the window.
+- The metronome of the master clock has no key in the window yet: `clock.metronome.toggle`
+  switches it from the command line. It clicks on the headphones only, so a device with two
+  outputs does not play it, and nobody has listened to it.
 - No key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 

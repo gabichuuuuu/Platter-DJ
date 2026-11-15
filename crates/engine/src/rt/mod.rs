@@ -15,6 +15,7 @@
 mod clock;
 mod deck;
 mod looper;
+mod metronome;
 mod processor;
 mod shared;
 mod strip;
@@ -240,6 +241,10 @@ pub enum RtCommand {
     },
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     Quantize {
+        on: bool,
+    },
+    /// A click on every beat of the clock, on the headphones.
+    Metronome {
         on: bool,
     },
 }
