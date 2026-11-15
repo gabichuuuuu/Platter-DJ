@@ -2114,6 +2114,7 @@ dependencies = [
 name = "platter-engine"
 version = "0.0.0"
 dependencies = [
+ "platter-analysis",
  "platter-core",
  "platter-decode",
  "platter-dsp",

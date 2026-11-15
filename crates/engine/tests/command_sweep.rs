@@ -129,6 +129,8 @@ fn grid_command() -> impl Strategy<Value = Command> {
         deck().prop_map(|deck| Command::DeckGridMarkerPrevious { deck }),
         deck().prop_map(|deck| Command::DeckGridMarkerNext { deck }),
         deck().prop_map(|deck| Command::DeckGridLockToggle { deck }),
+        deck().prop_map(|deck| Command::DeckGridReset { deck }),
+        deck().prop_map(|deck| Command::DeckGridBpmReset { deck }),
     ]
 }
 

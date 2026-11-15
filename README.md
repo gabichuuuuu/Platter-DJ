@@ -64,10 +64,10 @@ its own code, graphics and sounds.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
   and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
   damaged input only, as the project has no encoder for them.
-- The beatgrid is set by hand on the GRID page of each deck: the detection of tempo, first
-  beat and key exists as a library but does not run on a loaded track yet, and has only been
-  measured on synthesised signals. The tempo field cannot be typed into, and the grid is lost
-  when the track is loaded again.
+- A loaded track is analysed in the background and its grid gets the tempo and the first beat
+  found; the detection has only been measured on synthesised signals, not on real tracks. The
+  key found is not shown yet, the GRID page has no reset keys yet, the tempo field cannot be
+  typed into, and edits of the grid are lost when the track is loaded again.
 - Loops, cues and the moves of a loop start at the play position as it is unless Snap and
   Quantize are on, and those have no controls in the window yet. Nobody has listened to
   loops or jumps yet.
@@ -75,8 +75,8 @@ its own code, graphics and sounds.
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
 - Sync, the tempo master and the master clock exist in the engine only: the window has no
   controls for them, its tempo readout does not show the speed of a synced deck, and nobody
-  has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
-  sync.
+  has listened to them. A deck syncs once its grid has a tempo, found by the analysis or
+  tapped or stepped in by hand.
 - No key lock, no collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 

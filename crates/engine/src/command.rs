@@ -113,6 +113,14 @@ pub enum Command {
     DeckGridLockToggle {
         deck: DeckId,
     },
+    /// Replaces the grid with the tempo and the first beat the analysis found.
+    DeckGridReset {
+        deck: DeckId,
+    },
+    /// Sets the tempo the analysis found, keeping the markers.
+    DeckGridBpmReset {
+        deck: DeckId,
+    },
     /// Switches the loop off, or starts one of the selected size at the play position.
     DeckLoopToggle {
         deck: DeckId,
@@ -623,6 +631,16 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "deck.grid.lock.toggle",
         label: "Lock beatgrid",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.reset",
+        label: "Reset beatgrid",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.bpm.reset",
+        label: "Reset beatgrid tempo",
         params: &[DECK],
     },
     CommandSpec {
@@ -1278,6 +1296,8 @@ impl Command {
             "deck.grid.marker.previous" => Self::DeckGridMarkerPrevious { deck },
             "deck.grid.marker.next" => Self::DeckGridMarkerNext { deck },
             "deck.grid.lock.toggle" => Self::DeckGridLockToggle { deck },
+            "deck.grid.reset" => Self::DeckGridReset { deck },
+            "deck.grid.bpm.reset" => Self::DeckGridBpmReset { deck },
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
@@ -1358,6 +1378,8 @@ impl Command {
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
             Self::DeckGridLockToggle { .. } => "deck.grid.lock.toggle",
+            Self::DeckGridReset { .. } => "deck.grid.reset",
+            Self::DeckGridBpmReset { .. } => "deck.grid.bpm.reset",
             Self::DeckLoopToggle { .. } => "deck.loop.toggle",
             Self::DeckLoopIn { .. } => "deck.loop.in",
             Self::DeckLoopOut { .. } => "deck.loop.out",

@@ -124,6 +124,8 @@ fn commands() -> Vec<Command> {
         Command::DeckGridMarkerNext { deck: A },
         Command::DeckGridMarkerDelete { deck: A },
         Command::DeckGridLockToggle { deck: A },
+        Command::DeckGridReset { deck: A },
+        Command::DeckGridBpmReset { deck: A },
         Command::DeckGridTap { deck: B },
         Command::DeckPlay { deck: A },
         Command::DeckGridBpmSet {
