@@ -12,12 +12,16 @@ Sections of the reference manual, read on 15 November 2026:
 
 - *Overview*, section *Track deck*, the key lock controls
 - *Overview*, the mixer channel, its key lock button and key knob
+- *Basic usage tutorials*, section *Working with Key Lock*
 
 A deck has a key lock control that locks the original key of the track; the same place
-transposes it by semitones. The mixer channel has a key lock button as well, and with key lock
-on its key knob changes the key of a playing track without changing its tempo. Without key
-lock, pitch follows speed. The manual does not say what key lock does while scratching, at a
-jump or at the ends of the tempo range.
+transposes it by semitones, and the manual advises against more than two semitones for the
+sake of the sound. The key lock button of the mixer channel instead locks the key the track
+has at its current speed, and its key knob then fine-tunes that key without changing the
+tempo. Turning key lock off and on again brings back the original key. The deck header can
+show the resulting key, the nearest key with how many cents it is off, with key lock on or
+off. Without key lock, pitch follows speed. The manual does not say what key lock does while
+scratching, at a jump or at the ends of the tempo range.
 
 ## What Platter does
 
@@ -44,8 +48,9 @@ jump or at the ends of the tempo range.
 
 ## Differences
 
-- The reference manual has key lock on the deck and on the mixer channel. Platter has it on
-  the deck now; the key knob of the channel comes with transposition.
+- The reference manual has key lock on the deck and on the mixer channel. Platter has the
+  key lock of the deck, which keeps the original key. The lock of the channel, which keeps the
+  key of the current speed, comes with its key knob and transposition.
 - The reference manual does not say what is heard at a jump with key lock on. Platter plays the
   first 32 ms after it with the pitch following the speed, because the stretch needs about
   5 ms of work before its first sound and one callback cannot hold that beside the other
