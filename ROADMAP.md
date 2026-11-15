@@ -56,8 +56,8 @@ Decisions already taken for this milestone:
 - Tempo, beatgrid and key analysis sits behind a project trait. The community crate first named
   for it failed its measurement, so Platter detects them with its own code
   (`docs/decisions/0020-own-analysis.md`), measured against tracks with known tempo and key.
-- Key lock sits behind a project trait. Two candidate time-stretching libraries were measured
-  and timestretch was chosen (`docs/decisions/0021-key-lock-stretch.md`).
+- Key lock sits behind a project trait. Two candidate time-stretching libraries are measured and
+  the choice is recorded in an ADR before the milestone closes.
 - The library uses SQLite behind a project trait.
 - Platter writes tempo, key and cues to file tags by default, with a setting to turn it off.
   Writes are atomic (temporary file and rename) and never touch a file that could not be read

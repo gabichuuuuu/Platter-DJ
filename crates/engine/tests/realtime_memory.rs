@@ -268,6 +268,7 @@ fn commands() -> Vec<Command> {
         Command::ClockBend { amount: 0.1 },
         Command::ClockBend { amount: 0.0 },
         Command::ClockTap,
+        Command::ClockMetronomeToggle,
         Command::DeckMasterSet { deck: B },
         Command::DeckSyncToggle { deck: A },
         Command::ClockModeSet {
