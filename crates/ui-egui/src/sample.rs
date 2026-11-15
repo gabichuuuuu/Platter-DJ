@@ -13,7 +13,7 @@ use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::model::{
     AudioProblem, AudioState, AudioView, BrowserView, Clock, CollectionView, DeviceView, FileRow,
-    OutputKind, RowKind, SettingsView, StreamView, TrackRow, TreeRow, View,
+    MidiView, OutputKind, RowKind, SettingsView, StreamView, TrackRow, TreeRow, View,
 };
 
 /// Everything a [`View`] borrows, owned in one place.
@@ -25,6 +25,7 @@ pub struct Scene {
     pub browser: BrowserView,
     pub keymap: Keymap,
     pub clock: Option<Clock>,
+    pub midi: MidiView,
 }
 
 impl Scene {
@@ -37,6 +38,7 @@ impl Scene {
             keymap: &self.keymap,
             clock: self.clock,
             notices: [None; DeckId::COUNT],
+            midi: self.midi,
         }
     }
 }
@@ -365,6 +367,11 @@ pub fn playing() -> Scene {
             hour: 23,
             minute: 41,
         }),
+        midi: MidiView {
+            named: 1,
+            open: 1,
+            active: false,
+        },
     }
 }
 
@@ -396,5 +403,11 @@ pub fn startup() -> Scene {
             hour: 23,
             minute: 41,
         }),
+        // A controller in the settings that is not connected.
+        midi: MidiView {
+            named: 1,
+            open: 0,
+            active: false,
+        },
     }
 }

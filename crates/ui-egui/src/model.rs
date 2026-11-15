@@ -233,6 +233,17 @@ pub enum DeckNotice {
     LoadFailed,
 }
 
+/// The MIDI controllers of the settings, for the indicator of the status header.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MidiView {
+    /// Controllers the settings file names.
+    pub named: usize,
+    /// Those whose input opened.
+    pub open: usize,
+    /// A message came from an open controller a moment ago.
+    pub active: bool,
+}
+
 pub struct View<'a> {
     pub engine: &'a Snapshot,
     pub audio: &'a AudioView,
@@ -242,4 +253,5 @@ pub struct View<'a> {
     /// Absent when the time of day is not known.
     pub clock: Option<Clock>,
     pub notices: [Option<DeckNotice>; DeckId::COUNT],
+    pub midi: MidiView,
 }

@@ -13,7 +13,7 @@ use crate::command::{AppCommand, SettingsPage};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
-use crate::model::{AudioProblem, AudioState, OutputKind, View};
+use crate::model::{AudioProblem, AudioState, MidiView, OutputKind, View};
 use crate::paint;
 use crate::shell::ViewState;
 use crate::widgets::choice::{self, Choice};
@@ -177,6 +177,9 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
                 x = pair(x, cx.t(name), none, color.text_primary) + gap;
             }
         }
+    }
+    if view.midi.named > 0 {
+        x = midi(cx, x, rect, view.midi) + gap;
     }
 
     // The right end, right to left: preferences, full screen, clock, master level.
@@ -452,6 +455,56 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
 
 /// The dropout count: a reading that resets the count when it is operated. Returns where it
 /// ends.
+/// The MIDI indicator: a dot for how many of the controllers named are open, the label that
+/// lights while messages come, and the count. Returns where the next indicator starts.
+fn midi(cx: &Cx<'_>, x: f32, header: Rect, midi: MidiView) -> f32 {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let painter = cx.painter();
+    let middle = header.center().y;
+    let dot = if midi.open == 0 {
+        color.status_error
+    } else if midi.open < midi.named {
+        color.status_warn
+    } else {
+        color.status_ok
+    };
+    painter.circle_filled(egui::pos2(x + 4.0, middle), 4.0, dot);
+    let ink = if midi.active {
+        color.text_primary
+    } else {
+        color.text_secondary
+    };
+    let line = |x: f32| Rect::from_min_max(egui::pos2(x, header.top()), header.max);
+    let name = paint::text(
+        painter,
+        theme,
+        line(x + 8.0 + tokens.space.s3),
+        Align2::LEFT_CENTER,
+        cx.t("header.midi"),
+        tokens.text.label,
+        ink,
+    );
+    let count = cx.tf(
+        "header.midi_value",
+        &[
+            ("open", &midi.open.to_string()),
+            ("named", &midi.named.to_string()),
+        ],
+    );
+    paint::text(
+        painter,
+        theme,
+        line(name.right() + tokens.space.s2 + tokens.space.s1),
+        Align2::LEFT_CENTER,
+        &count,
+        tokens.text.readout,
+        color.text_primary,
+    )
+    .right()
+}
+
 fn dropouts(cx: &mut Cx<'_>, x: f32, header: Rect, count: u64) -> f32 {
     let theme = cx.theme;
     let tokens = &theme.tokens;

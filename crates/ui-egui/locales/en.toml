@@ -9,6 +9,8 @@ en = "English"
 es = "Español"
 
 [header]
+midi = "MIDI"
+midi_value = "{open}/{named}"
 audio_built_in = "Built-in audio"
 audio_usb = "USB audio"
 audio_bluetooth = "Bluetooth audio"
