@@ -47,6 +47,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      # The progress table of ROADMAP.md is refreshed here and nowhere else, so the pull requests
+      # that change a status in docs/parity.toml do not all rewrite it and conflict.
+      - name: Refresh the progress table in the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release-plz-")) | .headRefName][0] // ""')
+          if [ -z "$branch" ]; then
+            echo "no release pull request is open"
+            exit 0
+          fi
+          git fetch --quiet origin "refs/heads/$branch"
+          git switch --quiet --detach FETCH_HEAD
+          cargo xtask parity
+          if git diff --quiet -- ROADMAP.md; then
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "docs: refresh the progress table for the release" -- ROADMAP.md
+          git push --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/$branch"
+
   release:
     if: github.repository == 'gabichuuuuu/Platter-DJ'
     runs-on: ubuntu-24.04

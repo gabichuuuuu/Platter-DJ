@@ -7,7 +7,8 @@
 # it has none), a status (planned, in_progress, done) and, when done, the evidence: the test or
 # command that demonstrates it. The first complete version is everything from M0 to M3.
 #
-# `cargo xtask parity` validates this file and refreshes the summary in ROADMAP.md.
+# `cargo xtask parity --check` validates this file. The summary in ROADMAP.md is refreshed by
+# the release pull request, not by the pull request that changes a status.
 # What is out of scope is in docs/gaps.md.
 
 [[area]]

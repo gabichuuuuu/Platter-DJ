@@ -62,8 +62,11 @@ there. The reasons are in `docs/decisions/0003-privacy-check-scope.md`.
 identifier, a name, a milestone (`M0` to `M5`, or `later`), a status (`planned`, `in_progress`,
 `done`) and, when done, the test or command that demonstrates it.
 
-`cargo xtask parity` validates the file and rewrites the progress table in `ROADMAP.md`.
-`cargo xtask parity --check` validates and fails if the table is out of date.
+`cargo xtask parity` validates the file and rewrites the progress table in `ROADMAP.md`. Only
+the release workflow runs it, in each release pull request: a pull request that changes a status
+leaves the table as it is, so pull requests do not conflict on it.
+`cargo xtask parity --check` validates the file and the markers of the table, not whether the
+table is up to date.
 `cargo xtask parity --site <folder>` writes the public progress page (`index.html`) and a badge
 (`badge.svg`) into a folder; `.github/workflows/pages.yml` publishes them once the repository
 is public.
