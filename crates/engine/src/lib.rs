@@ -15,18 +15,20 @@ mod stretch;
 mod tap;
 mod wav;
 
-pub use analyser::{AnalysedTempo, Analyser, PlatterAnalyser, TrackAnalysis};
+pub use analyser::{
+    AUTOGAIN_LUFS, AnalysedTempo, Analyser, MAX_AUTOGAIN_DB, PlatterAnalyser, TrackAnalysis,
+};
 pub use command::{
-    BpmScale, ClockMode, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
-    SyncMode,
+    BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
+    Direction, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
     FINE_MOVE_SECONDS, MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use peaks::WaveformPeaks;
-pub use platter_analysis::{Key, Mode, TempoRange};
-pub use platter_dsp::crossfade::CrossfaderCurve;
+pub use platter_analysis::{Key, Mode, TempoRange, Transposed};
+pub use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 pub use platter_dsp::eq::Band;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{LoopState, Output, Processor};

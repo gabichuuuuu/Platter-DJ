@@ -109,7 +109,7 @@ fn the_example_script_mixes_two_synthesised_tracks() {
     assert!(output.status.success(), "{}", text(&output.stderr));
     assert!(text(&output.stdout).starts_with("rendered 8.000 s (384000 frames)"));
     let log = std::fs::read_to_string(log).unwrap();
-    assert!(log.contains("script read: 15 commands"), "{log}");
+    assert!(log.contains("script read: 16 commands"), "{log}");
 
     let mix = decode_file(&out).unwrap();
     assert_eq!(mix.sample_rate.hz(), 48_000);

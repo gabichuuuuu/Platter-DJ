@@ -13,6 +13,10 @@ const ORDER: Ordering = Ordering::Relaxed;
 pub struct AtomicF32(AtomicU32);
 
 impl AtomicF32 {
+    fn new(value: f32) -> Self {
+        Self(AtomicU32::new(value.to_bits()))
+    }
+
     pub fn get(&self) -> f32 {
         f32::from_bits(self.0.load(ORDER))
     }
@@ -80,6 +84,17 @@ pub struct DeckShared {
     pub levels: [AtomicF32; 2],
     pub sync: Flag,
     pub key_lock: Flag,
+    pub beat_tick: Flag,
+    /// Shift of the key in semitones.
+    pub key_shift: AtomicF64,
+    /// Pitch the deck plays against the original, in semitones: the shift while key lock
+    /// acts, the pitch of the speed otherwise.
+    pub pitch: AtomicF64,
+    pub flux: Flag,
+    pub reverse: Flag,
+    /// Position of the timeline of flux in seconds of track time; not a number while the
+    /// deck has none.
+    pub timeline: AtomicF64,
     /// Speed the deck is set to, as a ratio of the original.
     pub speed: AtomicF64,
     /// How far the beat of the deck is from that of the clock, in beats: negative behind,
@@ -99,6 +114,12 @@ impl Default for DeckShared {
             levels: Default::default(),
             sync: Flag::default(),
             key_lock: Flag::default(),
+            beat_tick: Flag::default(),
+            key_shift: AtomicF64::default(),
+            pitch: AtomicF64::default(),
+            flux: Flag::default(),
+            reverse: Flag::default(),
+            timeline: AtomicF64::new(f64::NAN),
             speed: AtomicF64::new(1.0),
             phase,
         }
@@ -111,6 +132,8 @@ pub struct Shared {
     pub master: MasterChoice,
     /// Tempo the decks follow, in beats per minute.
     pub clock_bpm: AtomicF64,
+    /// Where the crossfader is, which an automatic fade moves.
+    pub crossfader: AtomicF32,
     /// Peak level of the left and the right side of the master output, linear.
     pub master_levels: [AtomicF32; 2],
     /// Gain the limiter is applying: one when it is idle, lower while it works. It reads
@@ -124,6 +147,7 @@ impl Default for Shared {
             decks: Default::default(),
             master: MasterChoice::default(),
             clock_bpm: AtomicF64::new(INITIAL_BPM),
+            crossfader: AtomicF32::new(0.5),
             master_levels: Default::default(),
             limiter_gain: AtomicF32::default(),
         }

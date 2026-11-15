@@ -64,9 +64,65 @@ impl CrossfaderCurve {
     }
 }
 
+/// The side of the crossfader a mixer channel is assigned to: `docs/behavior/mixer.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossfaderSide {
+    Left,
+    /// The channel bypasses the crossfader.
+    Thru,
+    Right,
+}
+
+impl CrossfaderSide {
+    pub const ALL: [Self; 3] = [Self::Left, Self::Thru, Self::Right];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Thru => "thru",
+            Self::Right => "right",
+        }
+    }
+
+    pub fn parse(text: &str) -> Result<Self, ValueError> {
+        Self::ALL
+            .into_iter()
+            .find(|side| side.name() == text)
+            .ok_or(ValueError::UnknownChoice {
+                name: "crossfader side",
+                expected: "left, thru, right",
+            })
+    }
+
+    /// The gain of a channel on this side, from the gains of the left and the right side.
+    pub fn gain(self, (left, right): (f32, f32)) -> f32 {
+        match self {
+            Self::Left => left,
+            Self::Thru => 1.0,
+            Self::Right => right,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CrossfaderCurve;
+    use super::{CrossfaderCurve, CrossfaderSide};
+
+    #[test]
+    fn a_side_takes_the_gain_of_its_side_and_thru_passes() {
+        for curve in CrossfaderCurve::ALL {
+            for position in [0.0, 0.3, 0.5, 1.0] {
+                let gains = curve.gains(position);
+                assert_eq!(CrossfaderSide::Left.gain(gains), gains.0);
+                assert_eq!(CrossfaderSide::Right.gain(gains), gains.1);
+                assert_eq!(CrossfaderSide::Thru.gain(gains), 1.0);
+            }
+        }
+        for side in CrossfaderSide::ALL {
+            assert_eq!(CrossfaderSide::parse(side.name()), Ok(side));
+        }
+        assert!(CrossfaderSide::parse("a").is_err());
+    }
 
     #[test]
     fn every_curve_closes_the_far_side_at_the_ends() {

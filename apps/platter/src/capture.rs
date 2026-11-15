@@ -20,12 +20,14 @@ use crate::png;
 const SETTLE_FRAMES: u32 = 4;
 const GIVE_UP_FRAMES: u32 = 120;
 
-/// The states that can be captured, one per reference screen of M2.
-pub const STATES: [&str; 4] = [
+/// The states that can be captured: one per reference screen of M2, and the Mixer page of
+/// the preferences.
+pub const STATES: [&str; 5] = [
     "main",
     "startup",
     "preferences-audio",
     "preferences-general",
+    "preferences-mixer",
 ];
 
 fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
@@ -34,6 +36,7 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
         "startup" => Some((sample::startup(), None)),
         "preferences-audio" => Some((sample::playing(), Some(SettingsPage::Audio))),
         "preferences-general" => Some((sample::playing(), Some(SettingsPage::General))),
+        "preferences-mixer" => Some((sample::playing(), Some(SettingsPage::Mixer))),
         _ => None,
     }
 }

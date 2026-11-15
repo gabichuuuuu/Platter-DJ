@@ -37,6 +37,33 @@ pub struct Key {
     pub mode: Mode,
 }
 
+/// A key moved by a number of semitones that need not be whole: the nearest key and how far
+/// it is off.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transposed {
+    pub key: Key,
+    /// From -50 to +50.
+    pub cents: f64,
+}
+
+impl Key {
+    /// This key moved by `semitones`, the mode kept; `None` for a shift that is not a number.
+    pub fn transposed(self, semitones: f64) -> Option<Transposed> {
+        if !semitones.is_finite() {
+            return None;
+        }
+        let nearest = semitones.round();
+        let steps = (nearest % 12.0 + 12.0) % 12.0;
+        Some(Transposed {
+            key: Key {
+                tonic: (self.tonic % 12 + steps as u8) % 12,
+                mode: self.mode,
+            },
+            cents: (semitones - nearest) * 100.0,
+        })
+    }
+}
+
 pub(crate) fn detect(mono: &[f32], rate: f64) -> Option<Key> {
     let chroma = chroma(mono, rate)?;
     let mut scores: Vec<(Key, f64)> = (0..12u8)

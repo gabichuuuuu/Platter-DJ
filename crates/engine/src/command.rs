@@ -10,9 +10,10 @@ use std::fmt;
 use std::path::PathBuf;
 
 use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::Band;
 
+pub use crate::rt::MAX_KEY_SHIFT;
 use crate::rt::Output;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -202,6 +203,13 @@ pub enum Command {
         deck: DeckId,
         db: f64,
     },
+    /// Sets the gain of the channel to the autogain value of its track:
+    /// `docs/behavior/autogain.md`.
+    MixerGainRestore {
+        deck: DeckId,
+    },
+    /// Switches autogain on or off for both channels.
+    MixerAutogainToggle,
     /// Knob position `0.0..=1.0`: zero removes the band, the centre leaves it untouched.
     MixerEqSet {
         deck: DeckId,
@@ -247,6 +255,32 @@ pub enum Command {
     MixerCrossfaderCurveSet {
         curve: CrossfaderCurve,
     },
+    /// Puts the channel on a side of the crossfader, or past it.
+    MixerCrossfaderAssign {
+        deck: DeckId,
+        side: CrossfaderSide,
+    },
+    /// Moves the crossfader [`CROSSFADER_STEP`] of its travel towards a side.
+    MixerCrossfaderStep {
+        direction: CrossfaderDirection,
+    },
+    /// Moves the crossfader to an end by itself: `docs/behavior/mixer.md`.
+    MixerCrossfaderAutoFade {
+        direction: CrossfaderDirection,
+    },
+    /// How many beats of the master clock an automatic fade across the whole travel takes.
+    MixerCrossfaderFadeBeatsSet {
+        beats: f64,
+    },
+    /// Mixes inside Platter, or sends each deck to its own outputs:
+    /// `docs/behavior/external-mixer.md`.
+    MixerModeSet {
+        mode: MixerMode,
+    },
+    /// In external mode, lets the gain and the equaliser act on the decks, or not.
+    MixerExternalEqGainToggle,
+    /// In external mode, lets the master volume act on the decks, or not.
+    MixerExternalMasterVolumeToggle,
     MasterGainSet {
         db: f64,
     },
@@ -260,6 +294,35 @@ pub enum Command {
     /// Keeps the key of the track while its tempo changes, or stops doing so.
     DeckKeyLockToggle {
         deck: DeckId,
+    },
+    /// Turns the tick on each beat of the deck in the headphones on or off:
+    /// `docs/behavior/beatgrid.md`, Beat tick.
+    DeckBeatTickToggle {
+        deck: DeckId,
+    },
+    /// Moves the key of the deck by a semitone and turns key lock on:
+    /// `docs/behavior/keylock.md`, Transposition.
+    DeckKeyStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Sets the shift of the key in semitones, `-12..=12`, and turns key lock on.
+    DeckKeySet {
+        deck: DeckId,
+        semitones: f64,
+    },
+    /// Turns key lock on with the key the deck has at its current speed.
+    DeckKeyPersist {
+        deck: DeckId,
+    },
+    /// Turns flux on or off: `docs/behavior/flux.md`.
+    DeckFluxToggle {
+        deck: DeckId,
+    },
+    /// Plays the track backwards while held: `docs/behavior/flux.md`.
+    DeckReverse {
+        deck: DeckId,
+        pressed: bool,
     },
     /// Makes the deck the tempo master, while the mode of the clock is not automatic.
     DeckMasterSet {
@@ -343,6 +406,13 @@ pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
 const MIN_GAIN_DB: f64 = -90.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
+const SIDES: &[&str] = &["left", "thru", "right"];
+const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
+const MIXER_MODES: &[&str] = &["internal", "external"];
+/// The part of the travel of the crossfader one step moves it.
+pub const CROSSFADER_STEP: f64 = 0.1;
+pub const MIN_FADE_BEATS: f64 = 1.0;
+pub const MAX_FADE_BEATS: f64 = 64.0;
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
 const BPM_SCALES: &[&str] = &["double", "half"];
@@ -403,6 +473,43 @@ impl Direction {
         match self {
             Self::Back => -1.0,
             Self::Forward => 1.0,
+        }
+    }
+}
+
+/// Which end of the crossfader a step or an automatic fade goes towards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossfaderDirection {
+    Left,
+    Right,
+}
+
+impl CrossfaderDirection {
+    /// The position of the crossfader at that end.
+    pub fn end(self) -> f64 {
+        match self {
+            Self::Left => 0.0,
+            Self::Right => 1.0,
+        }
+    }
+}
+
+/// Whether Platter mixes the decks or a hardware mixer does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MixerMode {
+    #[default]
+    Internal,
+    /// Each deck goes to its own pair of outputs.
+    External,
+}
+
+impl MixerMode {
+    pub const ALL: [Self; 2] = [Self::Internal, Self::External];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::External => "external",
         }
     }
 }
@@ -784,6 +891,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK, number("position", -1.0, 1.0)],
     },
     CommandSpec {
+        id: "mixer.gain.restore",
+        label: "Restore autogain",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "mixer.autogain.toggle",
+        label: "Autogain",
+        params: &[],
+    },
+    CommandSpec {
         id: "mixer.cue.toggle",
         label: "Pre-listen",
         params: &[DECK],
@@ -817,6 +934,56 @@ pub const SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "mixer.mode.set",
+        label: "Mixer mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(MIXER_MODES),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.external.eq_gain.toggle",
+        label: "Gain and equaliser in external mode",
+        params: &[],
+    },
+    CommandSpec {
+        id: "mixer.external.master_volume.toggle",
+        label: "Master volume in external mode",
+        params: &[],
+    },
+    CommandSpec {
+        id: "mixer.crossfader.step",
+        label: "Step the crossfader",
+        params: &[ParamSpec {
+            name: "direction",
+            kind: ParamKind::Choice(CROSSFADER_DIRECTIONS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.crossfader.auto_fade",
+        label: "Auto fade",
+        params: &[ParamSpec {
+            name: "direction",
+            kind: ParamKind::Choice(CROSSFADER_DIRECTIONS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.crossfader.fade_beats.set",
+        label: "Set the length of an auto fade",
+        params: &[number("beats", MIN_FADE_BEATS, MAX_FADE_BEATS)],
+    },
+    CommandSpec {
+        id: "mixer.xfader_assign.set",
+        label: "Assign to crossfader side",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "side",
+                kind: ParamKind::Choice(SIDES),
+            },
+        ],
+    },
+    CommandSpec {
         id: "master.gain.set",
         label: "Set main volume",
         params: &[number("db", MIN_GAIN_DB, MAX_MASTER_GAIN_DB)],
@@ -838,6 +1005,36 @@ pub const SPECS: &[CommandSpec] = &[
         id: "deck.keylock.toggle",
         label: "Key lock",
         params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.tick.toggle",
+        label: "Beat tick",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.key.step",
+        label: "Transpose by a semitone",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.key.set",
+        label: "Set key",
+        params: &[DECK, number("semitones", -MAX_KEY_SHIFT, MAX_KEY_SHIFT)],
+    },
+    CommandSpec {
+        id: "deck.key.persist",
+        label: "Lock the current key",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.flux.toggle",
+        label: "Flux",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.reverse",
+        label: "Reverse",
+        params: &[DECK, BUTTON_ACTION],
     },
     CommandSpec {
         id: "deck.master.set",
@@ -1038,6 +1235,28 @@ impl Reader<'_> {
         }
     }
 
+    fn crossfader_direction(&self) -> Result<CrossfaderDirection, CommandError> {
+        match self.text("direction")? {
+            "left" => Ok(CrossfaderDirection::Left),
+            "right" => Ok(CrossfaderDirection::Right),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "left, right",
+            })),
+        }
+    }
+
+    fn mixer_mode(&self) -> Result<MixerMode, CommandError> {
+        let text = self.text("mode")?;
+        MixerMode::ALL
+            .into_iter()
+            .find(|mode| mode.name() == text)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "internal, external",
+            }))
+    }
+
     fn size_step(&self) -> Result<SizeStep, CommandError> {
         match self.text("direction")? {
             "down" => Ok(SizeStep::Down),
@@ -1212,6 +1431,21 @@ impl Command {
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             "deck.keylock.toggle" => Self::DeckKeyLockToggle { deck: read.deck()? },
+            "deck.tick.toggle" => Self::DeckBeatTickToggle { deck: read.deck()? },
+            "deck.key.step" => Self::DeckKeyStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.key.set" => Self::DeckKeySet {
+                deck: read.deck()?,
+                semitones: read.number("semitones")?,
+            },
+            "deck.key.persist" => Self::DeckKeyPersist { deck: read.deck()? },
+            "deck.flux.toggle" => Self::DeckFluxToggle { deck: read.deck()? },
+            "deck.reverse" => Self::DeckReverse {
+                deck: read.deck()?,
+                pressed: read.pressed()?,
+            },
             sync if sync.starts_with("clock.")
                 || matches!(
                     sync,
@@ -1335,6 +1569,8 @@ impl Command {
                 position: read.number("position")?,
             },
             "mixer.cue.toggle" => Self::MixerCueToggle { deck: read.deck()? },
+            "mixer.gain.restore" => Self::MixerGainRestore { deck: read.deck()? },
+            "mixer.autogain.toggle" => Self::MixerAutogainToggle,
             "mixer.cue.mix.set" => Self::MixerCueMixSet {
                 position: read.number("position")?,
             },
@@ -1362,6 +1598,24 @@ impl Command {
             },
             "mixer.crossfader.curve.set" => Self::MixerCrossfaderCurveSet {
                 curve: CrossfaderCurve::parse(read.text("curve")?)?,
+            },
+            "mixer.crossfader.step" => Self::MixerCrossfaderStep {
+                direction: read.crossfader_direction()?,
+            },
+            "mixer.crossfader.auto_fade" => Self::MixerCrossfaderAutoFade {
+                direction: read.crossfader_direction()?,
+            },
+            "mixer.crossfader.fade_beats.set" => Self::MixerCrossfaderFadeBeatsSet {
+                beats: read.number("beats")?,
+            },
+            "mixer.mode.set" => Self::MixerModeSet {
+                mode: read.mixer_mode()?,
+            },
+            "mixer.external.eq_gain.toggle" => Self::MixerExternalEqGainToggle,
+            "mixer.external.master_volume.toggle" => Self::MixerExternalMasterVolumeToggle,
+            "mixer.xfader_assign.set" => Self::MixerCrossfaderAssign {
+                deck: read.deck()?,
+                side: CrossfaderSide::parse(read.text("side")?)?,
             },
             "master.gain.set" => Self::MasterGainSet {
                 db: read.number("db")?,
@@ -1421,15 +1675,30 @@ impl Command {
             Self::MixerFilterSet { .. } => "mixer.filter.set",
             Self::MixerPanSet { .. } => "mixer.pan.set",
             Self::MixerCueToggle { .. } => "mixer.cue.toggle",
+            Self::MixerGainRestore { .. } => "mixer.gain.restore",
+            Self::MixerAutogainToggle => "mixer.autogain.toggle",
             Self::MixerCueMixSet { .. } => "mixer.cue.mix.set",
             Self::MixerCueVolumeSet { .. } => "mixer.cue.volume.set",
             Self::MixerFaderSet { .. } => "mixer.fader.set",
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
+            Self::MixerCrossfaderAssign { .. } => "mixer.xfader_assign.set",
+            Self::MixerCrossfaderStep { .. } => "mixer.crossfader.step",
+            Self::MixerCrossfaderAutoFade { .. } => "mixer.crossfader.auto_fade",
+            Self::MixerCrossfaderFadeBeatsSet { .. } => "mixer.crossfader.fade_beats.set",
+            Self::MixerModeSet { .. } => "mixer.mode.set",
+            Self::MixerExternalEqGainToggle => "mixer.external.eq_gain.toggle",
+            Self::MixerExternalMasterVolumeToggle => "mixer.external.master_volume.toggle",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
+            Self::DeckBeatTickToggle { .. } => "deck.tick.toggle",
+            Self::DeckKeyStep { .. } => "deck.key.step",
+            Self::DeckKeySet { .. } => "deck.key.set",
+            Self::DeckKeyPersist { .. } => "deck.key.persist",
+            Self::DeckFluxToggle { .. } => "deck.flux.toggle",
+            Self::DeckReverse { .. } => "deck.reverse",
             Self::DeckMasterSet { .. } => "deck.master.set",
             Self::ClockModeSet { .. } => "clock.mode.set",
             Self::ClockTempoSet { .. } => "clock.tempo.set",

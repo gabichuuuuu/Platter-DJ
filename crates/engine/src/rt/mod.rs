@@ -20,6 +20,7 @@ mod metronome;
 mod processor;
 mod shared;
 mod strip;
+mod tick;
 mod tone;
 
 use std::sync::Arc;
@@ -28,7 +29,7 @@ use platter_core::{
     BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate,
 };
 use platter_dsp::Frame;
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::Band;
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -39,6 +40,9 @@ pub use shared::{DeckShared, MasterChoice, Shared};
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
 pub const COMMAND_CAPACITY: usize = 256;
+
+/// The most the key of a deck moves either way, in semitones.
+pub const MAX_KEY_SHIFT: f64 = 12.0;
 
 /// A track as a deck holds it: its audio and the stretch key lock plays it with, when one
 /// could be built for it.
@@ -211,8 +215,24 @@ pub enum RtCommand {
     CrossfaderCurve {
         curve: CrossfaderCurve,
     },
+    CrossfaderAssign {
+        deck: DeckId,
+        side: CrossfaderSide,
+    },
+    /// Moves the crossfader to `to` by itself, the whole travel in `beats` of the clock.
+    CrossfaderFade {
+        to: f32,
+        beats: f32,
+    },
     MasterGain {
         linear: f32,
+    },
+    /// Sends each deck to its own outputs instead of mixing them, and which controls of the
+    /// mixer still act then.
+    ExternalMixer {
+        on: bool,
+        eq_gain: bool,
+        master_volume: bool,
     },
     /// Balance in the headphones: `0.0` is the pre-listened decks alone, `1.0` the master.
     HeadphoneMix {
@@ -229,6 +249,30 @@ pub enum RtCommand {
     },
     KeyLockToggle {
         deck: DeckId,
+    },
+    BeatTickToggle {
+        deck: DeckId,
+    },
+    /// Moves the key by a semitone, up or down, and turns key lock on.
+    KeyStep {
+        deck: DeckId,
+        up: bool,
+    },
+    /// Sets the shift of the key in semitones and turns key lock on.
+    KeySet {
+        deck: DeckId,
+        semitones: f64,
+    },
+    /// Turns key lock on with the key of the current speed.
+    KeyPersist {
+        deck: DeckId,
+    },
+    FluxToggle {
+        deck: DeckId,
+    },
+    Reverse {
+        deck: DeckId,
+        pressed: bool,
     },
     /// Makes a deck the tempo master, while the choice is not automatic.
     Master {

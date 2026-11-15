@@ -18,6 +18,8 @@ pub(super) struct StripFrame {
     pub(super) post: Frame,
     /// Before the fader: what pre-listening hears.
     pub(super) pre: Frame,
+    /// After the gain and the equaliser only: what external mixer mode can send.
+    pub(super) equalised: Frame,
 }
 
 pub(super) struct ChannelStrip {
@@ -105,11 +107,20 @@ impl ChannelStrip {
             pre[0] * fader * self.balance[0].advance(),
             pre[1] * fader * self.balance[1].advance(),
         ];
-        self.meter.feed(post);
-        StripFrame { post, pre }
+        StripFrame {
+            post,
+            pre,
+            equalised,
+        }
     }
 
-    /// Post-fader peak level of the left and the right side.
+    /// Feeds the meter with what the channel sends out: the processor knows which signal
+    /// that is.
+    pub(super) fn feed_meter(&mut self, frame: Frame) {
+        self.meter.feed(frame);
+    }
+
+    /// Peak level of the left and the right side of what the channel sends out.
     pub(super) fn levels(&self) -> [f32; 2] {
         self.meter.levels()
     }

@@ -10,18 +10,20 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
+use platter_analysis::Transposed;
 use platter_core::{
     BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
-    ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
-    MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
-    MAX_SEEK_SECONDS, MoveMode, MoveSize, SizeStep, SyncMode,
+    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
+    MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS,
+    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize,
+    SizeStep, SyncMode,
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
@@ -137,10 +139,24 @@ impl Default for DeckControls {
 pub struct MixerControls {
     pub crossfader: f64,
     pub crossfader_curve: CrossfaderCurve,
+    /// The side of the crossfader each channel is on, deck A first.
+    pub crossfader_sides: [CrossfaderSide; 2],
+    /// Beats of the master clock an automatic fade across the whole travel takes.
+    pub fade_beats: f64,
     pub master_gain_db: f64,
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
     pub headphone_gain_db: f64,
+    /// The gain of a channel is set from the loudness of each track analysed:
+    /// `docs/behavior/autogain.md`.
+    pub autogain: bool,
+    /// Platter mixes, or sends each deck to its own outputs:
+    /// `docs/behavior/external-mixer.md`.
+    pub mode: MixerMode,
+    /// In external mode, the gain and the equaliser act on the decks.
+    pub external_eq_gain: bool,
+    /// In external mode, the master volume acts on the decks.
+    pub external_master_volume: bool,
 }
 
 impl Default for MixerControls {
@@ -148,9 +164,15 @@ impl Default for MixerControls {
         Self {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
+            crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
+            fade_beats: 8.0,
             master_gain_db: 0.0,
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
+            autogain: true,
+            mode: MixerMode::Internal,
+            external_eq_gain: false,
+            external_master_volume: false,
         }
     }
 }
@@ -199,6 +221,8 @@ pub struct DeckSnapshot {
     pub analysing: bool,
     /// What the analysis of the loaded track found, once it has finished.
     pub analysis: Option<TrackAnalysis>,
+    /// The gain autogain gives the loaded track, once the analysis has found its loudness.
+    pub autogain_db: Option<f64>,
     pub playing: bool,
     pub position_seconds: f64,
     pub cue_seconds: f64,
@@ -215,6 +239,19 @@ pub struct DeckSnapshot {
     /// The deck keeps the key of its track while its tempo changes:
     /// `docs/behavior/keylock.md`.
     pub key_lock: bool,
+    /// The deck ticks on each beat in the headphones: `docs/behavior/beatgrid.md`.
+    pub beat_tick: bool,
+    /// Shift of the key in semitones, from -12 to +12.
+    pub key_shift: f64,
+    /// The key the analysis found, moved by the pitch the deck plays: the shift while key
+    /// lock acts, the pitch of the speed otherwise.
+    pub resulting_key: Option<Transposed>,
+    /// Flux is on: `docs/behavior/flux.md`.
+    pub flux: bool,
+    /// Reverse is held.
+    pub reverse: bool,
+    /// Where the timeline of flux is, in seconds, while the deck has one.
+    pub timeline_seconds: Option<f64>,
     /// Speed the deck is set to, as a ratio of the original. It is `controls.tempo_ratio`
     /// until sync sets it.
     pub speed: f64,
@@ -231,6 +268,7 @@ impl Default for DeckSnapshot {
             loading: false,
             analysing: false,
             analysis: None,
+            autogain_db: None,
             playing: false,
             position_seconds: 0.0,
             cue_seconds: 0.0,
@@ -241,6 +279,12 @@ impl Default for DeckSnapshot {
             levels: [0.0; 2],
             sync: false,
             key_lock: false,
+            beat_tick: false,
+            key_shift: 0.0,
+            resulting_key: None,
+            flux: false,
+            reverse: false,
+            timeline_seconds: None,
             speed: 1.0,
             phase: None,
         }
@@ -268,6 +312,8 @@ struct DeckControl {
     analysis: Option<TrackAnalysis>,
     /// The result of the analysis, waiting for room in the queue to the processor.
     pending_analysis: Option<GridEdit>,
+    /// A gain in decibels autogain sets, waiting for room in the queue.
+    pending_gain: Option<f64>,
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     /// The generation of the track the deck holds, so the analysis of a track that is no
@@ -315,6 +361,9 @@ pub struct Engine {
     quantize: bool,
     metronome: bool,
     clock_tap: TapTempo,
+    /// An automatic fade was started and nothing has set the crossfader since: the
+    /// processor knows where it is.
+    crossfading: bool,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
     /// Load workers that have not sent their last report.
@@ -346,6 +395,7 @@ impl Engine {
             quantize: false,
             metronome: false,
             clock_tap: TapTempo::default(),
+            crossfading: false,
             swaps_in_flight: 0,
             loads_running: 0,
             finished_loads,
@@ -371,10 +421,15 @@ impl Engine {
             }
             engine.decks[deck.index()].controls = controls;
         }
-        for command in previous.mixer.as_commands() {
+        // A running fade stops where the crossfader is.
+        let mixer = MixerControls {
+            crossfader: previous.crossfader(),
+            ..previous.mixer.clone()
+        };
+        for command in mixer.as_commands() {
             let _ = engine.send(command);
         }
-        engine.mixer = previous.mixer.clone();
+        engine.mixer = mixer;
         let published = &previous.ends.shared;
         let mut clock = vec![
             RtCommand::ClockAuto {
@@ -405,6 +460,20 @@ impl Engine {
             .into_iter()
             .filter(|deck| published.decks[deck.index()].key_lock.get());
         clock.extend(locked.map(|deck| RtCommand::KeyLockToggle { deck }));
+        let ticking = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].beat_tick.get());
+        clock.extend(ticking.map(|deck| RtCommand::BeatTickToggle { deck }));
+        // After key lock, which a shift turns on.
+        let shifted = DeckId::ALL.into_iter().filter_map(|deck| {
+            let semitones = published.decks[deck.index()].key_shift.get();
+            (semitones != 0.0).then_some(RtCommand::KeySet { deck, semitones })
+        });
+        clock.extend(shifted);
+        let fluxed = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].flux.get());
+        clock.extend(fluxed.map(|deck| RtCommand::FluxToggle { deck }));
         for command in clock {
             let _ = engine.send(command);
         }
@@ -427,6 +496,9 @@ impl Engine {
             Command::DeckCueSet { deck } => self.send(RtCommand::CueSet { deck }),
             Command::DeckCueGoto { deck } => self.send(RtCommand::CueGoto { deck }),
             Command::DeckCue { deck, pressed } => self.send(RtCommand::CueButton { deck, pressed }),
+            Command::DeckReverse { deck, pressed } => {
+                self.send(RtCommand::Reverse { deck, pressed })
+            }
             Command::DeckCup { deck, pressed } => self.send(RtCommand::CupButton { deck, pressed }),
             Command::DeckSeek { deck, seconds } => {
                 let seconds = ValueError::check("seconds", seconds, 0.0, MAX_SEEK_SECONDS)?;
@@ -611,6 +683,22 @@ impl Engine {
         let command = match command {
             Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
             Command::DeckKeyLockToggle { deck } => RtCommand::KeyLockToggle { deck },
+            Command::DeckBeatTickToggle { deck } => RtCommand::BeatTickToggle { deck },
+            Command::DeckKeyStep { deck, direction } => RtCommand::KeyStep {
+                deck,
+                up: direction == SizeStep::Up,
+            },
+            Command::DeckKeySet { deck, semitones } => RtCommand::KeySet {
+                deck,
+                semitones: ValueError::check(
+                    "semitones",
+                    semitones,
+                    -MAX_KEY_SHIFT,
+                    MAX_KEY_SHIFT,
+                )?,
+            },
+            Command::DeckKeyPersist { deck } => RtCommand::KeyPersist { deck },
+            Command::DeckFluxToggle { deck } => RtCommand::FluxToggle { deck },
             Command::DeckMasterSet { deck } => RtCommand::Master { deck },
             Command::ClockModeSet { mode } => {
                 let on = mode == ClockMode::Auto;
@@ -693,9 +781,15 @@ impl Engine {
     fn dispatch_channel(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
             Command::MixerGainSet { deck, db } => {
-                let linear = gain_up_to(db, MAX_CHANNEL_GAIN_DB)?;
-                self.send(RtCommand::Gain { deck, linear })?;
-                self.decks[deck.index()].controls.gain_db = db.max(Gain::MIN_DB);
+                self.set_gain(deck, db)?;
+                // An autogain still waiting for room in the queue would undo the knob.
+                self.decks[deck.index()].pending_gain = None;
+            }
+            Command::MixerGainRestore { deck } => {
+                let state = &self.decks[deck.index()];
+                if let Some(db) = state.analysis.and_then(|analysis| analysis.autogain_db()) {
+                    self.set_gain(deck, db)?;
+                }
             }
             Command::MixerEqSet {
                 deck,
@@ -748,14 +842,48 @@ impl Engine {
         match command {
             Command::MixerCrossfaderSet { position } => {
                 let position = ValueError::check("position", position, 0.0, 1.0)?;
-                self.send(RtCommand::Crossfader {
-                    position: position as f32,
+                self.set_crossfader(position)?;
+            }
+            Command::MixerCrossfaderStep { direction } => {
+                let towards = direction.end();
+                let from = self.crossfader();
+                let position = if towards > from {
+                    (from + CROSSFADER_STEP).min(towards)
+                } else {
+                    (from - CROSSFADER_STEP).max(towards)
+                };
+                self.set_crossfader(position)?;
+            }
+            Command::MixerCrossfaderAutoFade { direction } => {
+                self.send(RtCommand::CrossfaderFade {
+                    to: direction.end() as f32,
+                    beats: self.mixer.fade_beats as f32,
                 })?;
-                self.mixer.crossfader = position;
+                self.crossfading = true;
+            }
+            Command::MixerCrossfaderFadeBeatsSet { beats } => {
+                let beats = ValueError::check("beats", beats, MIN_FADE_BEATS, MAX_FADE_BEATS)?;
+                self.mixer.fade_beats = beats;
             }
             Command::MixerCrossfaderCurveSet { curve } => {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
                 self.mixer.crossfader_curve = curve;
+            }
+            Command::MixerModeSet { mode } => self.set_external(MixerControls {
+                mode,
+                ..self.mixer.clone()
+            })?,
+            Command::MixerExternalEqGainToggle => self.set_external(MixerControls {
+                external_eq_gain: !self.mixer.external_eq_gain,
+                ..self.mixer.clone()
+            })?,
+            Command::MixerExternalMasterVolumeToggle => self.set_external(MixerControls {
+                external_master_volume: !self.mixer.external_master_volume,
+                ..self.mixer.clone()
+            })?,
+            Command::MixerCrossfaderAssign { deck, side } => {
+                self.send(RtCommand::CrossfaderAssign { deck, side })?;
+                self.mixer.crossfader_sides[deck.index()] = side;
             }
             Command::MixerCueMixSet { position } => {
                 let position = ValueError::check("position", position, 0.0, 1.0)?;
@@ -775,9 +903,52 @@ impl Engine {
                 self.mixer.master_gain_db = db.max(Gain::MIN_DB);
             }
             Command::MasterTestTone { output } => self.send(RtCommand::TestTone { output })?,
+            Command::MixerAutogainToggle => {
+                let on = !self.mixer.autogain;
+                self.mixer.autogain = on;
+                for state in &mut self.decks {
+                    state.pending_gain = state
+                        .analysis
+                        .filter(|_| on)
+                        .and_then(|analysis| analysis.autogain_db());
+                }
+                self.send_pending_analyses();
+            }
             // Every other command is handled before this point.
             _ => {}
         }
+        Ok(())
+    }
+
+    /// Sends the external mode and its options of `mixer`, and keeps them once sent.
+    fn set_external(&mut self, mixer: MixerControls) -> Result<(), EngineError> {
+        self.send(mixer.external())?;
+        self.mixer = mixer;
+        Ok(())
+    }
+
+    fn set_crossfader(&mut self, position: f64) -> Result<(), EngineError> {
+        self.send(RtCommand::Crossfader {
+            position: position as f32,
+        })?;
+        self.mixer.crossfader = position;
+        self.crossfading = false;
+        Ok(())
+    }
+
+    /// Where the crossfader is: during an automatic fade, as the processor last reported.
+    fn crossfader(&self) -> f64 {
+        if self.crossfading {
+            f64::from(self.ends.shared.crossfader.get())
+        } else {
+            self.mixer.crossfader
+        }
+    }
+
+    fn set_gain(&mut self, deck: DeckId, db: f64) -> Result<(), EngineError> {
+        let linear = gain_up_to(db, MAX_CHANNEL_GAIN_DB)?;
+        self.send(RtCommand::Gain { deck, linear })?;
+        self.decks[deck.index()].controls.gain_db = db.max(Gain::MIN_DB);
         Ok(())
     }
 
@@ -949,6 +1120,9 @@ impl Engine {
             bpm: tempo.bpm,
             first_beat: tempo.first_beat,
         });
+        if self.mixer.autogain {
+            state.pending_gain = analysis.autogain_db();
+        }
         self.send_pending_analyses();
     }
 
@@ -960,6 +1134,11 @@ impl Engine {
                 && self.send(RtCommand::Grid { deck, edit }).is_ok()
             {
                 self.decks[deck.index()].pending_analysis = None;
+            }
+            if let Some(db) = self.decks[deck.index()].pending_gain
+                && self.set_gain(deck, db).is_ok()
+            {
+                self.decks[deck.index()].pending_gain = None;
             }
         }
     }
@@ -974,6 +1153,7 @@ impl Engine {
                 loading: control.loading,
                 analysing: control.analysing,
                 analysis: control.analysis,
+                autogain_db: control.analysis.and_then(|analysis| analysis.autogain_db()),
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
@@ -984,13 +1164,26 @@ impl Engine {
                 levels: [published.levels[0].get(), published.levels[1].get()],
                 sync: published.sync.get(),
                 key_lock: published.key_lock.get(),
+                beat_tick: published.beat_tick.get(),
+                key_shift: published.key_shift.get(),
+                resulting_key: control
+                    .analysis
+                    .and_then(|analysis| analysis.key)
+                    .and_then(|key| key.transposed(published.pitch.get())),
+                flux: published.flux.get(),
+                reverse: published.reverse.get(),
+                timeline_seconds: Some(published.timeline.get())
+                    .filter(|seconds| seconds.is_finite()),
                 speed: published.speed.get(),
                 phase: Some(published.phase.get()).filter(|phase| phase.is_finite()),
             }
         };
         Snapshot {
             decks: [deck(DeckId::A), deck(DeckId::B)],
-            mixer: self.mixer.clone(),
+            mixer: MixerControls {
+                crossfader: self.crossfader(),
+                ..self.mixer.clone()
+            },
             clock: ClockSnapshot {
                 auto: self.clock_auto,
                 sync_mode: self.sync_mode,
@@ -1052,9 +1245,23 @@ impl DeckControls {
 }
 
 impl MixerControls {
-    fn as_commands(&self) -> [RtCommand; 5] {
+    fn external(&self) -> RtCommand {
+        RtCommand::ExternalMixer {
+            on: self.mode == MixerMode::External,
+            eq_gain: self.external_eq_gain,
+            master_volume: self.external_master_volume,
+        }
+    }
+
+    fn as_commands(&self) -> [RtCommand; 8] {
         let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
+        let assign = |deck: DeckId| RtCommand::CrossfaderAssign {
+            deck,
+            side: self.crossfader_sides[deck.index()],
+        };
         [
+            assign(DeckId::A),
+            assign(DeckId::B),
             RtCommand::Crossfader {
                 position: self.crossfader as f32,
             },
@@ -1070,6 +1277,7 @@ impl MixerControls {
             RtCommand::HeadphoneGain {
                 linear: linear(self.headphone_gain_db),
             },
+            self.external(),
         ]
     }
 }
@@ -1097,6 +1305,7 @@ impl DeckControl {
         self.analysing = false;
         self.analysis = None;
         self.pending_analysis = None;
+        self.pending_gain = None;
     }
 }
 

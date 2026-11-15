@@ -67,6 +67,8 @@ pub struct Locked {
 
 pub struct KeyLock {
     on: bool,
+    /// Pitch the stretch plays, as a ratio of the original: the shift of the key.
+    pitch: f64,
     stretch: Option<Stretcher>,
     state: State,
     /// Where the deck is on the next frame unless something moves it.
@@ -85,6 +87,7 @@ impl KeyLock {
     pub fn new(engine_rate: f64) -> Self {
         Self {
             on: false,
+            pitch: 1.0,
             stretch: None,
             state: State::Off,
             expected: 0.0,
@@ -113,6 +116,18 @@ impl KeyLock {
         self.on
     }
 
+    /// Key lock is on with a stretch that plays at `speed`.
+    pub fn acts_at(&self, speed: f64) -> bool {
+        self.on && self.stretch.is_some() && (MIN_TEMPO..=MAX_TEMPO).contains(&speed)
+    }
+
+    /// Sets the pitch the stretch plays, as a ratio of the original.
+    pub fn set_pitch(&mut self, pitch: f64) {
+        if pitch.is_finite() && pitch > 0.0 {
+            self.pitch = pitch;
+        }
+    }
+
     pub fn toggle(&mut self) {
         self.on = !self.on;
         self.state = match (self.on, self.state) {
@@ -139,6 +154,26 @@ impl KeyLock {
         };
     }
 
+    /// The deck turns to play backwards, where the stretch cannot follow. As at a jump, the
+    /// stretch goes on a little where it was, for the deck to fade out what was heard, and
+    /// starts again when the deck plays forward.
+    pub fn turn_back(&mut self, track: &[f32], speed: f64) {
+        self.tail_length = 0;
+        self.tail_taken = 0;
+        if let (Some(stretch), State::Playing { .. }) = (self.stretch.as_mut(), self.state)
+            && (MIN_TEMPO..=MAX_TEMPO).contains(&speed)
+        {
+            while self.tail_length < self.tail_frames {
+                let Some((frame, _)) = stretch.0.next(track, speed, self.pitch) else {
+                    break;
+                };
+                self.tail[self.tail_length] = frame;
+                self.tail_length += 1;
+            }
+        }
+        self.silence();
+    }
+
     /// The frame key lock plays for a deck at `position` that moves `step` frames of its
     /// track per frame of output at `speed`; `None` where the plain read plays alone.
     pub fn play(&mut self, track: &[f32], position: f64, step: f64, speed: f64) -> Option<Locked> {
@@ -158,7 +193,7 @@ impl KeyLock {
         if jumped && let State::Playing { .. } = self.state {
             // The stretch goes on a little where it was, so the deck fades out what was heard.
             while self.tail_length < self.tail_frames {
-                let Some((frame, _)) = stretch.next(track, speed) else {
+                let Some((frame, _)) = stretch.next(track, speed, self.pitch) else {
                     break;
                 };
                 self.tail[self.tail_length] = frame;
@@ -173,7 +208,7 @@ impl KeyLock {
         }
         if self.state == State::Waiting {
             let target = position + self.ahead_frames * step;
-            stretch.seek(target);
+            stretch.seek(target, speed, self.pitch);
             self.state = State::Preparing {
                 target,
                 count: 0,
@@ -213,7 +248,7 @@ impl KeyLock {
                 return None;
             }
         };
-        let Some((frame, at)) = stretch.next(track, speed) else {
+        let Some((frame, at)) = stretch.next(track, speed, self.pitch) else {
             self.state = if self.on { State::Waiting } else { State::Off };
             self.expected = position + step;
             return None;
@@ -250,7 +285,7 @@ mod tests {
     }
 
     impl Stretch for Fake {
-        fn seek(&mut self, frame: f64) {
+        fn seek(&mut self, frame: f64, _: f64, _: f64) {
             self.position = frame;
             self.done = 0;
             self.seeks.fetch_add(1, Ordering::Relaxed);
@@ -259,7 +294,7 @@ mod tests {
             self.done += 1;
             self.done >= self.work
         }
-        fn next(&mut self, track: &[f32], tempo: f64) -> Option<(Frame, f64)> {
+        fn next(&mut self, track: &[f32], tempo: f64, _: f64) -> Option<(Frame, f64)> {
             if self.done < self.work {
                 return None;
             }

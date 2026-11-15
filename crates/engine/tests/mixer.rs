@@ -6,7 +6,9 @@ mod common;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
-use platter_engine::{Band, Command, CrossfaderCurve, Engine, FADER_UNITY, TEMPO_RANGES};
+use platter_engine::{
+    Band, Command, CrossfaderCurve, CrossfaderSide, Engine, FADER_UNITY, TEMPO_RANGES,
+};
 use platter_testkit::measure::{db, max_step, peak, rms, sine_fit};
 use platter_testkit::signal::channel;
 
@@ -26,7 +28,7 @@ fn playing_deck_a(name: &str, hz: f64) -> Rig {
 }
 
 #[test]
-fn the_default_mixer_passes_the_track_at_unity() {
+fn the_default_mixer_without_autogain_passes_the_track_at_unity() {
     let mut rig = playing_deck_a("mixer-unity", 1_000.0);
     assert!((settled_amplitude(&mut rig, 1_000.0) - 0.5).abs() < 0.003);
 }
@@ -389,9 +391,94 @@ fn the_snapshot_carries_where_every_control_stands() {
 }
 
 #[test]
+fn a_channel_is_heard_on_the_side_it_is_assigned_to() {
+    let mut rig = Rig::new();
+    rig.load(A, sine_file("mixer-assign-a", 440.0, 10.0, 0.5, RATE));
+    rig.load(B, sine_file("mixer-assign-b", 1_000.0, 10.0, 0.5, RATE));
+    rig.send(Command::DeckPlay { deck: A });
+    rig.send(Command::DeckPlay { deck: B });
+    let amplitudes = |rig: &mut Rig| {
+        rig.run(0.2);
+        let output = rig.run(0.5);
+        (
+            sine_fit(&output, 440.0, f64::from(RATE)).amplitude,
+            sine_fit(&output, 1_000.0, f64::from(RATE)).amplitude,
+        )
+    };
+    assert_eq!(
+        rig.engine.snapshot().mixer.crossfader_sides,
+        [CrossfaderSide::Left, CrossfaderSide::Right]
+    );
+
+    // Swapped: deck A on the right, deck B on the left.
+    let assign = |rig: &mut Rig, deck, side| {
+        rig.send(Command::MixerCrossfaderAssign { deck, side });
+    };
+    assign(&mut rig, A, CrossfaderSide::Right);
+    assign(&mut rig, B, CrossfaderSide::Left);
+    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    let (a, b) = amplitudes(&mut rig);
+    assert!(a < 1e-4 && (b - 0.5).abs() < 0.003, "{a} {b}");
+
+    // Both on the left: the crossfader fades them together.
+    assign(&mut rig, A, CrossfaderSide::Left);
+    let (a, b) = amplitudes(&mut rig);
+    assert!(
+        (a - 0.5).abs() < 0.003 && (b - 0.5).abs() < 0.003,
+        "{a} {b}"
+    );
+    rig.send(Command::MixerCrossfaderSet { position: 1.0 });
+    let (a, b) = amplitudes(&mut rig);
+    assert!(a < 1e-4 && b < 1e-4, "{a} {b}");
+
+    // Thru: deck A at full level wherever the crossfader is and whatever the curve.
+    assign(&mut rig, A, CrossfaderSide::Thru);
+    let (a, b) = amplitudes(&mut rig);
+    assert!((a - 0.5).abs() < 0.003 && b < 1e-4, "{a} {b}");
+    rig.send(Command::MixerCrossfaderCurveSet {
+        curve: CrossfaderCurve::Sharp,
+    });
+    rig.send(Command::MixerCrossfaderSet { position: 0.5 });
+    assert_eq!(
+        rig.engine.snapshot().mixer.crossfader_sides,
+        [CrossfaderSide::Thru, CrossfaderSide::Left]
+    );
+}
+
+#[test]
+fn a_channel_on_thru_passes_bit_for_bit() {
+    let path = sine_file("mixer-thru", 440.0, 3.0, 0.5, RATE);
+    let render = |thru: bool, position: f64| {
+        let mut rig = Rig::with_deck_a(path.clone());
+        if thru {
+            rig.send(Command::MixerCrossfaderAssign {
+                deck: A,
+                side: CrossfaderSide::Thru,
+            });
+        }
+        rig.send(Command::MixerCrossfaderSet { position });
+        rig.send(Command::DeckPlay { deck: A });
+        rig.run(0.2);
+        rig.run_stereo(0.5)
+    };
+    // Fully on its side, the default left channel passes at unity: thru does the same
+    // with the crossfader anywhere.
+    let reference = render(false, 0.0);
+    for position in [0.0, 0.5, 1.0] {
+        assert!(render(true, position) == reference, "at {position}");
+    }
+}
+
+#[test]
 fn an_engine_at_another_rate_keeps_the_controls() {
     let mut rig = Rig::new();
-    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    // Deck A on the right side, with the crossfader there: it is heard only if the new
+    // processor keeps the assignment.
+    rig.send(Command::MixerCrossfaderAssign {
+        deck: A,
+        side: CrossfaderSide::Right,
+    });
+    rig.send(Command::MixerCrossfaderSet { position: 1.0 });
     rig.send(Command::MixerGainSet { deck: A, db: -6.0 });
     rig.send(Command::MixerEqKillToggle {
         deck: A,

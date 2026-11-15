@@ -67,6 +67,7 @@ a tempo with the position of a beat, and a key, each one only when it is found.
   one marker on the first beat. A grid the user has given a tempo or a marker in the
   meantime, or has locked, stays as it is; the result is kept for the resets.
 - The key found is kept with the loaded track and published with the deck.
+- The loudness of the track is measured too, for autogain (`docs/behavior/autogain.md`).
 - The tempo of the tag is not put in the grid: it stays what the deck header shows until the
   grid has a tempo (`docs/behavior/beatgrid.md`).
 - A render script waits for the analysis as it waits for the load, so the grid a script
@@ -104,7 +105,8 @@ period and the offset that collect the most of it over the whole track.
 - One tempo per track, as the grid holds in M3.
 - The tuning of a track is not measured; a track tuned far from A = 440 Hz may get a key a
   semitone away.
-- The gain of the analysis is autogain, which comes later in M3.
+- The gain of the analysis is the loudness autogain reads, measured on the same load:
+  `docs/behavior/autogain.md`.
 - The reference product analyses again on a reset of the grid; the result of Platter's
   analysis depends only on the samples, so a reset uses the result of the load.
 - Analysis on import into the collection comes with the collection, later in M3. Until then

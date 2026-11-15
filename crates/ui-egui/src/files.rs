@@ -16,7 +16,8 @@ use platter_core::DeckId;
 use platter_decode::probe_file;
 use platter_engine::Command;
 
-use crate::command::{Action, AppCommand};
+use crate::collection::Collection;
+use crate::command::{Action, AppCommand, BrowserNode};
 use crate::model::{BrowserView, FileRow, RowKind, TrackRow, TreeRow};
 
 /// Extensions of the formats Platter plays. The content decides whether a file really is
@@ -29,7 +30,7 @@ const MAX_ENTRIES: usize = 10_000;
 /// Levels of the tree that can be open below a root.
 const MAX_DEPTH: usize = 32;
 
-fn is_audio(path: &Path) -> bool {
+pub(crate) fn is_audio(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
@@ -80,6 +81,7 @@ fn probe(path: &Path) -> RowKind {
             seconds: info.seconds,
             format: info.container.name().to_owned(),
             sample_rate: info.sample_rate.hz(),
+            missing: false,
         }),
         Err(_) => RowKind::Unreadable,
     }
@@ -123,6 +125,10 @@ pub struct FileBrowser {
     visit: Arc<AtomicU64>,
     results: Receiver<Message>,
     reports: Sender<Message>,
+    /// The collection node of the tree, when the browser has a library.
+    collection: Option<Collection>,
+    /// The list shows the collection instead of the current folder.
+    showing_collection: bool,
 }
 
 impl FileBrowser {
@@ -140,6 +146,37 @@ impl FileBrowser {
             visit: Arc::new(AtomicU64::new(0)),
             results,
             reports,
+            collection: None,
+            showing_collection: false,
+        }
+    }
+
+    /// Gives the tree a collection node, above the folders.
+    pub fn attach(&mut self, collection: Collection) {
+        self.collection = Some(collection);
+    }
+
+    /// Answers are still to come from the library: the window draws again to take them.
+    pub fn collection_busy(&self) -> bool {
+        self.collection.as_ref().is_some_and(Collection::busy)
+    }
+
+    fn show_collection(&mut self) {
+        if self.collection.is_none() || self.showing_collection {
+            return;
+        }
+        self.showing_collection = true;
+        self.selected = self
+            .collection
+            .as_ref()
+            .and_then(|collection| (!collection.rows().is_empty()).then_some(0));
+    }
+
+    /// The rows the list shows: those of the collection or those of the current folder.
+    fn shown(&self) -> &[FileRow] {
+        match &self.collection {
+            Some(collection) if self.showing_collection => collection.rows(),
+            _ => &self.rows,
         }
     }
 
@@ -188,6 +225,7 @@ impl FileBrowser {
 
     /// Shows `folder` in the list and opens the tree down to it.
     pub fn navigate(&mut self, folder: PathBuf) {
+        self.showing_collection = false;
         self.visit.fetch_add(1, Ordering::Relaxed);
         self.rows.clear();
         self.selected = None;
@@ -214,6 +252,19 @@ impl FileBrowser {
     /// arrived, so the application knows to draw again.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
+        if let Some(collection) = &mut self.collection
+            && collection.poll()
+        {
+            changed = true;
+            if self.showing_collection {
+                let count = collection.rows().len();
+                self.selected = match self.selected {
+                    _ if count == 0 => None,
+                    Some(index) => Some(index.min(count - 1)),
+                    None => Some(0),
+                };
+            }
+        }
         while let Ok(message) = self.results.try_recv() {
             changed = true;
             match message {
@@ -234,7 +285,9 @@ impl FileBrowser {
                                 kind,
                             })
                             .collect();
-                        self.selected = (!self.rows.is_empty()).then_some(0);
+                        if !self.showing_collection {
+                            self.selected = (!self.rows.is_empty()).then_some(0);
+                        }
                     }
                     self.counts.insert(folder.clone(), files.len());
                     self.folders.insert(folder, folders);
@@ -257,7 +310,7 @@ impl FileBrowser {
         match command {
             AppCommand::BrowserNavigate { path } => self.navigate(path.clone()),
             AppCommand::BrowserToggle { path } => self.toggle(path.clone()),
-            AppCommand::BrowserUp => {
+            AppCommand::BrowserUp if !self.showing_collection => {
                 let parent = self.current.as_deref().and_then(Path::parent);
                 // Above a root there is nothing to show.
                 let inside_root =
@@ -267,7 +320,7 @@ impl FileBrowser {
                 }
             }
             AppCommand::BrowserSelect { index } => {
-                if *index < self.rows.len() {
+                if *index < self.shown().len() {
                     self.selected = Some(*index);
                 }
             }
@@ -280,20 +333,29 @@ impl FileBrowser {
                 }
             }
             AppCommand::BrowserLoadSelected { deck } => return self.load_selected(*deck),
+            AppCommand::BrowserNodeSelect {
+                node: BrowserNode::Collection,
+            } => self.show_collection(),
+            AppCommand::LibraryImportFolder { path } => {
+                if let Some(collection) = &mut self.collection {
+                    collection.import(path.clone());
+                }
+            }
             _ => {}
         }
         None
     }
 
     fn selected_row(&self) -> Option<&FileRow> {
-        self.rows.get(self.selected?)
+        self.shown().get(self.selected?)
     }
 
     fn move_selection(&mut self, delta: i32) {
-        if self.rows.is_empty() {
+        let count = self.shown().len();
+        if count == 0 {
             return;
         }
-        let last = self.rows.len() - 1;
+        let last = count - 1;
         let from = self.selected.unwrap_or(0) as i64;
         let to = (from + i64::from(delta)).clamp(0, last as i64);
         self.selected = Some(to as usize);
@@ -318,7 +380,7 @@ impl FileBrowser {
             name,
             depth,
             open,
-            current: self.current.as_deref() == Some(folder),
+            current: !self.showing_collection && self.current.as_deref() == Some(folder),
             files: self.counts.get(folder).copied(),
         });
         if !open || depth >= MAX_DEPTH {
@@ -365,11 +427,24 @@ impl FileBrowser {
             }
         });
         BrowserView {
+            collection: self
+                .collection
+                .as_ref()
+                .map(|collection| collection.view(self.showing_collection)),
             tree,
-            crumbs,
-            rows: self.rows.clone(),
+            folder: self.current.clone().filter(|_| !self.showing_collection),
+            // The collection names itself in the list; the panel draws its name.
+            crumbs: if self.showing_collection {
+                Vec::new()
+            } else {
+                crumbs
+            },
+            rows: self.shown().to_vec(),
             selected: self.selected,
-            reading: self.reading,
+            reading: match &self.collection {
+                Some(collection) if self.showing_collection => collection.busy(),
+                _ => self.reading,
+            },
         }
     }
 }

@@ -1,15 +1,16 @@
-//! Analysis of a track: its tempo, where its beats fall and its key.
+//! Analysis of a track: its tempo, where its beats fall, its key and its loudness.
 //!
-//! Behaviour note: `docs/behavior/analysis.md`. The method and its measurements:
-//! `docs/decisions/0020-own-analysis.md`.
+//! Behaviour notes: `docs/behavior/analysis.md`, `docs/behavior/autogain.md`. The method and
+//! its measurements: `docs/decisions/0020-own-analysis.md`.
 
 mod fft;
 mod key;
+mod loudness;
 mod tempo;
 
 use std::fmt;
 
-pub use key::{Key, Mode};
+pub use key::{Key, Mode, Transposed};
 pub use tempo::{BeatTempo, TempoRange};
 
 /// The longest stretch of a track that is read, in seconds.
@@ -49,6 +50,34 @@ impl fmt::Display for AnalysisError {
 
 impl std::error::Error for AnalysisError {}
 
+/// The integrated loudness, in LUFS, of interleaved samples with `channels` channels at `rate`
+/// frames per second, as ITU-R BS.1770-5 measures it; `None` for silence, near silence and
+/// fewer than 400 ms. Only the first [`MAX_SECONDS`] are read.
+pub fn integrated_loudness(
+    samples: &[f32],
+    channels: usize,
+    rate: u32,
+) -> Result<Option<f64>, AnalysisError> {
+    let samples = checked(samples, channels, rate)?;
+    Ok(loudness::integrated(samples, channels, rate))
+}
+
+/// The samples to read, after the checks every analysis makes.
+fn checked(samples: &[f32], channels: usize, rate: u32) -> Result<&[f32], AnalysisError> {
+    if channels == 0 || rate == 0 {
+        return Err(AnalysisError::NoFormat);
+    }
+    if samples.len() < channels {
+        return Err(AnalysisError::NoSamples);
+    }
+    let limit = (MAX_SECONDS * f64::from(rate)) as usize * channels;
+    let samples = &samples[..samples.len().min(limit)];
+    if samples.iter().any(|sample| !sample.is_finite()) {
+        return Err(AnalysisError::NotFinite);
+    }
+    Ok(samples)
+}
+
 /// The sample rate the detection works at, about a quarter of the usual rates: the beats and the
 /// pitch classes it looks for sit well below its Nyquist frequency.
 const WORK_RATE: f64 = 11_025.0;
@@ -61,17 +90,7 @@ pub fn detect(
     rate: u32,
     range: TempoRange,
 ) -> Result<Detection, AnalysisError> {
-    if channels == 0 || rate == 0 {
-        return Err(AnalysisError::NoFormat);
-    }
-    if samples.len() < channels {
-        return Err(AnalysisError::NoSamples);
-    }
-    let limit = (MAX_SECONDS * f64::from(rate)) as usize * channels;
-    let samples = &samples[..samples.len().min(limit)];
-    if samples.iter().any(|sample| !sample.is_finite()) {
-        return Err(AnalysisError::NotFinite);
-    }
+    let samples = checked(samples, channels, rate)?;
     let (mono, work_rate) = reduce(samples, channels, rate);
     Ok(Detection {
         tempo: tempo::detect(&mono, work_rate, range),

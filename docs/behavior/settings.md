@@ -1,6 +1,7 @@
 # Preferences
 
-The preferences dialog and the files of the user. M2 has two pages: Audio and General.
+The preferences dialog and the files of the user. M2 has two pages, Audio and General; M3
+adds the Mixer page.
 
 ## What the public manual says
 
@@ -13,6 +14,12 @@ The audio page chooses the audio device, its sample rate and its buffer size, an
 latency that results; a smaller buffer lowers the latency and raises the load, and too small a
 buffer leads to dropouts. A routing page assigns the main output and the monitor output to
 channels of the device. The mixer page shapes the curve of the crossfader.
+
+Read again on 15 November 2026 for the Mixer page: *Preferences*, sections *Output Routing
+page* and *Mixer page*. The routing page chooses between the internal and the external mixing
+mode. The mixer page sets the time of the automatic crossfade and, for each mixing mode, turns
+autogain on or off; in the external mode it also lets the master volume and the gain and
+equaliser of each channel act on the outgoing signals.
 
 ## What Platter does
 
@@ -49,11 +56,29 @@ shortcuts of the decks and the mixer rest.
 | Setting | Command | Notes |
 | --- | --- | --- |
 | Language | `app.language.set` | English or Spanish; takes effect at once |
+| Tooltips | `app.tooltips.toggle` | A key, lit while the keys show their tooltips (`docs/behavior/interface.md`) |
 | Crossfader curve | `mixer.crossfader.curve.set` | Smooth, linear or sharp |
 | Keyboard | `app.keymap.open` | The list of shortcuts, read-only, and a key that opens the shortcut file |
 
-Restore defaults (`app.settings.restore_defaults`) returns every setting of the two pages to
-its default.
+### Mixer
+
+| Setting | Command | Notes |
+| --- | --- | --- |
+| Mixing mode | `mixer.mode.set` | Internal, or external with each deck on its own outputs (`docs/behavior/external-mixer.md`) |
+| Autogain | `mixer.autogain.toggle` | A key, lit while autogain is on (`docs/behavior/autogain.md`) |
+| Gain and equaliser | `mixer.external.eq_gain.toggle` | A key, lit while they act in external mode |
+| Main volume | `mixer.external.master_volume.toggle` | A key, lit while it acts in external mode |
+| Automatic fade | `mixer.crossfader.fade_beats.set` | 1, 2, 4, 8, 16, 32 or 64 beats of the master clock (`docs/behavior/mixer.md`) |
+
+- The two keys of the external mode can be set in either mode; the page says they act only
+  in the external one.
+- The settings of the page follow the mixer whatever changes it, a shortcut or a controller
+  too, and are applied when Platter starts.
+- A length of fade set by another way that is not one of the choices leaves none selected,
+  and is kept in the settings file to the nearest whole beat.
+
+Restore defaults (`app.settings.restore_defaults`) returns every setting of the pages to its
+default.
 
 ### Files
 
@@ -63,7 +88,7 @@ Platter keeps its files in a folder of its own inside the configuration folder o
 
 | File | Content |
 | --- | --- |
-| `settings.toml` | Language, audio device, sample rate, buffer size, routing, crossfader curve, the folder the file selector showed last and its extra roots |
+| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Mixer page, the folder the file selector showed last and its extra roots |
 | `keymap.toml` | The keyboard shortcuts (`docs/behavior/keyboard.md`) |
 | `platter.log` | The log of the last run |
 
@@ -73,7 +98,11 @@ one setting at a time. Nothing in these files leaves the machine.
 
 ## Differences
 
-- Two pages; the others arrive with the functions they configure.
+- Three pages; the others arrive with the functions they configure.
+- The crossfader curve stays on the General page for now; the design system moves it to the
+  Mixer page with the next change to the tests of the panels.
+- The mixing mode is on the Mixer page, not on a routing page: Platter's routing is on the
+  Audio page and chooses outputs, not modes.
 - No setting for the latency itself: the buffer size is the setting.
 - The routing chooses single outputs, not pairs to swap.
 
@@ -90,4 +119,5 @@ one setting at a time. Nothing in these files leaves the machine.
 ## Tests
 
 `apps/platter/src/config.rs` for the settings file; `crates/ui-egui/tests/panels.rs` for the
-controls of both pages; `crates/audio-io/tests/null_backend.rs` for the routing.
+controls of the Audio and General pages and `crates/ui-egui/tests/settings_mixer.rs` for the
+Mixer page; `crates/audio-io/tests/null_backend.rs` for the routing.

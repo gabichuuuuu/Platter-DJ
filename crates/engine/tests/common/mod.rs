@@ -34,8 +34,11 @@ pub struct Rig {
 }
 
 impl Rig {
+    /// A rig with autogain off, so that a track plays at the level of its file:
+    /// `tests/autogain.rs` turns it on.
     pub fn new() -> Self {
-        let (engine, processor) = Engine::new(rate());
+        let (mut engine, processor) = Engine::new(rate());
+        engine.dispatch(Command::MixerAutogainToggle).unwrap();
         Self { engine, processor }
     }
 

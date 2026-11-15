@@ -9,11 +9,11 @@ use std::path::PathBuf;
 use egui::{Align2, CornerRadius, EventFilter, Key, Rect, Role, Sense, WidgetInfo};
 use platter_core::DeckId;
 
-use crate::command::AppCommand;
+use crate::command::{AppCommand, BrowserNode};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
-use crate::model::{BrowserView, FileRow, RowKind, TreeRow, View};
+use crate::model::{BrowserView, CollectionView, FileRow, ImportOutcome, RowKind, TreeRow, View};
 use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::widgets::key::{self, Face, KeySpec, Press};
@@ -128,27 +128,124 @@ fn tree(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView, memory: &mut Browser
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, color.surface_panel);
     let area = rect.shrink(tokens.space.s3);
-    let content = browser.tree.len() as f32 * (TREE_ROW + 1.0);
+    // The collection, when there is one, takes the first place above the folders.
+    let fixed = usize::from(browser.collection.is_some());
+    let content = (fixed + browser.tree.len()) as f32 * (TREE_ROW + 1.0);
     let hover = cx.ui.interact(rect, id("browser-tree"), Sense::hover());
     if hover.hovered() && cx.interactive {
         memory.tree_scroll -= cx.ui.input(|input| input.smooth_scroll_delta.y);
     }
     memory.tree_scroll = clamp_scroll(memory.tree_scroll, content, area.height());
     let painter = cx.painter().with_clip_rect(area);
-    for (index, row) in browser.tree.iter().enumerate() {
-        let top = area.top() + index as f32 * (TREE_ROW + 1.0) - memory.tree_scroll;
+    let slot = |place: usize| {
+        let top = area.top() + place as f32 * (TREE_ROW + 1.0) - memory.tree_scroll;
         let row_rect = Rect::from_min_size(
             egui::pos2(area.left(), top),
             egui::vec2(area.width(), TREE_ROW),
         );
-        if !area.intersects(row_rect) {
-            continue;
-        }
         // A row cut by the edge of the area is drawn and cannot be operated.
-        let whole = area.contains_rect(row_rect);
-        tree_row(cx, &painter, row_rect, index, row, whole);
+        (row_rect, area.contains_rect(row_rect))
+    };
+    if let Some(collection) = &browser.collection {
+        let (row_rect, whole) = slot(0);
+        if area.intersects(row_rect) {
+            collection_row(cx, &painter, row_rect, collection, whole);
+        }
+    }
+    for (index, row) in browser.tree.iter().enumerate() {
+        let (row_rect, whole) = slot(fixed + index);
+        if area.intersects(row_rect) {
+            tree_row(cx, &painter, row_rect, index, row, whole);
+        }
     }
     scroll_thumb(cx, area, memory.tree_scroll, content);
+}
+
+/// The collection node: no chevron, its icon, its name and the number of its tracks.
+fn collection_row(
+    cx: &mut Cx<'_>,
+    painter: &egui::Painter,
+    rect: Rect,
+    collection: &CollectionView,
+    whole: bool,
+) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let action = AppCommand::BrowserNodeSelect {
+        node: BrowserNode::Collection,
+    };
+    if whole {
+        cx.record(action.id(), rect, ControlKind::Button, true);
+    }
+    let name = cx.texts.get("browser.collection");
+    let response = cx
+        .ui
+        .interact(rect, id("tree-collection"), cx.sense(whole, Sense::click()));
+    response.widget_info(|| WidgetInfo::selected(Role::TreeItem, true, collection.current, name));
+    if collection.current {
+        painter.rect_filled(
+            rect,
+            paint::radius(tokens.radius.md),
+            color.surface_selected,
+        );
+    } else if response.hovered() && cx.interactive {
+        painter.rect_filled(rect, paint::radius(tokens.radius.md), color.surface_hover);
+    }
+    if response.has_focus() {
+        cx.out.claim(&[Key::Space, Key::Enter]);
+    }
+    if response.clicked() {
+        cx.out.emit(action);
+    }
+    let middle = rect.center().y;
+    // Lined up with the folder icons of the roots, after the room of their chevron.
+    let icon = Rect::from_center_size(
+        egui::pos2(rect.left() + tokens.space.s3 + 12.0 + 6.0 + 7.0, middle),
+        egui::vec2(14.0, 14.0),
+    );
+    theme
+        .icons
+        .paint(painter, Glyph::FileAudio, icon, color.text_secondary);
+    let count = collection.tracks.map(|tracks| tracks.to_string());
+    let count_width = count.as_deref().map_or(0.0, |count| {
+        paint::text_width(painter, theme, count, tokens.text.readout) + tokens.space.s3
+    });
+    let label = Rect::from_min_max(
+        egui::pos2(icon.right() + 6.0, rect.top()),
+        egui::pos2(rect.right() - tokens.space.s3 - count_width, rect.bottom()),
+    );
+    paint::text_elided(
+        painter,
+        theme,
+        label,
+        name,
+        tokens.text.body,
+        color.text_primary,
+    );
+    if let Some(count) = &count {
+        let area = Rect::from_min_max(
+            rect.min,
+            egui::pos2(rect.right() - tokens.space.s3, rect.bottom()),
+        );
+        paint::text(
+            painter,
+            theme,
+            area,
+            Align2::RIGHT_CENTER,
+            count,
+            tokens.text.readout,
+            color.text_secondary,
+        );
+    }
+    if response.has_focus() {
+        paint::focus_ring(
+            painter,
+            theme,
+            rect.shrink(tokens.space.s1 + tokens.stroke.focus),
+            tokens.radius.md,
+        );
+    }
 }
 
 fn tree_row(
@@ -302,6 +399,38 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
         .and_then(|index| view.browser.rows.get(index))
         .is_some_and(|row| matches!(row.kind, RowKind::Track(_) | RowKind::Pending));
     let mut right = rect.right() - 10.0;
+    let collection = view.browser.collection.as_ref();
+    // A folder of the explorer can be imported into the collection.
+    if let (Some(collection), Some(folder)) = (collection, &view.browser.folder) {
+        let label = texts.get("browser.import");
+        let width = key::width_for(cx, label, 0.0) + tokens.space.s4;
+        let key_rect = Rect::from_min_size(
+            egui::pos2(right - width, middle - tokens.size.button_h / 2.0),
+            egui::vec2(width, tokens.size.button_h),
+        );
+        let spec = KeySpec {
+            face: Face::Text(label),
+            name: label,
+            lit: None,
+            held: None,
+            enabled: collection.available == Some(true) && !collection.importing,
+            keeps_led: false,
+            text: None,
+        };
+        key::key(
+            cx,
+            key_rect,
+            id("browser-import"),
+            spec,
+            Press::Click(
+                AppCommand::LibraryImportFolder {
+                    path: folder.clone(),
+                }
+                .into(),
+            ),
+        );
+        right = key_rect.left() - tokens.space.s4;
+    }
     for (deck, glyph, label) in [
         (DeckId::B, Glyph::LoadRight, "browser.load_b"),
         (DeckId::A, Glyph::LoadLeft, "browser.load_a"),
@@ -333,8 +462,14 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
 
     let painter = cx.painter();
     let mut x = rect.left() + 10.0;
-    let last = view.browser.crumbs.len().saturating_sub(1);
-    for (index, crumb) in view.browser.crumbs.iter().enumerate() {
+    let showing_collection = collection.is_some_and(|collection| collection.current);
+    let crumbs = if showing_collection {
+        vec![texts.get("browser.collection").to_owned()]
+    } else {
+        view.browser.crumbs.clone()
+    };
+    let last = crumbs.len().saturating_sub(1);
+    for (index, crumb) in crumbs.iter().enumerate() {
         if index > 0 {
             let chevron =
                 Rect::from_center_size(egui::pos2(x + 6.0, middle), egui::vec2(12.0, 12.0));
@@ -363,10 +498,43 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
         );
         x = drawn.right().min(right) + tokens.space.s2 + tokens.space.s1;
     }
-    let count = texts.format(
-        "browser.file_count",
-        &[("count", &view.browser.file_count().to_string())],
-    );
+    let mut count = match collection.filter(|collection| collection.current) {
+        Some(collection) => match collection.tracks {
+            Some(tracks) => texts.format("browser.track_count", &[("count", &tracks.to_string())]),
+            None => String::new(),
+        },
+        None => texts.format(
+            "browser.file_count",
+            &[("count", &view.browser.file_count().to_string())],
+        ),
+    };
+    let status = collection.and_then(|collection| match collection.imported {
+        _ if collection.importing => Some(texts.get("browser.importing").to_owned()),
+        Some(ImportOutcome::Done {
+            added,
+            known,
+            unreadable,
+        }) => Some(texts.format(
+            "browser.imported",
+            &[
+                ("added", &added.to_string()),
+                ("known", &known.to_string()),
+                ("unreadable", &unreadable.to_string()),
+            ],
+        )),
+        Some(ImportOutcome::Failed) => Some(texts.get("browser.import_failed").to_owned()),
+        None => None,
+    });
+    if let Some(status) = status {
+        count = if count.is_empty() {
+            status
+        } else {
+            texts.format(
+                "browser.count_status",
+                &[("count", &count), ("status", &status)],
+            )
+        };
+    }
     let area = Rect::from_min_max(
         egui::pos2(x + tokens.space.s2, rect.top()),
         egui::pos2(right, rect.bottom()),
@@ -534,11 +702,7 @@ fn list(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut BrowserMemory
 
     let painter = cx.painter().with_clip_rect(area);
     if browser.rows.is_empty() {
-        let message = if browser.reading {
-            "browser.reading"
-        } else {
-            "browser.empty"
-        };
+        let message = empty_message(browser);
         let line = Rect::from_min_size(
             area.min + egui::vec2(10.0 + BADGE + COLUMN_GAP, 0.0),
             egui::vec2(area.width() - 60.0, ROW_HEIGHT),
@@ -579,6 +743,19 @@ fn list(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut BrowserMemory
         }
     }
     scroll_thumb(cx, area, memory.list_scroll, content);
+}
+
+/// What an empty list says, by what it shows and why it is empty.
+fn empty_message(browser: &BrowserView) -> &'static str {
+    match &browser.collection {
+        Some(collection) if collection.current => match collection.available {
+            _ if browser.reading => "browser.collection_reading",
+            Some(false) => "browser.library_unavailable",
+            _ => "browser.collection_empty",
+        },
+        _ if browser.reading => "browser.reading",
+        _ => "browser.empty",
+    }
 }
 
 fn file_row(
@@ -645,20 +822,7 @@ fn file_row(
                 body,
                 color.text_secondary,
             );
-            let dot = egui::pos2(columns.file.left() + 4.0, rect.center().y);
-            painter.circle_filled(dot, 4.0, color.status_error);
-            let label = Rect::from_min_max(
-                egui::pos2(dot.x + 4.0 + tokens.space.s2 + 2.0, rect.top()),
-                columns.file.max,
-            );
-            paint::text_elided(
-                painter,
-                theme,
-                label,
-                texts.get("browser.cant_read"),
-                body,
-                color.text_secondary,
-            );
+            flagged(cx, painter, rect, columns.file, "browser.cant_read");
         }
         RowKind::Track(track) => {
             let title = track.title.as_deref().unwrap_or(&row.name);
@@ -699,13 +863,19 @@ fn file_row(
                     color.text_secondary,
                 );
             }
-            let file = texts.format(
-                "browser.file_value",
-                &[
-                    ("format", &track.format),
-                    ("rate", &format::kilohertz(track.sample_rate)),
-                ],
-            );
+            if track.missing {
+                flagged(cx, painter, rect, columns.file, "browser.missing");
+                return;
+            }
+            let rate = format::kilohertz(track.sample_rate);
+            let file = match (track.format.is_empty(), track.sample_rate) {
+                (false, _) => texts.format(
+                    "browser.file_value",
+                    &[("format", &track.format), ("rate", &rate)],
+                ),
+                (true, 0) => String::new(),
+                (true, _) => texts.format("browser.rate_value", &[("rate", &rate)]),
+            };
             paint::text_elided(
                 painter,
                 theme,
@@ -716,6 +886,26 @@ fn file_row(
             );
         }
     }
+}
+
+/// A red dot and a short text in the file column, for a file that cannot be played.
+fn flagged(cx: &Cx<'_>, painter: &egui::Painter, rect: Rect, column: Rect, text: &str) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let dot = egui::pos2(column.left() + 4.0, rect.center().y);
+    painter.circle_filled(dot, 4.0, tokens.color.status_error);
+    let label = Rect::from_min_max(
+        egui::pos2(dot.x + 4.0 + tokens.space.s2 + 2.0, rect.top()),
+        column.max,
+    );
+    paint::text_elided(
+        painter,
+        theme,
+        label,
+        cx.texts.get(text),
+        tokens.text.body,
+        tokens.color.text_secondary,
+    );
 }
 
 #[cfg(test)]

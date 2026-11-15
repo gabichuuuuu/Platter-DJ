@@ -179,10 +179,23 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         }
     }
 
-    // The right end, right to left: preferences, clock, master level.
+    // The right end, right to left: preferences, full screen, clock, master level.
     let settings = Rect::from_min_size(
         egui::pos2(rect.right() - gap - 28.0, middle - 12.0),
         egui::vec2(28.0, 24.0),
+    );
+    let fullscreen = settings.translate(egui::vec2(-28.0 - tokens.space.s2, 0.0));
+    let mut spec = KeySpec::icon(Glyph::Fullscreen, 14.0, cx.t("header.fullscreen"));
+    spec.lit = view
+        .settings
+        .fullscreen
+        .then_some(tokens.color.text_primary);
+    key::key(
+        cx,
+        fullscreen,
+        id("header-fullscreen"),
+        spec,
+        Press::Click(AppCommand::FullscreenToggle.into()),
     );
     key::key(
         cx,
@@ -197,7 +210,7 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         ),
     );
     let painter = cx.painter();
-    let mut right = settings.left() - gap;
+    let mut right = fullscreen.left() - gap;
     if let Some(clock) = view.clock {
         let text = format!("{:02}:{:02}", clock.hour, clock.minute);
         let area = Rect::from_min_max(rect.min, egui::pos2(right, rect.bottom()));

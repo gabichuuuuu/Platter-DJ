@@ -10,8 +10,8 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
-    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
-    SizeStep, SyncMode, TEMPO_RANGES,
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
+    CueStep, Direction, MixerMode, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -64,6 +64,19 @@ fn later_command() -> impl Strategy<Value = Command> {
         (deck(), band()).prop_map(|(deck, band)| Command::MixerEqKillToggle { deck, band }),
         (deck(), number()).prop_map(|(deck, position)| Command::MixerPanSet { deck, position }),
         deck().prop_map(|deck| Command::MixerCueToggle { deck }),
+        deck().prop_map(|deck| Command::MixerGainRestore { deck }),
+        (deck(), prop::sample::select(CrossfaderSide::ALL.to_vec()))
+            .prop_map(|(deck, side)| Command::MixerCrossfaderAssign { deck, side }),
+        prop::sample::select(vec![CrossfaderDirection::Left, CrossfaderDirection::Right])
+            .prop_map(|direction| Command::MixerCrossfaderStep { direction }),
+        prop::sample::select(vec![CrossfaderDirection::Left, CrossfaderDirection::Right])
+            .prop_map(|direction| Command::MixerCrossfaderAutoFade { direction }),
+        number().prop_map(|beats| Command::MixerCrossfaderFadeBeatsSet { beats }),
+        prop::strategy::Just(Command::MixerAutogainToggle),
+        prop::sample::select(MixerMode::ALL.to_vec())
+            .prop_map(|mode| Command::MixerModeSet { mode }),
+        prop::strategy::Just(Command::MixerExternalEqGainToggle),
+        prop::strategy::Just(Command::MixerExternalMasterVolumeToggle),
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),
@@ -140,6 +153,13 @@ fn sync_command() -> impl Strategy<Value = Command> {
     prop_oneof![
         3 => deck().prop_map(|deck| Command::DeckSyncToggle { deck }),
         2 => deck().prop_map(|deck| Command::DeckKeyLockToggle { deck }),
+        2 => deck().prop_map(|deck| Command::DeckBeatTickToggle { deck }),
+        2 => (deck(), prop::sample::select(vec![SizeStep::Down, SizeStep::Up]))
+            .prop_map(|(deck, direction)| Command::DeckKeyStep { deck, direction }),
+        2 => (deck(), number()).prop_map(|(deck, semitones)| Command::DeckKeySet { deck, semitones }),
+        1 => deck().prop_map(|deck| Command::DeckKeyPersist { deck }),
+        2 => deck().prop_map(|deck| Command::DeckFluxToggle { deck }),
+        2 => (deck(), any::<bool>()).prop_map(|(deck, pressed)| Command::DeckReverse { deck, pressed }),
         2 => deck().prop_map(|deck| Command::DeckMasterSet { deck }),
         2 => clock_mode.prop_map(|mode| Command::ClockModeSet { mode }),
         1 => (15.0f64..420.0).prop_map(|bpm| Command::ClockTempoSet { bpm }),

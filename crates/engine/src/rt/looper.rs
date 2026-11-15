@@ -190,6 +190,14 @@ impl Looper {
             .then(|| (region.folded(after), region.frames()))
     }
 
+    /// The same as [`Self::wrap`] for a deck that plays backwards and passed the start of the
+    /// loop from inside it.
+    pub(super) fn wrap_back(&self, before: f64, after: f64) -> Option<(f64, f64)> {
+        let region = self.region()?;
+        (before >= region.start && before < region.end && after < region.start)
+            .then(|| (region.folded(after), region.frames()))
+    }
+
     /// The loop in seconds of a track of `rate` frames per second.
     pub(super) fn state(&self, rate: f64) -> LoopState {
         match self.state {

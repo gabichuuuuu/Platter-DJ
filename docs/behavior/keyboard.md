@@ -54,7 +54,8 @@ The default table:
 | Loop size down, up | S, D | J, K |
 | Beatjump back, forward | E, R | U, I |
 
-Ctrl and comma opens the preferences.
+Ctrl and comma opens the preferences. F11 shows the window on the whole screen, or as a
+window again.
 
 ### Controls
 

@@ -19,8 +19,8 @@ features = [
   { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "planned" },
   { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
-  { id = "fullscreen", name = "Full screen", milestone = "M3", status = "planned" },
-  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "planned" },
+  { id = "fullscreen", name = "Full screen", milestone = "M3", status = "in_progress" },
+  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "in_progress" },
   { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "planned" },
   { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "planned" },
   { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "planned" },
@@ -58,8 +58,8 @@ features = [
   { id = "cup", name = "CUP: jump to the cue point and play on release", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport cue_play_button" },
   { id = "tempo-fader", name = "Tempo fader with ranges", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test mixer tempo_range; cargo test -p platter-ui-egui --test panels" },
   { id = "tempo-bend", name = "Tempo bend (nudge)", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport nudge; cargo test -p platter-ui-egui --test panels" },
-  { id = "flux", name = "Flux mode", milestone = "M3", status = "planned" },
-  { id = "reverse", name = "Reverse", milestone = "M3", status = "planned" },
+  { id = "flux", name = "Flux mode", milestone = "M3", status = "in_progress" },
+  { id = "reverse", name = "Reverse", milestone = "M3", status = "in_progress" },
 ]
 
 [[area]]
@@ -99,7 +99,7 @@ features = [
   { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "in_progress" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
-  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },
+  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "in_progress" },
   { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
 ]
 
@@ -130,9 +130,9 @@ title = "Key"
 features = [
   { id = "detection", name = "Key detection", milestone = "M3", status = "in_progress" },
   { id = "key-lock", name = "Key lock", milestone = "M3", status = "in_progress" },
-  { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "planned" },
-  { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "planned" },
-  { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "planned" },
+  { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "in_progress" },
+  { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "in_progress" },
+  { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "in_progress" },
   { id = "musical-notation", name = "Musical key notation with compatible keys highlighted in the browser", milestone = "M3", status = "planned" },
 ]
 
@@ -151,10 +151,10 @@ features = [
   { id = "cue-monitoring", name = "Channel cue monitoring", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test monitoring; cargo test -p platter-audio-io --test null_backend" },
   { id = "eq-model-first", name = "First EQ model", milestone = "M2", status = "done", evidence = "cargo test -p platter-dsp eq" },
   { id = "filter-model-first", name = "First filter model", milestone = "M2", status = "done", evidence = "cargo test -p platter-dsp filter" },
-  { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "planned" },
-  { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "planned" },
-  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "planned" },
-  { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "planned" },
+  { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "in_progress" },
+  { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "in_progress" },
+  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "in_progress" },
+  { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "in_progress" },
   { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
   { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },
   { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "planned" },
@@ -209,7 +209,7 @@ features = [
   { id = "collection", name = "Track collection", milestone = "M3", status = "in_progress" },
   { id = "folder-import", name = "Folder import", milestone = "M3", status = "in_progress" },
   { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
-  { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "planned" },
+  { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "in_progress" },
   { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
   { id = "search", name = "Live search", milestone = "M3", status = "planned" },
   { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "planned" },
@@ -222,7 +222,7 @@ id = "playlists"
 title = "Playlists"
 features = [
   { id = "manage", name = "Create, add, sort, folders, rename, delete, remove duplicates and clear", milestone = "M3", status = "planned" },
-  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "planned" },
+  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "in_progress" },
   { id = "preparation-list", name = "Preparation list", milestone = "M3", status = "planned" },
   { id = "history", name = "History", milestone = "M3", status = "planned" },
   { id = "favourites", name = "Favourites", milestone = "M3", status = "planned" },
@@ -274,7 +274,7 @@ features = [
   { id = "output-routing", name = "Output routing", milestone = "M3", status = "planned" },
   { id = "loading", name = "Loading", milestone = "M3", status = "planned" },
   { id = "transport", name = "Transport", milestone = "M3", status = "planned" },
-  { id = "mixer", name = "Mixer", milestone = "M3", status = "planned" },
+  { id = "mixer", name = "Mixer", milestone = "M3", status = "in_progress" },
   { id = "global", name = "Global settings", milestone = "M3", status = "planned" },
   { id = "browser", name = "Browser", milestone = "M3", status = "planned" },
   { id = "file-management", name = "File management", milestone = "M3", status = "planned" },

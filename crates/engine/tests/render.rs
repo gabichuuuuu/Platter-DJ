@@ -145,6 +145,8 @@ fn the_mix_matches_what_the_commands_describe() {
         sample_rate: rate(),
         seconds: 3.0,
         commands: vec![
+            // The levels below are those of the files.
+            at(0.0, Command::MixerAutogainToggle),
             at(
                 0.0,
                 Command::DeckLoad {

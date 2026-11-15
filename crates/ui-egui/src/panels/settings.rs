@@ -1,11 +1,12 @@
-//! The preferences dialog: the Audio page and the General page.
+//! The preferences dialog: the Audio, General and Mixer pages.
 //!
 //! Component: `Select` in `docs/design/DESIGN.md`; placement from
-//! `docs/design/screens/Preferences-audio.html` and `Preferences-general.html`. Behaviour
+//! `docs/design/screens/Preferences-audio.html` and `Preferences-general.html`; the Mixer
+//! page follows the form pattern of the Audio page, as the design system asks. Behaviour
 //! note: `docs/behavior/settings.md`.
 
 use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
-use platter_engine::{Command, CrossfaderCurve, Output};
+use platter_engine::{Command, CrossfaderCurve, MixerMode, Output};
 
 use crate::command::{Action, AppCommand, RouteSlot, SettingsPage};
 use crate::cx::{ControlKind, Cx, id};
@@ -138,6 +139,7 @@ pub fn settings(
         let name = texts.get(match entry {
             SettingsPage::Audio => "settings.audio",
             SettingsPage::General => "settings.general",
+            SettingsPage::Mixer => "settings.mixer",
         });
         response.widget_info(|| WidgetInfo::selected(Role::Tab, true, selected, name));
         if response.clicked() {
@@ -180,6 +182,7 @@ pub fn settings(
     match page {
         SettingsPage::Audio => audio_page(cx, page_rect, view),
         SettingsPage::General => general_page(cx, page_rect, view, memory),
+        SettingsPage::Mixer => mixer_page(cx, page_rect, view),
     }
     footer(
         cx,
@@ -559,8 +562,19 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>, memory: &mut Setti
         egui::vec2(280.0, tokens.size.button_h),
     );
     help(cx, language_control, texts.get("settings.language_help"));
+    switch(
+        cx,
+        page,
+        top + 50.0,
+        Switch {
+            name: "settings.tooltips",
+            help: "settings.tooltips_help",
+            on: view.settings.tooltips,
+            action: AppCommand::TooltipsToggle.into(),
+        },
+    );
 
-    let top = section(cx, page, 127.0, "settings.mixer_section");
+    let top = section(cx, page, 177.0, "settings.mixer_section");
     let control = setting(cx, page, top, "settings.crossfader_curve");
     let curve_labels = CrossfaderCurve::ALL.map(|curve| {
         texts.get(match curve {
@@ -597,7 +611,7 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>, memory: &mut Setti
         texts.get("settings.curve_help"),
     );
 
-    let top = section(cx, page, 234.0, "settings.keyboard_section");
+    let top = section(cx, page, 284.0, "settings.keyboard_section");
     let painter = cx.painter();
     let table = Rect::from_min_max(
         egui::pos2(page.left() + LABEL_X, page.top() + top),
@@ -778,6 +792,149 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>, memory: &mut Setti
             }
             .into()
         },
+    );
+}
+
+/// Lengths of an automatic fade the Mixer page offers, in beats.
+const FADE_BEATS: [u32; 7] = [1, 2, 4, 8, 16, 32, 64];
+
+fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
+    let texts = cx.texts;
+    let mixer = &view.engine.mixer;
+
+    let top = section(cx, page, 20.0, "settings.mixing_section");
+    let control = setting(cx, page, top, "settings.mixing_mode");
+    let mode_labels = MixerMode::ALL.map(|mode| {
+        texts.get(match mode {
+            MixerMode::Internal => "settings.mode_internal",
+            MixerMode::External => "settings.mode_external",
+        })
+    });
+    let mode_choices: Vec<Choice<'_>> = mode_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-mixer-mode"),
+        &mode_choices,
+        MixerMode::ALL.iter().position(|mode| *mode == mixer.mode),
+        |index| {
+            Action::Engine(Command::MixerModeSet {
+                mode: MixerMode::ALL[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.mode_help"),
+    );
+    switch(
+        cx,
+        page,
+        top + 50.0,
+        Switch {
+            name: "settings.autogain",
+            help: "settings.autogain_help",
+            on: mixer.autogain,
+            action: Command::MixerAutogainToggle.into(),
+        },
+    );
+
+    let top = section(cx, page, 175.0, "settings.external_section");
+    switch(
+        cx,
+        page,
+        top,
+        Switch {
+            name: "settings.external_eq_gain",
+            help: "settings.external_help",
+            on: mixer.external_eq_gain,
+            action: Command::MixerExternalEqGainToggle.into(),
+        },
+    );
+    switch(
+        cx,
+        page,
+        top + 50.0,
+        Switch {
+            name: "settings.external_master_volume",
+            help: "settings.external_help",
+            on: mixer.external_master_volume,
+            action: Command::MixerExternalMasterVolumeToggle.into(),
+        },
+    );
+
+    let top = section(cx, page, 330.0, "settings.crossfader_section");
+    let control = setting(cx, page, top, "settings.fade_length");
+    let fade_labels = FADE_BEATS.map(|beats| beats.to_string());
+    let fade_choices: Vec<Choice<'_>> = fade_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-fade-length"),
+        &fade_choices,
+        FADE_BEATS
+            .iter()
+            .position(|beats| f64::from(*beats) == mixer.fade_beats),
+        |index| {
+            Action::Engine(Command::MixerCrossfaderFadeBeatsSet {
+                beats: f64::from(FADE_BEATS[index]),
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.fade_help"),
+    );
+}
+
+/// A setting that is on or off: a key that toggles it, lit while it is on.
+struct Switch {
+    name: &'static str,
+    help: &'static str,
+    on: bool,
+    action: Action,
+}
+
+fn switch(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let control = setting(cx, page, top, switch.name);
+    let state = texts.get(if switch.on {
+        "settings.on"
+    } else {
+        "settings.off"
+    });
+    let width = key::width_for(cx, state, 72.0);
+    let rect = Rect::from_min_size(control.min, egui::vec2(width, tokens.size.button_h));
+    let mut spec = KeySpec::text(state);
+    spec.name = texts.get(switch.name);
+    spec.lit = switch.on.then_some(tokens.color.text_primary);
+    key::key(
+        cx,
+        rect,
+        id(("settings-switch", switch.name)),
+        spec,
+        Press::Click(switch.action),
+    );
+    help(
+        cx,
+        Rect::from_min_max(rect.min, egui::pos2(control.right(), rect.bottom())),
+        texts.get(switch.help),
     );
 }
 

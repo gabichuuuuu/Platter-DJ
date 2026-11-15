@@ -26,6 +26,8 @@ preference chooses the limiter type, one of which is a third-party maximiser.
   output it names: `master` (the first two outputs of the device) or `headphones` (the third
   and the fourth). It checks the routing of the audio device; the volume knobs do not affect
   it. On a device with two outputs the headphone tone is not played.
+- In external mixer mode there is no master: the limiter, the meter and the test tone work as
+  `docs/behavior/external-mixer.md` describes.
 
 ## Differences
 

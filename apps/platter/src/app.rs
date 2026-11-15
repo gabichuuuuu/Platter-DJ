@@ -5,12 +5,15 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use eframe::egui::ViewportCommand;
 use platter_audio_io::{
     AudioError, BUFFER_SIZES, DeviceInfo, DeviceKind, Output, SAMPLE_RATES, Source, StreamRequest,
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
-use platter_engine::{Command, Engine, Event, Processor};
+use platter_engine::{Command, Engine, EngineError, Event, Processor};
+use platter_library::{Library, LibraryError, SqliteLibrary};
+use platter_ui_egui::collection::Collection;
 use platter_ui_egui::command::{Action, AppCommand};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
@@ -21,7 +24,8 @@ use platter_ui_egui::model::{
 };
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
-use crate::config::{self, KEYMAP_FILE, LOG_FILE, SETTINGS_FILE, Settings};
+use crate::config::{self, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE, SETTINGS_FILE, Settings};
+use crate::midi;
 
 /// How often the devices are looked for again while none is playing.
 const DEVICE_RETRY: Duration = Duration::from_secs(3);
@@ -94,16 +98,34 @@ pub struct PlatterApp {
     last_device_scan: Instant,
     browser: FileBrowser,
     notices: [Option<DeckNotice>; DeckId::COUNT],
+    /// The window covers the whole screen, as the window last said.
+    fullscreen: bool,
+    /// Full screen asked for by a command, sent to the window in the next frame.
+    fullscreen_wanted: Option<bool>,
+    /// The MIDI controllers of the settings file that could be opened.
+    controllers: Vec<midi::Controller>,
 }
 
 impl PlatterApp {
-    pub fn new(shell: Shell, settings: Settings, folder: Option<PathBuf>) -> Self {
+    /// `context` is the context of the window, woken by the MIDI inputs.
+    pub fn new(
+        shell: Shell,
+        settings: Settings,
+        folder: Option<PathBuf>,
+        context: eframe::egui::Context,
+    ) -> Self {
         let logger = folder.as_ref().and_then(|folder| {
             std::fs::create_dir_all(folder).ok()?;
             Logger::to_file(&folder.join(LOG_FILE)).ok()
         });
         let home_name = shell.texts().get("browser.home").to_owned();
         let mut browser = FileBrowser::new(roots(&home_name, &settings.roots));
+        let library = folder.as_ref().map(|folder| folder.join(LIBRARY_FILE));
+        browser.attach(Collection::start(move || {
+            let path = library
+                .ok_or_else(|| LibraryError::NotAFolder(std::io::ErrorKind::NotFound.into()))?;
+            Ok(Box::new(SqliteLibrary::open(&path)?) as Box<dyn Library>)
+        }));
         // The folder shown last is not looked at here: if it is gone, or on a drive that
         // does not answer, the worker that reads it finds out without holding the window.
         let start = settings.folder.clone().or_else(|| {
@@ -130,6 +152,9 @@ impl PlatterApp {
             last_device_scan: Instant::now(),
             browser,
             notices: [None; DeckId::COUNT],
+            fullscreen: false,
+            fullscreen_wanted: None,
+            controllers: Vec::new(),
         };
         app.log(
             Level::Info,
@@ -137,8 +162,10 @@ impl PlatterApp {
         );
         app.load_keymap();
         app.open_audio(Some(source_of(processor)));
+        app.open_controllers(&context);
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
+        app.apply_mixer_settings();
         app
     }
 
@@ -181,6 +208,80 @@ impl PlatterApp {
                 &format!("{error}; using the default shortcuts"),
             ),
         }
+    }
+
+    /// Reads the mapping of each MIDI controller of the settings and opens its input. A
+    /// controller whose mapping has a mistake, or whose input cannot be opened, is written in
+    /// the log and left off.
+    fn open_controllers(&mut self, context: &eframe::egui::Context) {
+        for entry in self.settings.midi.clone() {
+            let path = match &self.folder {
+                Some(folder) if entry.mapping.is_relative() => folder.join(&entry.mapping),
+                _ => entry.mapping.clone(),
+            };
+            let mapping = match midi::read(&path) {
+                Ok(mapping) => mapping,
+                Err(problem) => {
+                    self.log(
+                        Level::Warning,
+                        &format!("MIDI mapping {}: {problem}", entry.mapping.display()),
+                    );
+                    continue;
+                }
+            };
+            let context = context.clone();
+            match midi::Controller::open(&entry.input, mapping, move || context.request_repaint()) {
+                Ok(controller) => {
+                    self.log(
+                        Level::Info,
+                        &format!("MIDI input `{}` opened", controller.name()),
+                    );
+                    self.controllers.push(controller);
+                }
+                Err(error) => self.log(Level::Warning, &format!("MIDI: {error}")),
+            }
+        }
+    }
+
+    /// Carries out the messages the MIDI controllers sent since the last frame. Returns
+    /// whether some may still be waiting.
+    fn take_midi(&mut self) -> bool {
+        let mut controllers = std::mem::take(&mut self.controllers);
+        let mut more = false;
+        for controller in &mut controllers {
+            let (actions, left) = controller.take();
+            more |= left;
+            for action in actions {
+                match action {
+                    Action::Engine(command) => {
+                        let id = command.id();
+                        if let Err(error) = self.run_engine(command)
+                            && controller.first_refusal(id)
+                        {
+                            self.log(
+                                Level::Warning,
+                                &format!(
+                                    "MIDI `{}`: {id}: {error}; not written again",
+                                    controller.name()
+                                ),
+                            );
+                        }
+                    }
+                    Action::App(command) => self.dispatch_app(command),
+                }
+            }
+            if let Some((dropped, oversized)) = controller.losses(Instant::now()) {
+                self.log(
+                    Level::Warning,
+                    &format!(
+                        "MIDI `{}`: {dropped} messages lost so far, {oversized} too long",
+                        controller.name()
+                    ),
+                );
+            }
+        }
+        self.controllers = controllers;
+        more
     }
 
     /// Builds an engine at the sample rate of the settings with the controls where they
@@ -273,23 +374,103 @@ impl PlatterApp {
     pub fn dispatch(&mut self, action: Action) {
         match action {
             Action::Engine(command) => {
-                match &command {
-                    Command::DeckLoad { deck, .. } => self.notices[deck.index()] = None,
-                    Command::MixerCrossfaderCurveSet { curve }
-                        if self.settings.crossfader_curve != *curve =>
-                    {
-                        self.settings.crossfader_curve = *curve;
-                        self.save_settings();
-                    }
-                    _ => {}
-                }
                 let id = command.id();
-                if let Err(error) = self.engine.dispatch(command) {
+                if let Err(error) = self.run_engine(command) {
                     self.log(Level::Warning, &format!("{id}: {error}"));
                 }
             }
             Action::App(command) => self.dispatch_app(command),
         }
+    }
+
+    fn dispatch_engine(&mut self, command: Command) {
+        let id = command.id();
+        if let Err(error) = self.engine.dispatch(command) {
+            self.log(Level::Warning, &format!("{id}: {error}"));
+        }
+    }
+
+    /// Brings the mixer of the engine to the settings of the Mixer page.
+    fn apply_mixer_settings(&mut self) {
+        let mixer = self.engine.snapshot().mixer;
+        let settings = &self.settings;
+        let mut commands = vec![
+            Command::MixerModeSet {
+                mode: settings.mixer_mode,
+            },
+            Command::MixerCrossfaderFadeBeatsSet {
+                beats: f64::from(settings.fade_beats),
+            },
+        ];
+        for (now, wanted, toggle) in [
+            (
+                mixer.autogain,
+                settings.autogain,
+                Command::MixerAutogainToggle,
+            ),
+            (
+                mixer.external_eq_gain,
+                settings.external_eq_gain,
+                Command::MixerExternalEqGainToggle,
+            ),
+            (
+                mixer.external_master_volume,
+                settings.external_master_volume,
+                Command::MixerExternalMasterVolumeToggle,
+            ),
+        ] {
+            if now != wanted {
+                commands.push(toggle);
+            }
+        }
+        for command in commands {
+            self.dispatch_engine(command);
+        }
+    }
+
+    /// Keeps the settings of the Mixer page as the engine has them, whatever changed them:
+    /// the page, a shortcut or a controller.
+    fn keep_mixer_settings(&mut self) {
+        let mixer = self.engine.snapshot().mixer;
+        let kept = Settings {
+            mixer_mode: mixer.mode,
+            autogain: mixer.autogain,
+            external_eq_gain: mixer.external_eq_gain,
+            external_master_volume: mixer.external_master_volume,
+            // A length set by a command between whole beats is saved to the nearest one.
+            fade_beats: mixer.fade_beats.round() as u32,
+            ..self.settings.clone()
+        };
+        if kept != self.settings {
+            self.settings = kept;
+            self.save_settings();
+        }
+    }
+
+    fn run_engine(&mut self, command: Command) -> Result<(), EngineError> {
+        match &command {
+            Command::DeckLoad { deck, .. } => self.notices[deck.index()] = None,
+            Command::MixerCrossfaderCurveSet { curve }
+                if self.settings.crossfader_curve != *curve =>
+            {
+                self.settings.crossfader_curve = *curve;
+                self.save_settings();
+            }
+            _ => {}
+        }
+        let mixer_setting = matches!(
+            command,
+            Command::MixerModeSet { .. }
+                | Command::MixerAutogainToggle
+                | Command::MixerExternalEqGainToggle
+                | Command::MixerExternalMasterVolumeToggle
+                | Command::MixerCrossfaderFadeBeatsSet { .. }
+        );
+        self.engine.dispatch(command)?;
+        if mixer_setting {
+            self.keep_mixer_settings();
+        }
+        Ok(())
     }
 
     fn dispatch_app(&mut self, command: AppCommand) {
@@ -344,6 +525,11 @@ impl PlatterApp {
             }
             AppCommand::SettingsRestoreDefaults => self.restore_defaults(),
             AppCommand::KeymapOpen => self.open_keymap(),
+            AppCommand::FullscreenToggle => self.fullscreen_wanted = Some(!self.fullscreen),
+            AppCommand::TooltipsToggle => {
+                self.settings.tooltips = !self.settings.tooltips;
+                self.save_settings();
+            }
             AppCommand::DeckNoticeDismiss { deck } => self.notices[deck.index()] = None,
             _ => {}
         }
@@ -374,16 +560,19 @@ impl PlatterApp {
     }
 
     fn restore_defaults(&mut self) {
-        // Where the file selector stands and its roots are not settings of these pages.
+        // Where the file selector stands, its roots and the MIDI controllers are not settings
+        // of these pages.
         self.settings = Settings {
             folder: self.settings.folder.clone(),
             roots: self.settings.roots.clone(),
+            midi: self.settings.midi.clone(),
             ..Settings::default()
         };
         self.save_settings();
         self.set_language(self.settings.language);
         let curve = self.settings.crossfader_curve;
         self.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
+        self.apply_mixer_settings();
         self.reopen_audio();
     }
 
@@ -499,6 +688,8 @@ impl PlatterApp {
                 routing.headphones[1],
             ],
             language: self.settings.language,
+            fullscreen: self.fullscreen,
+            tooltips: self.settings.tooltips,
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
         }
@@ -507,6 +698,7 @@ impl PlatterApp {
 
 impl eframe::App for PlatterApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        let midi_waiting = self.take_midi();
         self.poll();
         let ctx = ui.ctx().clone();
         // A window narrower than the layout is designed for shows the whole interface
@@ -534,13 +726,22 @@ impl eframe::App for PlatterApp {
         for action in actions {
             self.dispatch(action);
         }
+        // The window manager may leave full screen by itself; the window says what it is.
+        if let Some(fullscreen) = self.fullscreen_wanted.take() {
+            ctx.send_viewport_cmd(ViewportCommand::Fullscreen(fullscreen));
+        }
+        if let Some(fullscreen) = ctx.input(|input| input.viewport().fullscreen) {
+            self.fullscreen = fullscreen;
+        }
 
         let busy = engine.decks.iter().any(|deck| deck.playing || deck.loading)
             || engine
                 .master_levels
                 .iter()
                 .any(|level| *level > QUIET_LEVEL)
-            || browser.reading;
+            || browser.reading
+            || self.browser.collection_busy()
+            || midi_waiting;
         if busy {
             ctx.request_repaint();
         } else {

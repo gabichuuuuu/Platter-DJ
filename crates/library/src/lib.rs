@@ -9,6 +9,7 @@
 
 mod error;
 mod folder;
+mod m3u;
 mod store;
 mod text;
 
@@ -18,6 +19,9 @@ use platter_core::DeckId;
 
 pub use error::{LibraryError, StoreError};
 pub use folder::{ImportReport, MAX_DEPTH, MAX_ENTRIES, Reading, TagReader, import_folder};
+pub use m3u::{
+    M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u,
+};
 pub use store::SqliteLibrary;
 
 /// Longest tag kept, in characters; longer tags are cut.

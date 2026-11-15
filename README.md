@@ -82,12 +82,34 @@ its own code, graphics and sounds.
   attack of kicks, the first milliseconds after a jump play with the pitch following the
   speed, a track below 32 kHz plays without it, and nobody has listened to it; only
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
-- The store of the library (collection, playlists and history) exists as a crate only: nothing
-  in the application uses it yet. It can import a folder, but the application does not read
-  the tags for it nor offer the import.
-- No browser of the collection, no MIDI: those are milestone M3.
-
-The reading of MIDI mapping files exists as a crate only: nothing opens a MIDI port yet.
+  Transposition by semitones, locking the current key and the resulting key exist in the
+  engine only too: the bridge after a jump plays 32 ms at the untransposed pitch, and nobody
+  has listened to a transposed deck (`docs/decisions/0031-transposition.md`).
+- The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
+  the headphones, so a device with two channels does not play it, and nobody has listened to
+  it against a real track (`docs/behavior/beatgrid.md`).
+- Autogain is on and sets the gain of a channel when a track is analysed. It is switched off
+  on the Mixer page of the preferences; the mixer has no key to restore it yet, the value is
+  measured again on each load, and nobody has listened to its level, -10 LUFS
+  (`docs/decisions/0029-autogain-level.md`).
+- The assignment of a channel to a side of the crossfader, its steps and its automatic fade
+  have no controls in the mixer yet; the length of the fade is set on the Mixer page of the
+  preferences. Nobody has listened to a fade (`docs/behavior/mixer.md`).
+- External mixer mode, each deck on its own pair of outputs, is chosen on the Mixer page of
+  the preferences. Deck A takes the master outputs of the routing and deck B the headphone
+  ones, the mixer panel does not collapse to the controls that still act, and it has not run
+  on a device with four outputs feeding a hardware mixer
+  (`docs/behavior/external-mixer.md`).
+- Flux and reverse exist in the engine only: the window has no buttons and no marker for
+  them yet, they are reached through the shortcut file, and nobody has listened to them
+  (`docs/behavior/flux.md`).
+- The browser shows the collection and imports a folder into it, with the tags of each file
+  header. Playlists, history, search, sorting and the preview player are not in the window
+  yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
+- MIDI controllers are named by hand in the settings file, each with a mapping file
+  (`docs/behavior/controllers.md`); there is no controller page, no learn mode and no lights
+  yet. No real controller has been tried: the path from a MIDI input to the engine is tested
+  with invented messages only.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 

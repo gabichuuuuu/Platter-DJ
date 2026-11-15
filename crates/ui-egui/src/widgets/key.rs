@@ -9,6 +9,7 @@ use crate::cx::{ControlKind, Cx};
 use crate::icons::Glyph;
 use crate::paint;
 use crate::tokens::TextStyle;
+use crate::widgets::tooltip;
 
 pub enum Face<'a> {
     Text(&'a str),
@@ -89,6 +90,12 @@ pub fn key(cx: &mut Cx<'_>, rect: Rect, id: Id, spec: KeySpec<'_>, press: Press)
     let sense = cx.sense(spec.enabled, Sense::click());
     let response = cx.ui.interact(rect, id, sense);
     response.widget_info(|| WidgetInfo::labeled(Role::Button, spec.enabled, spec.name));
+    let action = match &press {
+        Press::Click(action) | Press::Hold { down: action, .. } => action,
+    };
+    if spec.enabled {
+        tooltip::tooltip(cx, &response, spec.name, action);
+    }
     let focused = response.has_focus();
     if focused {
         cx.out.claim(&[KeyboardKey::Space, KeyboardKey::Enter]);

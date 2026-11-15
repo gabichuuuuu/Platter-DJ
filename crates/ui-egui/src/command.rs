@@ -22,15 +22,17 @@ pub enum SettingsPage {
     #[default]
     Audio,
     General,
+    Mixer,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 2] = [Self::Audio, Self::General];
+    pub const ALL: [Self; 3] = [Self::Audio, Self::General, Self::Mixer];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Audio => "audio",
             Self::General => "general",
+            Self::Mixer => "mixer",
         }
     }
 }
@@ -147,6 +149,10 @@ pub enum AppCommand {
     },
     /// Opens the keyboard shortcut file in the editor of the system.
     KeymapOpen,
+    /// Shows the window on the whole screen, or as a window again.
+    FullscreenToggle,
+    /// Turns the tooltips of the keys on or off.
+    TooltipsToggle,
     /// Shows a folder in the file list.
     BrowserNavigate {
         path: PathBuf,
@@ -168,6 +174,14 @@ pub enum AppCommand {
     BrowserActivate,
     BrowserLoadSelected {
         deck: DeckId,
+    },
+    /// Shows a fixed node of the tree, such as the collection, in the list.
+    BrowserNodeSelect {
+        node: BrowserNode,
+    },
+    /// Adds the music of a folder and of the folders inside it to the collection.
+    LibraryImportFolder {
+        path: PathBuf,
     },
     WaveformZoomIn {
         deck: DeckId,
@@ -221,7 +235,7 @@ const fn choice(name: &'static str, choices: &'static [&'static str]) -> ParamSp
     }
 }
 
-const PAGES: &[&str] = &["audio", "general"];
+const PAGES: &[&str] = &["audio", "general", "mixer"];
 const LANGUAGES: &[&str] = &["en", "es"];
 const SLOTS: &[&str] = &[
     "master_left",
@@ -234,6 +248,23 @@ const DECK_PAGES: &[&str] = &["move", "cue", "grid"];
 /// Outputs a device may have, as far as the routing goes.
 pub const MAX_OUTPUTS: u16 = 64;
 const MAX_ROWS: f64 = 1_000_000.0;
+const NODES: &[&str] = &["collection"];
+
+/// The nodes of the browser tree that are not folders of the explorer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserNode {
+    Collection,
+}
+
+impl BrowserNode {
+    pub const ALL: [Self; 1] = [Self::Collection];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Collection => "collection",
+        }
+    }
+}
 
 /// Every command of the application, in the order a list shows them.
 pub const APP_SPECS: &[CommandSpec] = &[
@@ -260,6 +291,16 @@ pub const APP_SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "app.keymap.open",
         label: "Open the shortcut file",
+        params: &[],
+    },
+    CommandSpec {
+        id: "app.fullscreen.toggle",
+        label: "Full screen",
+        params: &[],
+    },
+    CommandSpec {
+        id: "app.tooltips.toggle",
+        label: "Tooltips",
         params: &[],
     },
     CommandSpec {
@@ -327,6 +368,16 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "browser.load_selected",
         label: "Load selected track",
         params: &[DECK],
+    },
+    CommandSpec {
+        id: "browser.node.select",
+        label: "Show node of the tree",
+        params: &[choice("node", NODES)],
+    },
+    CommandSpec {
+        id: "library.import_folder",
+        label: "Import folder into the collection",
+        params: &[PATH],
     },
     CommandSpec {
         id: "waveform.zoom.in",
@@ -459,7 +510,7 @@ impl AppCommand {
                     "page",
                     &SettingsPage::ALL,
                     SettingsPage::name,
-                    "audio, general",
+                    "audio, general, mixer",
                 )?,
             },
             "app.settings.close" => Self::SettingsClose,
@@ -468,6 +519,8 @@ impl AppCommand {
                 language: read.choice("language", &Language::ALL, Language::code, "en, es")?,
             },
             "app.keymap.open" => Self::KeymapOpen,
+            "app.fullscreen.toggle" => Self::FullscreenToggle,
+            "app.tooltips.toggle" => Self::TooltipsToggle,
             "audio.device.set" => {
                 let device = read.text("device")?;
                 Self::AudioDeviceSet {
@@ -512,6 +565,12 @@ impl AppCommand {
             },
             "browser.activate" => Self::BrowserActivate,
             "browser.load_selected" => Self::BrowserLoadSelected { deck: read.deck()? },
+            "browser.node.select" => Self::BrowserNodeSelect {
+                node: read.choice("node", &BrowserNode::ALL, BrowserNode::name, "collection")?,
+            },
+            "library.import_folder" => Self::LibraryImportFolder {
+                path: PathBuf::from(read.text("path")?),
+            },
             "waveform.zoom.in" => Self::WaveformZoomIn { deck: read.deck()? },
             "waveform.zoom.out" => Self::WaveformZoomOut { deck: read.deck()? },
             "deck.time_display.toggle" => Self::DeckTimeDisplayToggle { deck: read.deck()? },
@@ -536,6 +595,8 @@ impl AppCommand {
             Self::SettingsRestoreDefaults => "app.settings.restore_defaults",
             Self::LanguageSet { .. } => "app.language.set",
             Self::KeymapOpen => "app.keymap.open",
+            Self::FullscreenToggle => "app.fullscreen.toggle",
+            Self::TooltipsToggle => "app.tooltips.toggle",
             Self::AudioDeviceSet { .. } => "audio.device.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",
@@ -548,6 +609,8 @@ impl AppCommand {
             Self::BrowserMove { .. } => "browser.move",
             Self::BrowserActivate => "browser.activate",
             Self::BrowserLoadSelected { .. } => "browser.load_selected",
+            Self::BrowserNodeSelect { .. } => "browser.node.select",
+            Self::LibraryImportFolder { .. } => "library.import_folder",
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",
             Self::DeckTimeDisplayToggle { .. } => "deck.time_display.toggle",
@@ -612,7 +675,7 @@ mod tests {
 
     use platter_engine::command::{Args, CommandError, CommandSpec, ParamKind, Value};
 
-    use super::{APP_SPECS, Action, AppCommand};
+    use super::{APP_SPECS, Action, AppCommand, BrowserNode, NODES, PAGES, SettingsPage};
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
     fn sample_args(spec: &CommandSpec) -> Args {
@@ -645,6 +708,20 @@ mod tests {
             );
             assert!(!spec.label.is_empty());
         }
+    }
+
+    #[test]
+    fn the_choices_a_specification_lists_name_every_value() {
+        let pages: Vec<_> = SettingsPage::ALL
+            .into_iter()
+            .map(SettingsPage::name)
+            .collect();
+        assert_eq!(pages, PAGES);
+        let nodes: Vec<_> = BrowserNode::ALL
+            .into_iter()
+            .map(BrowserNode::name)
+            .collect();
+        assert_eq!(nodes, NODES);
     }
 
     #[test]
