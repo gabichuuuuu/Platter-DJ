@@ -1,6 +1,6 @@
 [package]
 name = "platter-analysis"
-description = "Analysis of Platter: tempo, beatgrid and key of a track"
+description = "Analysis of Platter: tempo, beatgrid, key and loudness of a track"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

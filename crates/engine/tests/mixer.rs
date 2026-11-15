@@ -26,7 +26,7 @@ fn playing_deck_a(name: &str, hz: f64) -> Rig {
 }
 
 #[test]
-fn the_default_mixer_passes_the_track_at_unity() {
+fn the_default_mixer_without_autogain_passes_the_track_at_unity() {
     let mut rig = playing_deck_a("mixer-unity", 1_000.0);
     assert!((settled_amplitude(&mut rig, 1_000.0) - 0.5).abs() < 0.003);
 }

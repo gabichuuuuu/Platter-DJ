@@ -34,6 +34,7 @@ impl Analyser for Nothing {
         TrackAnalysis {
             tempo: None,
             key: None,
+            loudness: None,
         }
     }
 }

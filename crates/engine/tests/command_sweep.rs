@@ -64,6 +64,8 @@ fn later_command() -> impl Strategy<Value = Command> {
         (deck(), band()).prop_map(|(deck, band)| Command::MixerEqKillToggle { deck, band }),
         (deck(), number()).prop_map(|(deck, position)| Command::MixerPanSet { deck, position }),
         deck().prop_map(|deck| Command::MixerCueToggle { deck }),
+        deck().prop_map(|deck| Command::MixerGainRestore { deck }),
+        prop::strategy::Just(Command::MixerAutogainToggle),
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),

@@ -15,7 +15,9 @@ mod stretch;
 mod tap;
 mod wav;
 
-pub use analyser::{AnalysedTempo, Analyser, PlatterAnalyser, TrackAnalysis};
+pub use analyser::{
+    AUTOGAIN_LUFS, AnalysedTempo, Analyser, MAX_AUTOGAIN_DB, PlatterAnalyser, TrackAnalysis,
+};
 pub use command::{
     BpmScale, ClockMode, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
     SyncMode,

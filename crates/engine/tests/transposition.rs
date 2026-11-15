@@ -338,6 +338,7 @@ impl Analyser for InAMinor {
         TrackAnalysis {
             tempo: None,
             key: Some(A_MINOR),
+            loudness: None,
         }
     }
 }
@@ -424,6 +425,7 @@ impl Analyser for NoKey {
         TrackAnalysis {
             tempo: None,
             key: None,
+            loudness: None,
         }
     }
 }

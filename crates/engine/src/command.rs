@@ -203,6 +203,13 @@ pub enum Command {
         deck: DeckId,
         db: f64,
     },
+    /// Sets the gain of the channel to the autogain value of its track:
+    /// `docs/behavior/autogain.md`.
+    MixerGainRestore {
+        deck: DeckId,
+    },
+    /// Switches autogain on or off for both channels.
+    MixerAutogainToggle,
     /// Knob position `0.0..=1.0`: zero removes the band, the centre leaves it untouched.
     MixerEqSet {
         deck: DeckId,
@@ -814,6 +821,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK, number("position", -1.0, 1.0)],
     },
     CommandSpec {
+        id: "mixer.gain.restore",
+        label: "Restore autogain",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "mixer.autogain.toggle",
+        label: "Autogain",
+        params: &[],
+    },
+    CommandSpec {
         id: "mixer.cue.toggle",
         label: "Pre-listen",
         params: &[DECK],
@@ -1410,6 +1427,8 @@ impl Command {
                 position: read.number("position")?,
             },
             "mixer.cue.toggle" => Self::MixerCueToggle { deck: read.deck()? },
+            "mixer.gain.restore" => Self::MixerGainRestore { deck: read.deck()? },
+            "mixer.autogain.toggle" => Self::MixerAutogainToggle,
             "mixer.cue.mix.set" => Self::MixerCueMixSet {
                 position: read.number("position")?,
             },
@@ -1496,6 +1515,8 @@ impl Command {
             Self::MixerFilterSet { .. } => "mixer.filter.set",
             Self::MixerPanSet { .. } => "mixer.pan.set",
             Self::MixerCueToggle { .. } => "mixer.cue.toggle",
+            Self::MixerGainRestore { .. } => "mixer.gain.restore",
+            Self::MixerAutogainToggle => "mixer.autogain.toggle",
             Self::MixerCueMixSet { .. } => "mixer.cue.mix.set",
             Self::MixerCueVolumeSet { .. } => "mixer.cue.volume.set",
             Self::MixerFaderSet { .. } => "mixer.fader.set",

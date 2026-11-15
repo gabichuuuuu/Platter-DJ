@@ -13,6 +13,12 @@
 sample_rate = 48000
 seconds = 8.0
 
+# Autogain off, before the loads: each track plays at the level of its file
+# (`docs/behavior/autogain.md`).
+[[command]]
+at = 0.0
+id = "mixer.autogain.toggle"
+
 [[command]]
 at = 0.0
 id = "deck.load"

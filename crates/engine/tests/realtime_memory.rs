@@ -26,6 +26,10 @@ fn commands() -> Vec<Command> {
         // The beat tick of both decks ticks in the headphones through all of it.
         Command::DeckBeatTickToggle { deck: A },
         Command::DeckBeatTickToggle { deck: B },
+        // Autogain off, a restore and autogain on again: each sets the gain of a channel.
+        Command::MixerAutogainToggle,
+        Command::MixerGainRestore { deck: A },
+        Command::MixerAutogainToggle,
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },
         Command::DeckTempoSet {

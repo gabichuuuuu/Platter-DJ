@@ -1,8 +1,9 @@
 //! What the engine asks of the analysis of a track, and Platter's own detection behind it.
-//! Behaviour note: `docs/behavior/analysis.md`; the choice of the detection:
-//! `docs/decisions/0020-own-analysis.md`.
+//! Behaviour notes: `docs/behavior/analysis.md`, `docs/behavior/autogain.md`; the choice of
+//! the detection: `docs/decisions/0020-own-analysis.md`; the level of autogain:
+//! `docs/decisions/0029-autogain-level.md`.
 
-use platter_analysis::{Key, TempoRange, detect};
+use platter_analysis::{Key, TempoRange, detect, integrated_loudness};
 use platter_core::{Bpm, SampleRate};
 
 /// What the analysis of a loaded track found.
@@ -10,6 +11,23 @@ use platter_core::{Bpm, SampleRate};
 pub struct TrackAnalysis {
     pub tempo: Option<AnalysedTempo>,
     pub key: Option<Key>,
+    /// Integrated loudness in LUFS, as ITU-R BS.1770-5 measures it.
+    pub loudness: Option<f64>,
+}
+
+/// The loudness autogain brings a track to, in LUFS.
+pub const AUTOGAIN_LUFS: f64 = -10.0;
+/// The most autogain moves the gain of a channel either way, in decibels.
+pub const MAX_AUTOGAIN_DB: f64 = 12.0;
+
+impl TrackAnalysis {
+    /// The gain that brings the track to [`AUTOGAIN_LUFS`], within [`MAX_AUTOGAIN_DB`] either
+    /// way; none when no loudness was found.
+    pub fn autogain_db(&self) -> Option<f64> {
+        self.loudness
+            .filter(|lufs| lufs.is_finite())
+            .map(|lufs| (AUTOGAIN_LUFS - lufs).clamp(-MAX_AUTOGAIN_DB, MAX_AUTOGAIN_DB))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,6 +58,7 @@ impl Analyser for PlatterAnalyser {
             return TrackAnalysis::default();
         };
         TrackAnalysis {
+            loudness: integrated_loudness(stereo, 2, rate.hz()).ok().flatten(),
             tempo: found.tempo.and_then(|tempo| {
                 Bpm::new(tempo.bpm).ok().map(|bpm| AnalysedTempo {
                     bpm,

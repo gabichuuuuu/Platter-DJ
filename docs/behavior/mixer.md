@@ -34,6 +34,7 @@ pre-listened channel after its filter and before its fader.
 | Command | Effect |
 | --- | --- |
 | `mixer.gain.set` | Channel gain in decibels, silence to +12 dB |
+| `mixer.gain.restore`, `mixer.autogain.toggle` | Autogain: `docs/behavior/autogain.md` |
 | `mixer.eq.set` | Position of a band knob, 0 to 1: 0 removes the band, 0.5 leaves it untouched, 1 boosts it by 12 dB |
 | `mixer.eq.kill.toggle` | Removes a band completely, or gives it back to its knob |
 | `mixer.filter.set` | Position of the filter knob, -1 to 1: low-pass below zero, high-pass above, no effect at zero |

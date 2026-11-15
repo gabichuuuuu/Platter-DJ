@@ -153,7 +153,7 @@ features = [
   { id = "filter-model-first", name = "First filter model", milestone = "M2", status = "done", evidence = "cargo test -p platter-dsp filter" },
   { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "planned" },
   { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "planned" },
-  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "planned" },
+  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "in_progress" },
   { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "planned" },
   { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
   { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },

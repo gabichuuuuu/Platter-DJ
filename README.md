@@ -88,6 +88,9 @@ its own code, graphics and sounds.
 - The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
   the headphones, so a device with two channels does not play it, and nobody has listened to
   it against a real track (`docs/behavior/beatgrid.md`).
+- Autogain is on and sets the gain of a channel when a track is analysed, but the window has
+  no key to switch it off or to restore it yet, the value is measured again on each load, and
+  nobody has listened to its level, -10 LUFS (`docs/decisions/0029-autogain-level.md`).
 - Flux and reverse exist in the engine only: the window has no buttons and no marker for
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).

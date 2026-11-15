@@ -142,6 +142,9 @@ pub struct MixerControls {
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
     pub headphone_gain_db: f64,
+    /// The gain of a channel is set from the loudness of each track analysed:
+    /// `docs/behavior/autogain.md`.
+    pub autogain: bool,
 }
 
 impl Default for MixerControls {
@@ -152,6 +155,7 @@ impl Default for MixerControls {
             master_gain_db: 0.0,
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
+            autogain: true,
         }
     }
 }
@@ -200,6 +204,8 @@ pub struct DeckSnapshot {
     pub analysing: bool,
     /// What the analysis of the loaded track found, once it has finished.
     pub analysis: Option<TrackAnalysis>,
+    /// The gain autogain gives the loaded track, once the analysis has found its loudness.
+    pub autogain_db: Option<f64>,
     pub playing: bool,
     pub position_seconds: f64,
     pub cue_seconds: f64,
@@ -245,6 +251,7 @@ impl Default for DeckSnapshot {
             loading: false,
             analysing: false,
             analysis: None,
+            autogain_db: None,
             playing: false,
             position_seconds: 0.0,
             cue_seconds: 0.0,
@@ -288,6 +295,8 @@ struct DeckControl {
     analysis: Option<TrackAnalysis>,
     /// The result of the analysis, waiting for room in the queue to the processor.
     pending_analysis: Option<GridEdit>,
+    /// A gain in decibels autogain sets, waiting for room in the queue.
+    pending_gain: Option<f64>,
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
     /// The generation of the track the deck holds, so the analysis of a track that is no
@@ -746,9 +755,15 @@ impl Engine {
     fn dispatch_channel(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
             Command::MixerGainSet { deck, db } => {
-                let linear = gain_up_to(db, MAX_CHANNEL_GAIN_DB)?;
-                self.send(RtCommand::Gain { deck, linear })?;
-                self.decks[deck.index()].controls.gain_db = db.max(Gain::MIN_DB);
+                self.set_gain(deck, db)?;
+                // An autogain still waiting for room in the queue would undo the knob.
+                self.decks[deck.index()].pending_gain = None;
+            }
+            Command::MixerGainRestore { deck } => {
+                let state = &self.decks[deck.index()];
+                if let Some(db) = state.analysis.and_then(|analysis| analysis.autogain_db()) {
+                    self.set_gain(deck, db)?;
+                }
             }
             Command::MixerEqSet {
                 deck,
@@ -828,9 +843,27 @@ impl Engine {
                 self.mixer.master_gain_db = db.max(Gain::MIN_DB);
             }
             Command::MasterTestTone { output } => self.send(RtCommand::TestTone { output })?,
+            Command::MixerAutogainToggle => {
+                let on = !self.mixer.autogain;
+                self.mixer.autogain = on;
+                for state in &mut self.decks {
+                    state.pending_gain = state
+                        .analysis
+                        .filter(|_| on)
+                        .and_then(|analysis| analysis.autogain_db());
+                }
+                self.send_pending_analyses();
+            }
             // Every other command is handled before this point.
             _ => {}
         }
+        Ok(())
+    }
+
+    fn set_gain(&mut self, deck: DeckId, db: f64) -> Result<(), EngineError> {
+        let linear = gain_up_to(db, MAX_CHANNEL_GAIN_DB)?;
+        self.send(RtCommand::Gain { deck, linear })?;
+        self.decks[deck.index()].controls.gain_db = db.max(Gain::MIN_DB);
         Ok(())
     }
 
@@ -1002,6 +1035,9 @@ impl Engine {
             bpm: tempo.bpm,
             first_beat: tempo.first_beat,
         });
+        if self.mixer.autogain {
+            state.pending_gain = analysis.autogain_db();
+        }
         self.send_pending_analyses();
     }
 
@@ -1013,6 +1049,11 @@ impl Engine {
                 && self.send(RtCommand::Grid { deck, edit }).is_ok()
             {
                 self.decks[deck.index()].pending_analysis = None;
+            }
+            if let Some(db) = self.decks[deck.index()].pending_gain
+                && self.set_gain(deck, db).is_ok()
+            {
+                self.decks[deck.index()].pending_gain = None;
             }
         }
     }
@@ -1027,6 +1068,7 @@ impl Engine {
                 loading: control.loading,
                 analysing: control.analysing,
                 analysis: control.analysis,
+                autogain_db: control.analysis.and_then(|analysis| analysis.autogain_db()),
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
@@ -1160,6 +1202,7 @@ impl DeckControl {
         self.analysing = false;
         self.analysis = None;
         self.pending_analysis = None;
+        self.pending_gain = None;
     }
 }
 
