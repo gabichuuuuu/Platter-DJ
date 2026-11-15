@@ -10,10 +10,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+platter-analysis = { path = "../analysis" }
 platter-core = { path = "../core" }
 platter-decode = { path = "../decode" }
 platter-dsp = { path = "../dsp" }
 rtrb.workspace = true
+timestretch.workspace = true
 
 [dev-dependencies]
 platter-testkit = { path = "../testkit" }

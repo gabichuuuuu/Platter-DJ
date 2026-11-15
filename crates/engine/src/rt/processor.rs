@@ -12,6 +12,7 @@ use rtrb::{Consumer, Producer};
 
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
+use super::metronome::Metronome;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tone::TestTone;
 use super::{COMMAND_CAPACITY, DeckReport, Output, Queues, Retired, RtCommand, Shared};
@@ -46,6 +47,7 @@ pub struct Processor {
     headphone_gain: Smoothed,
     headphone_limiter: Limiter,
     tone: TestTone,
+    metronome: Metronome,
 }
 
 impl Processor {
@@ -77,6 +79,7 @@ impl Processor {
             headphone_gain: parameter(1.0),
             headphone_limiter: Limiter::new(rate),
             tone: TestTone::new(rate),
+            metronome: Metronome::new(rate),
         }
     }
 
@@ -126,9 +129,9 @@ impl Processor {
 
     fn apply(&mut self, command: RtCommand) {
         match command {
-            RtCommand::Swap { deck, audio } => {
+            RtCommand::Swap { deck, track } => {
                 let channel = &mut self.channels[deck.index()];
-                channel.player.swap(audio, &mut self.retired);
+                channel.player.swap(track, &mut self.retired);
             }
             RtCommand::Play { deck } => self.player(deck).set_playing(true),
             RtCommand::Pause { deck } => self.player(deck).set_playing(false),
@@ -151,6 +154,7 @@ impl Processor {
             RtCommand::Jump { deck, by } => self.player(deck).jump(by),
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
+            RtCommand::KeyLockToggle { deck } => self.player(deck).toggle_key_lock(),
             RtCommand::Master { deck } => {
                 let candidate = self.player(deck).candidate();
                 self.clock.set_master(deck, candidate);
@@ -173,6 +177,7 @@ impl Processor {
                     channel.player.set_quantize(on);
                 }
             }
+            RtCommand::Metronome { on } => self.metronome.set_on(on),
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -236,6 +241,7 @@ impl Processor {
         let master = self.clock.master();
         let lead = master.and_then(|deck| self.channels[deck.index()].player.lead());
         let pulse = self.clock.tick(lead);
+        let click = self.metronome.next(pulse.phase);
         for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
@@ -263,7 +269,9 @@ impl Processor {
         let balance = self.headphone_mix.advance();
         let gain = self.headphone_gain.advance();
         let tone = self.tone.next(Output::Headphones);
-        let blend = |index: usize| pre_listened[index] * (1.0 - balance) + master[index] * balance;
+        // The headphone volume sets the level of the metronome; the cue mix does not.
+        let blend =
+            |index: usize| pre_listened[index] * (1.0 - balance) + master[index] * balance + click;
         let headphones = self
             .headphone_limiter
             .process([blend(0) * gain + tone, blend(1) * gain + tone]);
@@ -298,6 +306,7 @@ impl Processor {
         self.shared.clock_bpm.set(pulse.bpm);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
+            shared.key_lock.set(channel.player.is_key_locked());
             shared.speed.set(f64::from(channel.player.speed()));
             let ahead = channel.player.beats_ahead(pulse);
             shared
