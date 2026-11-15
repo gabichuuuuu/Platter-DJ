@@ -2,7 +2,9 @@
 
 use std::fmt;
 
-use crate::{Action, Arg, Args, Binding, Control, Encoding, Kind, MAX_MODIFIER_VALUE, MODIFIERS};
+use crate::{
+    Action, Arg, Args, Binding, Control, Encoding, Kind, MAX_MODIFIER_VALUE, MODIFIERS, Steps,
+};
 
 /// Largest mapping file read.
 pub const MAX_FILE_BYTES: usize = 1 << 20;
@@ -51,6 +53,8 @@ pub enum BindingProblem {
     BadEncoding(String),
     /// A command on hold needs the parameters to send on release.
     MissingRelease,
+    /// An encoder takes `param` with `step`, or `up` with `down`.
+    MixedSteps,
 }
 
 impl fmt::Display for MappingError {
@@ -87,10 +91,13 @@ impl fmt::Display for BindingProblem {
             }
             Self::BadValue(name) => write!(f, "`{name}` has a value of the wrong kind"),
             Self::NotForThisControl(name) => write!(f, "`{name}` does not apply here"),
-            Self::MissingParam => f.write_str("`param` is missing"),
+            Self::MissingParam => f.write_str("`param`, or `up` and `down`, is missing"),
             Self::BadRange => f.write_str("`range` must be two numbers"),
             Self::BadEncoding(text) => write!(f, "`{text}` is not 7f-01 or 3f-41"),
             Self::MissingRelease => f.write_str("a command on hold needs `release`"),
+            Self::MixedSteps => {
+                f.write_str("an encoder takes `param` and `step`, or `up` and `down`")
+            }
         }
     }
 }
@@ -182,13 +189,13 @@ fn read_args<'a>(
 }
 
 /// Keys of a binding that are not parameters of its command.
-const BINDING_KEYS: [&str; 11] = [
+const BINDING_KEYS: [&str; 13] = [
     "midi", "command", "control", "hold", "release", "when", "param", "range", "invert", "step",
-    "encoding",
+    "encoding", "up", "down",
 ];
 const BUTTON_KEYS: [&str; 2] = ["hold", "release"];
 const FADER_KEYS: [&str; 3] = ["param", "range", "invert"];
-const ENCODER_KEYS: [&str; 3] = ["param", "step", "encoding"];
+const ENCODER_KEYS: [&str; 5] = ["param", "step", "encoding", "up", "down"];
 
 fn read_binding(value: &toml::Value) -> Result<Binding, BindingProblem> {
     let table = value.as_table().ok_or(BindingProblem::NotATable)?;
@@ -259,6 +266,16 @@ fn read_binding(value: &toml::Value) -> Result<Binding, BindingProblem> {
     let Some(command) = text("command")? else {
         return read_modifier(table, control, kind_name, hold, when);
     };
+    if table.contains_key("modifier") {
+        return Err(BindingProblem::NotForThisControl("modifier".to_owned()));
+    }
+    let table_of = |key: &str| -> Result<Option<Args>, BindingProblem> {
+        match table.get(key) {
+            None => Ok(None),
+            Some(toml::Value::Table(inner)) => read_args(inner.iter()).map(Some),
+            Some(_) => Err(BindingProblem::BadValue(key.to_owned())),
+        }
+    };
     let kind = match kind_name {
         "button" => Kind::Button,
         "fader" => {
@@ -283,14 +300,20 @@ fn read_binding(value: &toml::Value) -> Result<Binding, BindingProblem> {
             }
         }
         _ => Kind::Encoder {
-            param: text("param")?
-                .ok_or(BindingProblem::MissingParam)?
-                .to_owned(),
-            step: match table.get("step") {
-                None => 1.0,
-                Some(value) => {
-                    number(value).ok_or_else(|| BindingProblem::BadValue("step".to_owned()))?
+            target: match (text("param")?, table_of("up")?, table_of("down")?) {
+                (Some(param), None, None) => Steps::Amount {
+                    param: param.to_owned(),
+                    step: match table.get("step") {
+                        None => 1.0,
+                        Some(value) => number(value)
+                            .ok_or_else(|| BindingProblem::BadValue("step".to_owned()))?,
+                    },
+                },
+                (None, Some(up), Some(down)) if !table.contains_key("step") => {
+                    Steps::Each { up, down }
                 }
+                (None, None, None) => return Err(BindingProblem::MissingParam),
+                _ => return Err(BindingProblem::MixedSteps),
             },
             encoding: match text("encoding")? {
                 None | Some("7f-01") => Encoding::TwosComplement,

@@ -41,31 +41,68 @@ param = "position"
 invert = true
 "#;
 
-/// Lines that look like a binding, right or wrong, to reach the checks behind the syntax.
-fn line() -> impl Strategy<Value = String> {
-    let key = prop::sample::select(vec![
-        "midi", "command", "control", "hold", "release", "when", "param", "range", "invert",
-        "step", "encoding", "modifier", "value", "deck",
-    ]);
-    let value = prop::sample::select(vec![
+/// A binding with a valid control and command, and other keys, each at most once, with
+/// values right or wrong, so that many cases reach the checks behind the syntax and the mapper.
+fn binding() -> impl Strategy<Value = String> {
+    let control = prop::sample::select(vec![
         r#""note 1 36""#,
-        r#""cc 16 119""#,
-        r#""pitch 3""#,
+        r#""cc 1 7""#,
+        r#""cc 1 119""#,
+        r#""pitch 1""#,
+    ]);
+    let keys = prop::sample::subsequence(
+        vec![
+            "command", "control", "hold", "release", "when", "param", "range", "invert", "step",
+            "encoding", "up", "down", "modifier", "value", "deck",
+        ],
+        0..=6,
+    );
+    let value = prop::sample::select(vec![
         r#""button""#,
         r#""fader""#,
         r#""encoder""#,
         r#""3f-41""#,
+        r#""position""#,
         "true",
         "-1",
+        "1",
         "8",
         "1e999",
         "nan",
         "[0, 1]",
+        "[-1e308, 1e308]",
         r#"["1 = 1", "8 = 7"]"#,
         r#"{ action = "release" }"#,
         r#""x""#,
     ]);
-    (key, value).prop_map(|(key, value)| format!("{key} = {value}"))
+    (control, keys)
+        .prop_flat_map(move |(control, keys)| {
+            let count = keys.len();
+            (
+                Just(control),
+                Just(keys),
+                prop::collection::vec(value.clone(), count),
+            )
+        })
+        .prop_map(|(control, keys, values)| {
+            let mut lines = vec![format!("midi = {control}")];
+            lines.extend(
+                keys.iter()
+                    .zip(values)
+                    .map(|(key, value)| format!("{key} = {value}")),
+            );
+            format!("[[binding]]\n{}\n", lines.join("\n"))
+        })
+}
+
+/// Messages on the controls the bindings above use.
+fn message() -> impl Strategy<Value = Vec<u8>> {
+    (
+        prop::sample::select(vec![0x80u8, 0x90, 0xB0, 0xE0]),
+        prop::sample::select(vec![36u8, 7, 119, 0, 127]),
+        any::<u8>(),
+    )
+        .prop_map(|(status, first, second)| vec![status, first, second & 0x7F])
 }
 
 proptest! {
@@ -95,18 +132,21 @@ proptest! {
 
     #[test]
     fn random_bindings_never_panic(
-        bindings in prop::collection::vec(prop::collection::vec(line(), 0..8), 0..6),
-        messages in prop::collection::vec(prop::collection::vec(any::<u8>(), 3), 0..16),
+        bindings in prop::collection::vec(binding(), 1..6),
+        messages in prop::collection::vec(message(), 0..32),
     ) {
-        let source: String = bindings
-            .iter()
-            .map(|lines| format!("[[binding]]\n{}\n", lines.join("\n")))
-            .collect();
+        let source: String = bindings.concat();
         if let Ok(mapping) = Mapping::parse(&source) {
             let _ = mapping.commands();
             let mut mapper = Mapper::new(mapping);
             for bytes in &messages {
-                let _ = mapper.handle(bytes);
+                for emit in mapper.handle(bytes) {
+                    for arg in emit.args.values() {
+                        if let Arg::Number(number) = arg {
+                            prop_assert!(number.is_finite(), "{emit:?}");
+                        }
+                    }
+                }
             }
         }
     }

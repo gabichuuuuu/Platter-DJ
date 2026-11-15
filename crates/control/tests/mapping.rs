@@ -215,17 +215,15 @@ fn an_encoder_sends_its_steps_in_both_encodings() {
         [[binding]]
         midi = "cc 1 30"
         control = "encoder"
-        command = "deck.nudge"
-        deck = "a"
-        param = "amount"
+        command = "browser.move"
+        param = "delta"
         step = 0.5
 
         [[binding]]
         midi = "cc 1 31"
         control = "encoder"
-        command = "deck.nudge"
-        deck = "a"
-        param = "amount"
+        command = "browser.move"
+        param = "delta"
         encoding = "3f-41"
         "#,
     );
@@ -233,7 +231,7 @@ fn an_encoder_sends_its_steps_in_both_encodings() {
         mapper
             .handle(&[CC, number, value])
             .first()
-            .map(|emit| emit.args["amount"].clone())
+            .map(|emit| emit.args["delta"].clone())
     };
     let n = Arg::Number;
     assert_eq!(amount(&mut mapper, 30, 1), Some(n(0.5)));
@@ -423,8 +421,8 @@ fn a_value_too_large_for_a_number_is_not_sent() {
         [[binding]]
         midi = "cc 1 30"
         control = "encoder"
-        command = "deck.nudge"
-        param = "amount"
+        command = "browser.move"
+        param = "delta"
         step = 1e308
 
         [[binding]]
@@ -437,4 +435,112 @@ fn a_value_too_large_for_a_number_is_not_sent() {
     assert_eq!(mapper.handle(&[CC, 30, 1]).len(), 1);
     assert!(mapper.handle(&[CC, 30, 3]).is_empty());
     assert!(mapper.handle(&[CC, 7, 64]).is_empty());
+}
+
+#[test]
+fn an_encoder_can_send_one_command_per_step_each_way() {
+    let mut mapper = mapper(
+        r#"
+        [[binding]]
+        midi = "cc 1 40"
+        control = "encoder"
+        command = "deck.beatjump"
+        deck = "a"
+        up = { direction = "forward" }
+        down = { direction = "back" }
+        "#,
+    );
+    let jump = |direction| {
+        emit(
+            "deck.beatjump",
+            &[("deck", text("a")), ("direction", text(direction))],
+        )
+    };
+    assert_eq!(
+        mapper.handle(&[CC, 40, 2]),
+        [jump("forward"), jump("forward")]
+    );
+    assert_eq!(mapper.handle(&[CC, 40, 127]), [jump("back")]);
+    // A fast turn sends at most a bounded number of commands.
+    assert_eq!(
+        mapper.handle(&[CC, 40, 63]).len(),
+        platter_control::MAX_REPEATS
+    );
+    assert!(mapper.handle(&[CC, 40, 0]).is_empty());
+}
+
+#[test]
+fn the_commands_checked_cover_both_ends_of_faders_and_encoders() {
+    let mapping = Mapping::parse(
+        r#"
+        [[binding]]
+        midi = "cc 1 8"
+        command = "mixer.gain.set"
+        deck = "a"
+        param = "db"
+        range = [-24, 12]
+
+        [[binding]]
+        midi = "cc 1 9"
+        control = "encoder"
+        command = "browser.move"
+        param = "delta"
+        step = 2
+
+        [[binding]]
+        midi = "cc 1 40"
+        control = "encoder"
+        command = "deck.beatjump"
+        deck = "b"
+        up = { direction = "forward" }
+        down = { direction = "back" }
+        "#,
+    )
+    .unwrap();
+    let n = Arg::Number;
+    assert_eq!(
+        mapping.commands(),
+        [
+            emit("mixer.gain.set", &[("deck", text("a")), ("db", n(-24.0))]),
+            emit("mixer.gain.set", &[("deck", text("a")), ("db", n(12.0))]),
+            emit("browser.move", &[("delta", n(2.0))]),
+            emit("browser.move", &[("delta", n(-2.0))]),
+            emit(
+                "deck.beatjump",
+                &[("deck", text("b")), ("direction", text("forward"))]
+            ),
+            emit(
+                "deck.beatjump",
+                &[("deck", text("b")), ("direction", text("back"))]
+            ),
+        ]
+    );
+}
+
+#[test]
+fn an_encoder_mixing_its_two_ways_and_a_command_with_a_modifier_are_refused() {
+    for (body, expected) in [
+        (
+            "midi = \"cc 1 1\"\ncontrol = \"encoder\"\ncommand = \"x\"\nparam = \"delta\"\nup = { a = 1 }\ndown = { a = 2 }",
+            BindingProblem::MixedSteps,
+        ),
+        (
+            "midi = \"cc 1 1\"\ncontrol = \"encoder\"\ncommand = \"x\"\nup = { a = 1 }",
+            BindingProblem::MixedSteps,
+        ),
+        (
+            "midi = \"cc 1 1\"\ncontrol = \"encoder\"\ncommand = \"x\"\nstep = 2\nup = { a = 1 }\ndown = { a = 2 }",
+            BindingProblem::MixedSteps,
+        ),
+        (
+            "midi = \"note 1 1\"\ncommand = \"x\"\nmodifier = 1\nvalue = 1",
+            BindingProblem::NotForThisControl("modifier".to_owned()),
+        ),
+    ] {
+        assert_eq!(
+            problem(&format!("[[binding]]\n{body}\n")),
+            expected,
+            "{body}"
+        );
+    }
 }

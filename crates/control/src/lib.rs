@@ -75,11 +75,23 @@ enum Kind {
         invert: bool,
     },
     Encoder {
-        param: String,
-        step: f64,
+        target: Steps,
         encoding: Encoding,
     },
 }
+
+/// What an encoder does with its steps.
+#[derive(Clone, Debug, PartialEq)]
+enum Steps {
+    /// One command, with the steps times `step` in `param`.
+    Amount { param: String, step: f64 },
+    /// One command per step, with the parameters of `up` or of `down`, at most
+    /// [`MAX_REPEATS`] per message.
+    Each { up: Args, down: Args },
+}
+
+/// Most commands one message of an encoder sends, one per step.
+pub const MAX_REPEATS: usize = 16;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Binding {
@@ -109,8 +121,9 @@ impl Mapping {
         self.bindings.is_empty()
     }
 
-    /// The commands a binding may send, each once, in the order of the file, so the
-    /// application can check them all when it reads the mapping.
+    /// The commands the bindings may send, in the order of the file, so the application can
+    /// check them when it reads the mapping: a button with its press and release, a fader at
+    /// both ends of its range, an encoder one step each way.
     pub fn commands(&self) -> Vec<Emit> {
         let mut emits = Vec::new();
         for binding in &self.bindings {
@@ -122,20 +135,29 @@ impl Mapping {
             else {
                 continue;
             };
-            let mut press = args.clone();
-            match &binding.kind {
-                Kind::Button => {}
-                Kind::Fader { param, bottom, .. } => {
-                    press.insert(param.clone(), Arg::Number(*bottom));
-                }
-                Kind::Encoder { param, step, .. } => {
-                    press.insert(param.clone(), Arg::Number(*step));
-                }
-            }
-            emits.push(Emit {
+            let with = |param: &str, value: f64| {
+                let mut args = args.clone();
+                args.insert(param.to_owned(), Arg::Number(value));
+                args
+            };
+            let sent = match &binding.kind {
+                Kind::Button => vec![args.clone()],
+                Kind::Fader {
+                    param, bottom, top, ..
+                } => vec![with(param, *bottom), with(param, *top)],
+                Kind::Encoder {
+                    target: Steps::Amount { param, step },
+                    ..
+                } => vec![with(param, *step), with(param, -step)],
+                Kind::Encoder {
+                    target: Steps::Each { up, down },
+                    ..
+                } => vec![merged(args, up), merged(args, down)],
+            };
+            emits.extend(sent.into_iter().map(|args| Emit {
                 command: command.clone(),
-                args: press,
-            });
+                args,
+            }));
             if let Some(release) = release {
                 emits.push(Emit {
                     command: command.clone(),
@@ -252,17 +274,26 @@ impl Mapper {
                         bottom + position * (top - bottom),
                     );
                 }
-                Kind::Encoder {
-                    param,
-                    step,
-                    encoding,
-                } => {
+                Kind::Encoder { target, encoding } => {
                     let steps = input
                         .raw()
                         .filter(|_| holds)
                         .map_or(0, |value| steps(value, *encoding));
-                    if steps != 0 {
-                        emit_with(&mut emits, &binding.action, param, f64::from(steps) * step);
+                    match target {
+                        _ if steps == 0 => {}
+                        Steps::Amount { param, step } => {
+                            emit_with(&mut emits, &binding.action, param, f64::from(steps) * step);
+                        }
+                        Steps::Each { up, down } => {
+                            if let Action::Command { command, args, .. } = &binding.action {
+                                let way = merged(args, if steps > 0 { up } else { down });
+                                let count = (steps.unsigned_abs() as usize).min(MAX_REPEATS);
+                                emits.extend((0..count).map(|_| Emit {
+                                    command: command.clone(),
+                                    args: way.clone(),
+                                }));
+                            }
+                        }
                     }
                 }
             }

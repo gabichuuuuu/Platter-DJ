@@ -68,10 +68,11 @@ when = ["1 = 1"]
   and from 0 to 119 for a control change; 120 to 127 are channel mode messages.
 - `command` is the identifier of a command. Every other key is a parameter of the command, as
   in the shortcut file, except the keys of the binding: `midi`, `command`, `control`, `hold`,
-  `release`, `when`, `param`, `range`, `invert`, `step` and `encoding`. The application checks
-  each command the mapping may send, with its parameters, when it reads the file.
+  `release`, `when`, `param`, `range`, `invert`, `step`, `encoding`, `up` and `down`. The
+  mapping lists each command it may send, with its parameters, so that the application can
+  check them when it reads the file; that comes with the connection to the engine.
 - A binding without `command` sets a modifier instead: `modifier` from 1 to 8 and `value` from
-  0 to 7. Modifiers start at 0.
+  0 to 7. Modifiers start at 0. A binding with both `command` and `modifier` is a mistake.
 - `when` lists up to two conditions, `M = V`: the binding acts only while modifier `M` has
   value `V`. Conditions are checked against the modifiers as they were before the message.
 - `control` is `button`, `fader` or `encoder`. A note is a button; a control change is a fader
@@ -107,8 +108,12 @@ when = ["1 = 1"]
 - An encoder sends steps. With `encoding = "7f-01"`, the default, 1 to 63 are steps up and 127
   down to 65 are steps down, 127 being one. With `encoding = "3f-41"`, 65 and above are steps
   up, 65 being one, and 63 and below are steps down, 63 being one. 0 and 64 are no step.
-- Each message sends the command once, with the number of steps times `step` (1 when absent)
-  in the parameter named by `param`.
+- With `param`, each message sends the command once, with the number of steps times `step` (1
+  when absent) in that parameter: `browser.move` with `param = "delta"`.
+- With `up` and `down` instead, each step sends the command once, with the parameters of `up`
+  or of `down` in place of those they name, at most 16 times for one message:
+  `deck.beatjump` with `up = { direction = "forward" }` and `down = { direction = "back" }`.
+  An encoder takes one way or the other, not both.
 
 ### Limits
 
@@ -126,7 +131,8 @@ when = ["1 = 1"]
   outputs to the lights of the device need the current value of what they drive, which comes
   with the connection to the engine. They are not there yet.
 - The reference manual does not give the values a modifier takes, nor how the two encodings of
-  an encoder count steps. Platter takes 0 to 7 for the values and the counting above.
+  an encoder count steps. Platter takes 0 to 7 for the values and the counting above. Taking a
+  note-on with velocity 0 as a release is Platter's choice too, as controllers send it.
 - A modifier is state of its mapping, not a command of the engine: it never leaves the mapping,
   as in the reference manual.
 - The reference manual has a toggle mode and a mode that sets a fixed value. Platter has toggle
