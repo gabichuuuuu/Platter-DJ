@@ -118,6 +118,35 @@ What no test can check, listening above all, is in `docs/maintainers/m2-manual-c
 - Before each commit: `git status --short`, `git diff --stat`, `git diff --check`. Add explicit
   paths.
 
+## Releases
+
+The version number is computed from the titles of the merged pull requests, which is one more
+reason to choose their type with care (`docs/decisions/0027-release-workflow.md`):
+
+| Merged since the last release | Next version, while at 0.x |
+| --- | --- |
+| Only `fix:` or `perf:` | Patch: 0.2.0 to 0.2.1 |
+| At least one `feat:` | Minor: 0.2.0 to 0.3.0 |
+| A breaking change: `feat!:`, `fix!:` or a `BREAKING CHANGE:` footer | Minor: 0.2.0 to 0.3.0 (major from 1.0 on) |
+| Only `docs:`, `chore:`, `test:`, `ci:`, `refactor:` or `style:` | No new version |
+
+Changes to `xtask` and `platter-testkit` never lead to a version.
+
+How a version ships:
+
+1. After each merge into `main`, `.github/workflows/release.yml` opens or updates one release
+   pull request, `chore: release vX.Y.Z`, which raises the version in `Cargo.toml` and adds the
+   changes to `CHANGELOG.md`.
+2. Right before merging it, close and reopen that pull request so the required checks run on
+   its latest state; GitHub does not start them on a pull request opened or updated by Actions,
+   and every merge into `main` updates it again.
+3. Merge it when a version should ship. The workflow then creates the tag `vX.Y.Z`, builds the
+   binaries of Windows, macOS and Linux and publishes the GitHub release with them.
+
+Nobody creates a tag by hand and nobody edits the version or `CHANGELOG.md` outside the release
+pull request. `release-plz.toml` holds the configuration; a new crate that is part of the
+application goes into the `changelog_include` list of the `platter` package.
+
 ## Adding a dependency
 
 1. Check that it is on the approved list in `docs/dependencies.md`. If it is not, stop and ask

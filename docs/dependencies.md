@@ -24,7 +24,10 @@ dependency has no row or a row has no dependency.
 | `toml` | Parses `docs/parity.toml`, the render script, the design tokens, the icons, the translations, the shortcut file, the MIDI mappings and the settings file | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script`; `platter-ui-egui`, modules `tokens`, `icons`, `i18n` and `keymap`; `platter-control`, module `file`; `platter`, module `config` | A reader for the TOML subset the project files use |
 
 Tools that are not dependencies: `cargo-deny` 0.20.2 (licences and advisories), installed
-separately.
+separately; release-plz 0.4.3 (Apache-2.0), approved by the maintainer, which runs only in
+`.github/workflows/release.yml` through `release-plz/action` and computes the versions, the
+changelog and the releases (`docs/decisions/0027-release-workflow.md`). Replacing it means
+writing that computation in `xtask`.
 
 ## Approved, not yet in use
 

@@ -17,7 +17,9 @@ maintainer, on the free plan, and is public.
 - **Actions:** default workflow permissions read-only. `ci.yml` runs Linux, Windows and macOS on
   every run of a public repository; the condition on `github.event.repository.private` only
   limits a private copy. Workflows on pull requests from outside collaborators run only after
-  the maintainer approves them.
+  the maintainer approves them. "Allow GitHub Actions to create and approve pull requests" is
+  ticked so `release.yml` can open the release pull request; Actions never merges, and each job
+  asks only for the permissions it needs.
 - **Rule of `main`:** branch protection, applied to administrators too: changes through pull
   requests only; the `gate` checks of the three systems required; no force pushes and no
   deletion; linear history; 0 approvals while there is a single maintainer.
@@ -42,6 +44,8 @@ maintainer, on the free plan, and is public.
 | `.github/workflows/pages.yml` | Progress page on GitHub Pages |
 | `.github/workflows/pr-quality.yml` | Quality filter for pull requests from outside the project |
 | `.github/workflows/pr-intake.yml` | One open pull request per author until their first is merged |
+| `.github/workflows/release.yml` | Release pull request, tag, binaries and GitHub release (`docs/decisions/0027-release-workflow.md`) |
+| `release-plz.toml` | How `release.yml` computes the version and the changelog |
 | `.github/dependabot.yml` | Weekly updates of cargo dependencies and of the pinned actions |
 | `.github/pull_request_template.md` | Checklist of a pull request |
 | `.github/ISSUE_TEMPLATE/` | Forms for bugs, features and controller reports |
