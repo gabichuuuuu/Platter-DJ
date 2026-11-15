@@ -222,7 +222,7 @@ id = "playlists"
 title = "Playlists"
 features = [
   { id = "manage", name = "Create, add, sort, folders, rename, delete, remove duplicates and clear", milestone = "M3", status = "planned" },
-  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "planned" },
+  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "in_progress" },
   { id = "preparation-list", name = "Preparation list", milestone = "M3", status = "planned" },
   { id = "history", name = "History", milestone = "M3", status = "planned" },
   { id = "favourites", name = "Favourites", milestone = "M3", status = "planned" },
