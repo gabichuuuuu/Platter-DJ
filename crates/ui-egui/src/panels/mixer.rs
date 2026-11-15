@@ -314,6 +314,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             lit: killed.then_some(color.text_primary),
             held: None,
             enabled: true,
+            keeps_led: false,
             text: Some(tokens.text.label),
         };
         key::key(
@@ -400,6 +401,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         lit: controls.pre_listen.then_some(deck_color(theme, deck)),
         held: None,
         enabled: headphones,
+        keeps_led: false,
         text: None,
     };
     key::key(

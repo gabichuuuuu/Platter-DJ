@@ -200,6 +200,7 @@ fn loaded_deck(index: usize, position: f64, tempo_ratio: f64, levels: [f32; 2]) 
         ..DeckSnapshot::default()
     };
     deck.controls.tempo_ratio = tempo_ratio;
+    deck.speed = tempo_ratio;
     // A grid on the beats the invented peaks put at whole beats from the start; the second
     // track has its grid locked, so both states of the GRID page are drawn.
     if let Ok(bpm) = Bpm::new(bpm) {
@@ -326,6 +327,13 @@ pub fn playing() -> Scene {
         }),
     );
     engine.decks[1].cues.store(slot(3), Cue::at(31.0));
+    // Deck A is the tempo master and deck B follows it, a little behind its beat.
+    engine.clock.master = Some(DeckId::A);
+    engine.clock.bpm = 124.0;
+    engine.clock.snap = true;
+    engine.decks[0].phase = Some(0.0);
+    engine.decks[1].sync = true;
+    engine.decks[1].phase = Some(-0.12);
     let stream = StreamView {
         kind: OutputKind::Usb,
         sample_rate: 48_000,
