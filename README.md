@@ -76,7 +76,8 @@ its own code, graphics and sounds.
   has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
   sync.
 - No key lock, no collection, no MIDI: those are milestone M3.
-  Changing the tempo changes the pitch.
+  Changing the tempo changes the pitch. The reading of MIDI mapping files exists as a crate
+  only: nothing opens a MIDI port yet.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 
