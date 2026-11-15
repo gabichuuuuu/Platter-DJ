@@ -262,6 +262,11 @@ pub enum Command {
     DeckKeyLockToggle {
         deck: DeckId,
     },
+    /// Turns the tick on each beat of the deck in the headphones on or off:
+    /// `docs/behavior/beatgrid.md`, Beat tick.
+    DeckBeatTickToggle {
+        deck: DeckId,
+    },
     /// Moves the key of the deck by a semitone and turns key lock on:
     /// `docs/behavior/keylock.md`, Transposition.
     DeckKeyStep {
@@ -865,6 +870,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.tick.toggle",
+        label: "Beat tick",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.key.step",
         label: "Transpose by a semitone",
         params: &[DECK, SIZE_STEP],
@@ -1262,6 +1272,7 @@ impl Command {
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             "deck.keylock.toggle" => Self::DeckKeyLockToggle { deck: read.deck()? },
+            "deck.tick.toggle" => Self::DeckBeatTickToggle { deck: read.deck()? },
             "deck.key.step" => Self::DeckKeyStep {
                 deck: read.deck()?,
                 direction: read.size_step()?,
@@ -1494,6 +1505,7 @@ impl Command {
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
+            Self::DeckBeatTickToggle { .. } => "deck.tick.toggle",
             Self::DeckKeyStep { .. } => "deck.key.step",
             Self::DeckKeySet { .. } => "deck.key.set",
             Self::DeckKeyPersist { .. } => "deck.key.persist",

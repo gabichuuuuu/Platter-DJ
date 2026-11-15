@@ -85,6 +85,9 @@ its own code, graphics and sounds.
   Transposition by semitones, locking the current key and the resulting key exist in the
   engine only too: the bridge after a jump plays 32 ms at the untransposed pitch, and nobody
   has listened to a transposed deck (`docs/decisions/0028-transposition.md`).
+- The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
+  the headphones, so a device with two channels does not play it, and nobody has listened to
+  it against a real track (`docs/behavior/beatgrid.md`).
 - Flux and reverse exist in the engine only: the window has no buttons and no marker for
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).

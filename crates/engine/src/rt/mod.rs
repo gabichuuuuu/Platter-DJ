@@ -20,6 +20,7 @@ mod metronome;
 mod processor;
 mod shared;
 mod strip;
+mod tick;
 mod tone;
 
 use std::sync::Arc;
@@ -231,6 +232,9 @@ pub enum RtCommand {
         deck: DeckId,
     },
     KeyLockToggle {
+        deck: DeckId,
+    },
+    BeatTickToggle {
         deck: DeckId,
     },
     /// Moves the key by a semitone, up or down, and turns key lock on.

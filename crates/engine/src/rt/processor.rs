@@ -14,6 +14,7 @@ use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
 use super::metronome::Metronome;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
+use super::tick::Tick;
 use super::tone::TestTone;
 use super::{COMMAND_CAPACITY, DeckReport, Output, Queues, Retired, RtCommand, Shared};
 
@@ -27,6 +28,7 @@ struct Channel {
     crossfade: Smoothed,
     /// One while the deck is sent to the headphones, zero otherwise.
     pre_listen: Smoothed,
+    tick: Tick,
 }
 
 pub struct Processor {
@@ -61,6 +63,7 @@ impl Processor {
             strip: ChannelStrip::new(rate),
             crossfade: parameter(crossfade),
             pre_listen: parameter(0.0),
+            tick: Tick::new(rate),
         };
         Self {
             commands: queues.commands,
@@ -155,6 +158,7 @@ impl Processor {
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
             RtCommand::KeyLockToggle { deck } => self.player(deck).toggle_key_lock(),
+            RtCommand::BeatTickToggle { deck } => self.player(deck).toggle_beat_tick(),
             RtCommand::KeyStep { deck, up } => self.player(deck).step_key(up),
             RtCommand::KeySet { deck, semitones } => self.player(deck).set_key(semitones),
             RtCommand::KeyPersist { deck } => self.player(deck).persist_key(),
@@ -257,6 +261,9 @@ impl Processor {
             mix[0] += strip.post[0] * side;
             mix[1] += strip.post[1] * side;
             if with_headphones {
+                if channel.player.on_beat() {
+                    channel.tick.play();
+                }
                 let send = channel.pre_listen.advance();
                 pre_listened[0] += strip.pre[0] * send;
                 pre_listened[1] += strip.pre[1] * send;
@@ -274,9 +281,16 @@ impl Processor {
         let balance = self.headphone_mix.advance();
         let gain = self.headphone_gain.advance();
         let tone = self.tone.next(Output::Headphones);
-        // The headphone volume sets the level of the metronome; the cue mix does not.
-        let blend =
-            |index: usize| pre_listened[index] * (1.0 - balance) + master[index] * balance + click;
+        // The beat ticks are heard whatever the mix; they and the metronome follow the
+        // headphone volume, which sets their level.
+        let tick: f32 = self
+            .channels
+            .iter_mut()
+            .map(|channel| channel.tick.next())
+            .sum();
+        let blend = |index: usize| {
+            pre_listened[index] * (1.0 - balance) + master[index] * balance + click + tick
+        };
         let headphones = self
             .headphone_limiter
             .process([blend(0) * gain + tone, blend(1) * gain + tone]);
@@ -312,6 +326,7 @@ impl Processor {
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
             shared.key_lock.set(channel.player.is_key_locked());
+            shared.beat_tick.set(channel.player.has_beat_tick());
             shared.key_shift.set(channel.player.key_shift());
             shared.pitch.set(channel.player.pitch_semitones());
             shared.flux.set(channel.player.is_flux_on());

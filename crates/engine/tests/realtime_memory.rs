@@ -23,6 +23,9 @@ fn commands() -> Vec<Command> {
         // loops, sync and tempo changes, from a 48 kHz and a 44.1 kHz track.
         Command::DeckKeyLockToggle { deck: A },
         Command::DeckKeyLockToggle { deck: B },
+        // The beat tick of both decks ticks in the headphones through all of it.
+        Command::DeckBeatTickToggle { deck: A },
+        Command::DeckBeatTickToggle { deck: B },
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },
         Command::DeckTempoSet {

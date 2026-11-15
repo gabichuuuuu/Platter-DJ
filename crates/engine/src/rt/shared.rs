@@ -80,6 +80,7 @@ pub struct DeckShared {
     pub levels: [AtomicF32; 2],
     pub sync: Flag,
     pub key_lock: Flag,
+    pub beat_tick: Flag,
     /// Shift of the key in semitones.
     pub key_shift: AtomicF64,
     /// Pitch the deck plays against the original, in semitones: the shift while key lock
@@ -109,6 +110,7 @@ impl Default for DeckShared {
             levels: Default::default(),
             sync: Flag::default(),
             key_lock: Flag::default(),
+            beat_tick: Flag::default(),
             key_shift: AtomicF64::default(),
             pitch: AtomicF64::default(),
             flux: Flag::default(),

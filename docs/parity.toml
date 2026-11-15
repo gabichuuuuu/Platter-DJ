@@ -99,7 +99,7 @@ features = [
   { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "in_progress" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
-  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },
+  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "in_progress" },
   { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
 ]
 

@@ -216,6 +216,8 @@ pub struct DeckSnapshot {
     /// The deck keeps the key of its track while its tempo changes:
     /// `docs/behavior/keylock.md`.
     pub key_lock: bool,
+    /// The deck ticks on each beat in the headphones: `docs/behavior/beatgrid.md`.
+    pub beat_tick: bool,
     /// Shift of the key in semitones, from -12 to +12.
     pub key_shift: f64,
     /// The key the analysis found, moved by the pitch the deck plays: the shift while key
@@ -253,6 +255,7 @@ impl Default for DeckSnapshot {
             levels: [0.0; 2],
             sync: false,
             key_lock: false,
+            beat_tick: false,
             key_shift: 0.0,
             resulting_key: None,
             flux: false,
@@ -422,6 +425,10 @@ impl Engine {
             .into_iter()
             .filter(|deck| published.decks[deck.index()].key_lock.get());
         clock.extend(locked.map(|deck| RtCommand::KeyLockToggle { deck }));
+        let ticking = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].beat_tick.get());
+        clock.extend(ticking.map(|deck| RtCommand::BeatTickToggle { deck }));
         // After key lock, which a shift turns on.
         let shifted = DeckId::ALL.into_iter().filter_map(|deck| {
             let semitones = published.decks[deck.index()].key_shift.get();
@@ -641,6 +648,7 @@ impl Engine {
         let command = match command {
             Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
             Command::DeckKeyLockToggle { deck } => RtCommand::KeyLockToggle { deck },
+            Command::DeckBeatTickToggle { deck } => RtCommand::BeatTickToggle { deck },
             Command::DeckKeyStep { deck, direction } => RtCommand::KeyStep {
                 deck,
                 up: direction == SizeStep::Up,
@@ -1029,6 +1037,7 @@ impl Engine {
                 levels: [published.levels[0].get(), published.levels[1].get()],
                 sync: published.sync.get(),
                 key_lock: published.key_lock.get(),
+                beat_tick: published.beat_tick.get(),
                 key_shift: published.key_shift.get(),
                 resulting_key: control
                     .analysis

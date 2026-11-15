@@ -3,7 +3,7 @@
 //! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
 //! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
 //! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`; for flux and reverse,
-//! `docs/behavior/flux.md`.
+//! `docs/behavior/flux.md`; for the beat tick, `docs/behavior/beatgrid.md`.
 
 use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo};
 use platter_dsp::Frame;
@@ -124,6 +124,11 @@ pub(super) struct DeckPlayer {
     timeline: Option<f64>,
     /// The hotcue whose key holds a detour of flux.
     flux_hotcue: Option<HotcueSlot>,
+    beat_tick: bool,
+    /// The frame of the track heard on the frame before, while the deck plays.
+    heard: Option<f64>,
+    /// The frame just played passed a beat of the grid, and the beat tick is on.
+    on_beat: bool,
 }
 
 impl DeckPlayer {
@@ -160,6 +165,9 @@ impl DeckPlayer {
             reverse: false,
             timeline: None,
             flux_hotcue: None,
+            beat_tick: false,
+            heard: None,
+            on_beat: false,
         }
     }
 
@@ -766,6 +774,60 @@ impl DeckPlayer {
         self.lock.is_on()
     }
 
+    pub(super) fn toggle_beat_tick(&mut self) {
+        self.beat_tick = !self.beat_tick;
+    }
+
+    pub(super) fn has_beat_tick(&self) -> bool {
+        self.beat_tick
+    }
+
+    /// The frame just played passed a beat and the beat tick is on.
+    pub(super) fn on_beat(&self) -> bool {
+        self.on_beat
+    }
+
+    /// Whether the deck, heard at frame `at` of the track after `before` on the frame
+    /// before, passed a beat of its grid. `step` is how far the deck moves in one frame.
+    /// A move of more than a quarter of a beat, or against the direction of play, is a
+    /// jump: it passes a beat only when it lands on one, within one step.
+    fn passes_a_beat(&self, at: f64, before: Option<f64>, step: f64, rate: f64) -> bool {
+        let (Some(bpm), Some(phase), Some((_, run_end))) = (
+            self.grid.bpm(),
+            self.grid.phase_at(at / rate),
+            self.grid.run_at(at / rate),
+        ) else {
+            return false;
+        };
+        let beat = bpm.beat_seconds() * rate;
+        // The beat on or before the position is `since` frames back; the next one is the
+        // next beat of the run or the marker that starts the next run.
+        let since = phase * beat;
+        let next = if phase == 0.0 {
+            at
+        } else {
+            (at + (1.0 - phase) * beat).min(run_end * rate)
+        };
+        let moved = before.map(|before| {
+            if self.reverse {
+                before - at
+            } else {
+                at - before
+            }
+        });
+        match moved {
+            Some(moved) if moved >= 0.0 && moved < beat / 4.0 => {
+                if self.reverse {
+                    next < at + moved
+                } else {
+                    since < moved
+                }
+            }
+            _ if self.reverse => next - at < step,
+            _ => since < step,
+        }
+    }
+
     pub(super) fn step_key(&mut self, up: bool) {
         self.lock_key(self.key_shift + if up { 1.0 } else { -1.0 });
     }
@@ -976,6 +1038,10 @@ impl DeckPlayer {
         let audible = self.playing && self.pending_swap.is_none() && self.pending_seek.is_none();
         self.fade.set(if audible { 1.0 } else { 0.0 });
         let gain = self.fade.advance();
+        self.on_beat = false;
+        if !audible {
+            self.heard = None;
+        }
         if gain == 0.0 {
             self.tail = None;
             self.lock.silence();
@@ -1020,6 +1086,12 @@ impl DeckPlayer {
             None if reverse && self.position <= 0.0 => [0.0; 2],
             None => read(audio, self.position),
         };
+        if audible {
+            let heard = self.position;
+            self.on_beat = self.beat_tick
+                && self.passes_a_beat(heard, self.heard, step, audio.rate().as_f64());
+            self.heard = Some(heard);
+        }
         if let Some(tail) = &mut self.tail {
             tail.level -= tail.decay;
             if tail.level > 0.0 {
