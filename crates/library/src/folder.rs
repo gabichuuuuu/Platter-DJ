@@ -43,7 +43,8 @@ pub struct ImportReport {
     /// Files that could not be read.
     pub unreadable: usize,
     /// Entries left out: links, names that are not valid Unicode, folders too deep or that
-    /// cannot be read, and anything that is neither a file nor a folder.
+    /// cannot be read, entries of a folder past [`MAX_ENTRIES`], and anything that is neither
+    /// a file nor a folder.
     pub skipped: usize,
 }
 
@@ -110,7 +111,11 @@ fn list(folder: &Path, report: &mut ImportReport) -> (Vec<PathBuf>, Vec<PathBuf>
         report.skipped += 1;
         return (files, folders);
     };
-    for entry in entries.take(MAX_ENTRIES) {
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_ENTRIES {
+            report.skipped += 1;
+            continue;
+        }
         let Ok(entry) = entry else {
             report.skipped += 1;
             continue;

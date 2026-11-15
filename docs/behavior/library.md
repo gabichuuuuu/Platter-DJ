@@ -69,12 +69,13 @@ the user types.
   over a large folder costs little and keeps what the user changed. Only new files are read.
 - Hidden entries, whose name starts with a dot, are not looked at. Links, junctions included,
   are not followed, so a link back up the tree cannot make the import go round. A folder gives
-  at most its first 10 000 entries, as in the file list of the browser.
+  at most its first 10 000 entries, as in the file list of the browser; the rest are counted as
+  left out.
 - The reader the application gives decides what each file is: a track with its tags, a file that
   cannot be read, or something that is not audio, which is left out without a word.
 - The pass reports how many tracks it added, how many files were already there, how many could
   not be read and how many entries it left out: links, names that are not valid Unicode,
-  folders too deep or that cannot be read.
+  folders too deep or that cannot be read, entries past the 10 000 of a folder.
 - A folder is stored under one path however it was named: the path is made absolute and
   canonical, and on Windows it keeps the form the user knows, `C:\Music`, without the prefix
   `\\?\` of the system.
@@ -136,6 +137,9 @@ the user types.
 - The reference manual imports music folders from a list in the preferences, also at start.
   Platter's import pass works on one folder; the list and the import at start come with the
   settings of the browser.
+- The reference manual includes the folders inside a folder in the import and updates the
+  collection, without saying whether the tags of tracks already in it are read again. Platter
+  leaves those tracks as they are; importing one file again updates its tags.
 - The genre is not read yet: the decoder reads title, artist, album and tempo. It comes with the
   reader of tags.
 - Importing and exporting the playlist files of other applications is not part of M3.

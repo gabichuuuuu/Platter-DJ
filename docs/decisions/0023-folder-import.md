@@ -28,14 +28,14 @@ For the writing: one transaction per track, as `Library::import` does, or batche
 - The folder is canonicalised once; the paths below it are that path joined with the names
   read, and links are not followed, so they are canonical too. On Windows the prefix `\\?\`
   that canonicalising adds is dropped (`C:\Music`, `\\server\share`), so a path reads as the
-  user knows it and matches the one a file dialog gives.
+  user knows it.
 - `Library::import_all` writes several tracks in one transaction, all or none; the walk writes
   batches of 500.
 
 ## How it was measured
 
-`cargo test --release -p platter-library`, Windows x64, solid-state disk, a library in a
-temporary directory: 1 000 calls of `import`, one transaction each, took 2.3 s; 10 000 tracks
+A throwaway test, not kept, built with `--release` on Windows x64, solid-state disk, a library
+in a temporary directory: 1 000 calls of `import`, one transaction each, took 2.3 s; 10 000 tracks
 through `import_all` in batches of 500 took 0.33 s. A collection of tens of thousands of tracks
 would take minutes one by one and seconds in batches.
 
@@ -45,9 +45,12 @@ the last batch was not written.
 
 ## Known limits
 
-- The links test runs on Linux and macOS only: making a link on Windows needs a privilege.
-  Windows reports junctions as links to the walk, which is what keeps them out; that was read
-  in the documentation of `std`, not tested.
+- The links test runs on Linux and macOS only: making a link on Windows needs a privilege. A
+  junction back up the tree was checked by hand on Windows with a throwaway test: it was left
+  out and counted. The links test, the test of names that are not Unicode and the Unix half of
+  the batch test first run in CI.
 - A folder with more than 10 000 entries gives the first ones the system lists, which is not
-  an order by name.
+  an order by name; the rest are counted as left out.
+- A mapped network drive canonicalises to its network path (`\\server\share`), not to its
+  letter.
 - The pass cannot be stopped half way yet; that comes with the browser that starts it.

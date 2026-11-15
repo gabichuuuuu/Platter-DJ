@@ -100,8 +100,12 @@ fn a_folder_and_the_folders_inside_it_are_imported_in_order() {
     );
     assert_eq!(tracks[0].1, "A");
     // Hidden entries are not even looked at.
+    let canonical = std::fs::canonicalize(&root).unwrap();
     assert!(reader.asked.iter().all(|path| {
-        !path
+        !std::fs::canonicalize(path)
+            .unwrap()
+            .strip_prefix(&canonical)
+            .unwrap()
             .components()
             .any(|part| part.as_os_str().to_string_lossy().starts_with('.'))
     }));
