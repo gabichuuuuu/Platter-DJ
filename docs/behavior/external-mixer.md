@@ -8,7 +8,7 @@ internal mixer is in `docs/behavior/mixer.md`, the master section in
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Preferences*, section *Output Routing page*
 - *Preferences*, section *Mixer page*, the options of the internal and the external mixing
@@ -61,7 +61,7 @@ deck (`docs/behavior/beatgrid.md`).
 ## Differences
 
 - The outputs of the decks are those of the master and of the headphones in the routing,
-  under those names; the reference product names a pair per deck. There is no preview
+  under those names; the documented application names a pair per deck. There is no preview
   player yet and no send effect, so there are no pairs for them.
 - The option for mixer effects waits for the effects (M4). The limiter is always on and has
   no headroom setting.

@@ -2,11 +2,8 @@
 
 Platter is an independent, open-source DJ application written in Rust, with the functions DJs
 expect from professional DJ software. When a function needs a specification, it comes from
-public documentation, mainly the user manual of an established DJ application (the reference
-manual, of the reference product), and is written down in Platter's own words. Platter uses no
-code or resources of any other product. The identity of the reference product and the URL of
-every cited section live in `reference/sources.md`, which Git ignores; the maintainer gives it
-to collaborators.
+public documentation and is written down in Platter's own words. Platter uses no code or
+resources of any other product.
 
 These rules bind every contributor, human or automated. `docs/architecture.md` describes the
 design, `docs/development.md` the daily workflow and `ROADMAP.md` the milestones.
@@ -43,18 +40,18 @@ Do not reopen these on your own. If one proves unworkable, stop and explain why.
 
 ### Clean-room
 
-- Behaviour comes from public documentation: the reference manual, cited by page and section;
-  public specifications (MIDI, USB HID, audio formats) and scientific papers, cited by URL in
-  `docs/` or in the module comment.
-- Never copy code, icons, texts, skins, sounds, kits, mappings or screenshots from the vendor of
-  the reference product. Never disassemble, inspect or instrument its binaries and files.
+- Behaviour comes from public documentation: user documentation of DJ software, cited by
+  section; public specifications (MIDI, USB HID, audio formats) and scientific papers, cited by
+  URL in `docs/` or in the module comment.
+- Never copy code, icons, texts, skins, sounds, kits, mappings or screenshots of another DJ
+  application or its vendor. Never disassemble, inspect or instrument their binaries and files.
 - Never copy GPL or AGPL code, and never use it as an implementation guide: Mixxx, xwax,
   libKeyFinder, Rubber Band, Ableton Link and their derivatives.
 - Code under a permissive licence may be adapted with a row in `ATTRIBUTION.md`.
-- The names of the reference product and of its vendor appear nowhere in the repository: not in
-  code, documentation, commit messages, names, identifiers or the interface. Write "the
-  reference product" and "the reference manual". `cargo xtask cleanroom` checks the tracked
-  files.
+- The names of the applications whose documentation is cited, and of their vendors, appear
+  nowhere in the repository: not in code, documentation, commit messages, names, identifiers or
+  the interface. Write "the public manual" and "the documented application". `cargo xtask
+  cleanroom` checks the tracked files.
 - Every resource (icon, font, test audio) is original or has a compatible licence, and has a row
   in `ATTRIBUTION.md`. Test audio is synthesised in the tests; no music is committed.
 
@@ -122,13 +119,13 @@ interface thread.
   browser and workflows are where a DJ looks for them. Graphics, icons, colours, type, control
   shapes and texts are its own, and a screenshot of Platter looks like Platter.
 - Before implementing a function of `docs/parity.toml`, write its note in
-  `docs/behavior/<area>.md`: what it does according to the reference manual (with the page and
+  `docs/behavior/<area>.md`: what it does according to its public documentation (with the
   section), where Platter departs from it and why, and the edge cases. The tests of the function
   refer to that note.
-- The images of the manual serve to understand the layout and the purpose of each control, not
+- The images of a manual serve to understand the layout and the purpose of each control, not
   to reproduce its look.
-- Never read, open or analyse binaries, files, skins or resources of the reference product, and
-  never rebuild its interface from screenshots, with tools or by hand.
+- Never read, open or analyse binaries, files, skins or resources of another DJ application,
+  and never rebuild its interface from screenshots, with tools or by hand.
 - `docs/design/` is the design system, written by the maintainer. Do not modify, regenerate or
   reformat it. A need its tokens do not cover is raised as a question.
 

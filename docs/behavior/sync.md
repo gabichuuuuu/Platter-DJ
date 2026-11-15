@@ -7,7 +7,7 @@ The beatgrid all of them read is in `docs/behavior/beatgrid.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 14 November 2026:
+Sections of the public manual, read on 14 November 2026:
 
 - *Global concepts*, section *Tempo synchronization*
 - *Overview*, sections *Synchronization and tempo controls* and *Master control panel*
@@ -100,7 +100,7 @@ the speed of the deck.
 
 ### Metronome
 
-The master control panel of the reference product has a metronome that ticks on the beats of
+The master control panel of the documented application has a metronome that ticks on the beats of
 the master clock. The manual does not say where it is heard, how loud it is or what it
 sounds like, and no page of the preferences has a setting for it. All of that is Platter's
 choice:
@@ -197,25 +197,25 @@ design draws it, which leaves room for the row.
 
 ## Differences
 
-- The reference product has four decks and lets a preference keep some of them out of the
+- The documented application has four decks and lets a preference keep some of them out of the
   automatic choice. Platter has two and no such preference.
 - The design system lists the commands of the clock without one that sets its tempo to a
   value and without one for the sync mode. `clock.tempo.set` and `global.sync.mode.set` are
   added for them.
-- The reference manual does not say what Snap does to a deck that is paused. Platter moves
+- The public manual does not say what Snap does to a deck that is paused. Platter moves
   the deck to its new floating cue, as the cue key would otherwise set it again on every
   press.
-- The reference manual does not say where a quantized jump lands. Platter keeps the offset
+- The public manual does not say where a quantized jump lands. Platter keeps the offset
   of the deck in its beat, the way a beatjump does.
-- The sync mode starts as `beat`. That is the choice of Platter; the reference manual was
+- The sync mode starts as `beat`. That is the choice of Platter; the public manual was
   not read for its default.
-- The reference manual does not say what speed a deck has after its sync goes off. Platter
+- The public manual does not say what speed a deck has after its sync goes off. Platter
   keeps the speed, so nothing is heard at that moment.
-- The reference manual does not say how the phase is brought back. Platter moves the deck at
+- The public manual does not say how the phase is brought back. Platter moves the deck at
   once for an offset a DJ would hear as a flam and corrects the rest by speed, within 2 %.
 - A deck needs a tempo in its grid to sync, and until tempo detection arrives later in M3
   that tempo is typed or tapped on the GRID page.
-- The reference manual describes the metronome only by its key; where it is heard, its level
+- The public manual describes the metronome only by its key; where it is heard, its level
   and its sound are Platter's (see *Metronome*). Headphones only keeps the click off the
   master. It has no volume of its own: the headphone volume sets it.
 - The design system asks for a tempo of the clock typed after a double click. The interface

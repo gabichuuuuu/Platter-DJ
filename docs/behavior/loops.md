@@ -7,7 +7,7 @@ Out and a new loop on the beat, is in `docs/behavior/sync.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 14 November 2026:
+Sections of the public manual, read on 14 November 2026:
 
 - *Advanced usage tutorials*, section *Working with loops*
 - *Overview*, section *Loop controls*
@@ -103,14 +103,14 @@ that waits for its out point. A beat lasts 60 seconds divided by the tempo of th
 
 ## Differences
 
-- The reference product keeps the in and out markers of a loop that is switched off, and its
+- The documented application keeps the in and out markers of a loop that is switched off, and its
   ACTIVE button switches on the next stored loop. In Platter a loop that is switched off is
   gone, and `deck.loop.toggle` without a loop starts one of the selected size, the way its
   preset size buttons do. A loop is kept by storing it in a hotcue (`docs/behavior/cues.md`).
 - In, Out and the start of a loop use the play position as it is unless Snap is on
   (`docs/behavior/sync.md`).
 - The fine step is a time, 5 ms, so it also trims a loop made with In and Out on a track
-  without a grid. The reference manual gives no value for its fine step, and its extra-fine
+  without a grid. The public manual gives no value for its fine step, and its extra-fine
   step is left out.
 - The mode that takes the move size from the loop is the last entry of the size list instead
   of a button of its own.

@@ -55,9 +55,9 @@ Platter offers the functions DJs expect from professional DJ software and uses n
 resources of any other product. A contribution must respect the clean-room rules in
 `AGENTS.md`. In short:
 
-- Behaviour comes from public documentation, public specifications and scientific papers. The
-  reference manual is cited by page and section; other sources by URL.
-- Nothing is copied from the reference product or its vendor, and their binaries and files are
+- Behaviour comes from public documentation, public specifications and scientific papers. A
+  manual is cited by section; other sources by URL.
+- Nothing is copied from another DJ application or its vendor, and their binaries and files are
   never inspected.
 - No GPL or AGPL code is copied or used as an implementation guide. If you have studied the
   source of such a project for a function, do not implement that function here.

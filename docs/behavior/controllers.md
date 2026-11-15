@@ -11,7 +11,7 @@ real controller has been tried yet (`ROADMAP.md`, checks waiting for equipment).
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Preferences*, section *Controller Manager page*
 - The chapter on configuring MIDI controllers, sections *Controller Manager Overview*,
@@ -179,12 +179,12 @@ mapping = "example-controller.toml"
 - Relative faders, soft takeover, the sensitivity and acceleration of encoders, and the
   outputs to the lights of the device need the current value of what they drive, read back
   from the engine. They come in a later unit of M3.
-- The reference manual does not give the values a modifier takes, nor how the two encodings of
+- The public manual does not give the values a modifier takes, nor how the two encodings of
   an encoder count steps. Platter takes 0 to 7 for the values and the counting above. Taking a
   note-on with velocity 0 as a release is Platter's choice too, as controllers send it.
 - A modifier is state of its mapping, not a command of the engine: it never leaves the mapping,
-  as in the reference manual.
-- The reference manual has a toggle mode and a mode that sets a fixed value. Platter has toggle
+  as in the public manual.
+- The public manual has a toggle mode and a mode that sets a fixed value. Platter has toggle
   commands and fixed parameters instead, so a button needs no state of its own beyond being
   down or up.
 - The focus deck as a target comes with the controller manager.

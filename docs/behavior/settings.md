@@ -5,7 +5,7 @@ adds the Mixer page.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Preferences*, section *Audio setup page*
 - *Preferences*, section *Mixer page*

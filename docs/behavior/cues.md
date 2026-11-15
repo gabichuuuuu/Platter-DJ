@@ -8,7 +8,7 @@ floating cue, is in `docs/behavior/transport.md`; the loop of a deck in
 
 ## What the public manual says
 
-Sections of the reference manual, read on 14 November 2026:
+Sections of the public manual, read on 14 November 2026:
 
 - *Advanced usage tutorials*, sections *Working with cue points* and *Working with loops*,
   *Storing loops*
@@ -112,7 +112,7 @@ is selected: the commands of the CUE page act on it.
 
 ## Differences
 
-- The reference product keeps a list of cues and maps some of them to the eight hotcue
+- The documented application keeps a list of cues and maps some of them to the eight hotcue
   buttons. In Platter the eight slots are the list: a stored cue always has a slot.
 - The types `fade_in`, `fade_out` and `load` are a label and a colour for now. Automatic
   mixing is M4, and a cue cannot act when its track is loaded while cues are lost on a load:
@@ -121,9 +121,9 @@ is selected: the commands of the CUE page act on it.
   one again, which a change of sample rate of the audio device also does, until the
   collection stores them later in M3.
 - The design system lists a sixth type, grid. The grid markers of Platter live in the beatgrid
-  (`docs/behavior/beatgrid.md`) and the reference manual does not list the type in its menu,
+  (`docs/behavior/beatgrid.md`) and the public manual does not list the type in its menu,
   so it is left out until the maintainer decides how a cue and a marker would stay one thing.
-- The reference manual does not say what MAP does to a button that already holds a cue.
+- The public manual does not say what MAP does to a button that already holds a cue.
   Platter swaps the two, so no cue is lost.
 - The nudge buttons of the selected cue are left out: a cue is moved by deleting it and
   storing it again.

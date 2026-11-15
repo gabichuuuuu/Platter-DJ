@@ -4,7 +4,7 @@ Status: accepted (M3).
 
 ## Context
 
-The reference manual describes flux as a second play position that goes on while the deck
+The public manual describes flux as a second play position that goes on while the deck
 loops or jumps to a cue, and reverse as backward playback that also turns flux on
 (`docs/behavior/flux.md`). It leaves open what starts and ends that second position, how it
 meets loops, beatjumps, sync and key lock, and what reverse does at the start of the track.

@@ -8,7 +8,7 @@ load is in `docs/behavior/analysis.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Basic usage tutorials*, section *Optimizing gain and output levels*, subsection *Always
   level incoming audio signals*
@@ -68,7 +68,7 @@ it aims at.
 
 ## Differences
 
-- The reference product keeps the autogain value of each track in its collection and restores
+- The documented application keeps the autogain value of each track in its collection and restores
   it from a playlist. Platter has no collection on this branch yet: the value lives with the
   loaded track, is measured again on each load, and is restored per channel. Storing it with
   the track and the restore from the browser come with the collection.
@@ -81,7 +81,7 @@ it aims at.
   from the command line and from mappings too.
 - In external mixer mode autogain acts through the gain of the channel, so only while the
   gain and equaliser option of that mode is on (`docs/behavior/external-mixer.md`); the
-  reference product has an autogain option of its own for that mode.
+  documented application has an autogain option of its own for that mode.
 
 ## Edge cases
 

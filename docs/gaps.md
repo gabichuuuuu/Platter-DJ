@@ -17,8 +17,8 @@ Functions that are planned but not built yet are not gaps: they are in `docs/par
 
 - Key notation is musical ("A minor"), with compatible keys highlighted in the browser. No
   third-party branded key notation is used.
-- Controller mappings are declarative TOML files, not the mapping format of the reference
-  product, and there is no scripting language.
+- Controller mappings are declarative TOML files, not the mapping format of the documented
+  application, and there is no scripting language.
 - The effect catalogue starts with eight original effects in M4. The rest of the catalogue has
   no milestone yet.
 - Link compatibility (M5) is an own implementation; the official library is not linked.

@@ -2,11 +2,11 @@
 
 ## What the public manual says
 
-Sections of the reference manual:
+Sections of the public manual:
 
 - *Managing your track collection*, section *Compatible audio file formats*
 
-The reference product plays six formats: MP3, M4A (AAC), WAV, AIFF, FLAC and Ogg Vorbis. Files
+The documented application plays six formats: MP3, M4A (AAC), WAV, AIFF, FLAC and Ogg Vorbis. Files
 protected by DRM cannot be played, and WMA is not supported.
 
 ## What Platter does

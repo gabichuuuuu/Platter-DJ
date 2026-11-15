@@ -15,8 +15,8 @@
 
 - [ ] `cargo xtask ci` passes.
 - [ ] No panics in shipped code: no `unwrap`, `expect`, `panic!` or `unsafe` outside tests.
-- [ ] Clean-room: behaviour comes from public documentation, cited by URL; nothing copied from the
-      reference product or from GPL or AGPL code.
+- [ ] Clean-room: behaviour comes from public documentation, cited by URL; nothing copied from
+      another DJ application or from GPL or AGPL code.
 - [ ] Every new resource has a row in `ATTRIBUTION.md`.
 - [ ] Every change in behaviour comes with tests, seen failing without the change and passing
       with it.

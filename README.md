@@ -160,7 +160,7 @@ Everything known to be missing, unfinished or not yet listened to.
 | [`docs/gaps.md`](docs/gaps.md) | What is out of scope |
 | [`docs/dependencies.md`](docs/dependencies.md) | External dependencies and why each one is there |
 | [`docs/legal-notes.md`](docs/legal-notes.md) | Licensing, clean-room sources and open legal points |
-| [`docs/behavior/`](docs/behavior/) | What each function does, with its source in the public manual |
+| [`docs/behavior/`](docs/behavior/) | What each function does, with its public source |
 | [`docs/decisions/`](docs/decisions/) | Decision records |
 | [`docs/design/`](docs/design/) | Design system and reference screens |
 

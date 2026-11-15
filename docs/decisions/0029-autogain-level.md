@@ -4,7 +4,7 @@ Status: accepted (M3).
 
 ## Context
 
-The reference manual says autogain levels the signals of the decks, is on by default and
+The public manual says autogain levels the signals of the decks, is on by default and
 stores a value per track that can be restored (`docs/behavior/autogain.md`). It says neither
 how the value is found nor what level it aims at. Platter has to choose a measure of how loud
 a track is, a level to bring every track to, and how far the gain may move.

@@ -8,7 +8,7 @@ M3. The grid it fills is described in `docs/behavior/beatgrid.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Managing your track collection*, sections *Analyzing tracks manually*, *Analysis dialog
   options*
@@ -99,7 +99,7 @@ period and the offset that collect the most of it over the whole track.
 
 ## Differences
 
-- The reference product offers an automatic range that also finds the downbeat. Platter's range
+- The documented application offers an automatic range that also finds the downbeat. Platter's range
   is fixed and the marker goes on the first beat, which may not be the first beat of a bar:
   the bars of the waveform then count from it until the marker is moved.
 - One tempo per track, as the grid holds in M3.
@@ -107,7 +107,7 @@ period and the offset that collect the most of it over the whole track.
   semitone away.
 - The gain of the analysis is the loudness autogain reads, measured on the same load:
   `docs/behavior/autogain.md`.
-- The reference product analyses again on a reset of the grid; the result of Platter's
+- The documented application analyses again on a reset of the grid; the result of Platter's
   analysis depends only on the samples, so a reset uses the result of the load.
 - Analysis on import into the collection comes with the collection, later in M3. Until then
   the result lives with the loaded track and is found again on each load.

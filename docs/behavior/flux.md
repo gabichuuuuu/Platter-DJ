@@ -8,7 +8,7 @@ Reverse plays the track backwards while its button is held. Both live in the eng
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Overview*, section *Transport controls*
 - *Basic usage tutorials*, section *Working with hotcue buttons and flux mode*
@@ -82,12 +82,12 @@ while there is one, for the marker of the waveform.
 
 ## Differences
 
-- The reference manual does not say how flux treats a beatjump, Snap or Quantize, nor what
+- The public manual does not say how flux treats a beatjump, Snap or Quantize, nor what
   ends the second play position. Platter treats a beatjump as a move of what is heard during a
   detour and as a plain jump outside one, and ends the timeline as listed above.
 - Releasing the hotcue of a stored loop switches the loop off so the deck can return; this is
   Platter's reading of "released with its hotcue button".
-- The reference manual does not say what reverse does at the start of the track nor how it
+- The public manual does not say what reverse does at the start of the track nor how it
   sounds with key lock. Both are Platter's choices.
 - The FLUX and REVERSE buttons, the marker of the timeline in the waveform and the indicator of
   the deck header are not in the window yet: the commands work from the keyboard file, mappings
