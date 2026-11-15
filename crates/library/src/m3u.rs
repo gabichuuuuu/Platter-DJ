@@ -203,7 +203,7 @@ fn url_scheme(line: &str) -> Option<&str> {
     valid.then_some(scheme)
 }
 
-/// The path in what follows `file://`: `/C:/x.mp3` becomes `C:/x.mp3`, `/home/x.mp3` stays, an
+/// The path in what follows `file://`: `/C:/x.mp3` becomes `C:/x.mp3`, `/music/x.mp3` stays, an
 /// empty or `localhost` host is dropped and another host makes a UNC path.
 fn file_url_path(rest: &str) -> Option<String> {
     let (host, path) = match rest.find('/') {

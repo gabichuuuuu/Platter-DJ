@@ -204,8 +204,8 @@ fn other_url_schemes_are_skipped_and_counted() {
 #[test]
 fn file_urls_are_decoded() {
     let reading = read(
-        "file:///home/my%20music/caf%C3%A9.mp3\nfile:///C:/My%20Music/a.mp3\n\
-         FILE://localhost/home/b.mp3\nfile:///D:/c.mp3\n",
+        "file:///music/my%20set/caf%C3%A9.mp3\nfile:///C:/My%20Music/a.mp3\n\
+         FILE://localhost/music/b.mp3\nfile:///D:/c.mp3\n",
     );
     let paths: Vec<_> = reading
         .entries
@@ -215,9 +215,9 @@ fn file_urls_are_decoded() {
     assert_eq!(
         paths,
         vec![
-            PathBuf::from("/home/my music/café.mp3"),
+            PathBuf::from("/music/my set/café.mp3"),
             PathBuf::from("C:/My Music/a.mp3"),
-            PathBuf::from("/home/b.mp3"),
+            PathBuf::from("/music/b.mp3"),
             PathBuf::from("D:/c.mp3"),
         ]
     );
