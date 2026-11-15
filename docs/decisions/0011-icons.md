@@ -44,5 +44,5 @@ SVG specification.
 `crates/ui-egui/src/icons.rs`: all 43 icons are read and every point stays on the 24-unit
 grid; only play and pause are solid; numbers without separators, relative commands, arcs with
 both sweep flags and with flags glued to numbers, cubic, smooth and quadratic curves; shapes
-outside the subset are errors; the mark has three rings, a filled centre and a line. The
+outside the subset are errors; the mark has a ring, two arcs and a filled centre. The
 captures of the interface show them drawn.
