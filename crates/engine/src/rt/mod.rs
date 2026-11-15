@@ -15,6 +15,7 @@
 mod clock;
 mod deck;
 mod looper;
+mod metronome;
 mod processor;
 mod shared;
 mod strip;
@@ -60,6 +61,11 @@ impl TrackAudio {
 
     pub fn frames(&self) -> usize {
         self.samples.len() / 2
+    }
+
+    /// The interleaved stereo samples.
+    pub fn samples(&self) -> &[f32] {
+        &self.samples
     }
 
     /// The frame at `index`, or silence outside the track.
@@ -242,6 +248,10 @@ pub enum RtCommand {
     Quantize {
         on: bool,
     },
+    /// A click on every beat of the clock, on the headphones.
+    Metronome {
+        on: bool,
+    },
 }
 
 /// An edit of a beatgrid. The ones that need a place use the play position.
@@ -257,6 +267,20 @@ pub enum GridEdit {
     MarkerPrevious,
     MarkerNext,
     ToggleLock,
+    /// The tempo and the first beat an analysis found, taken only by an empty grid.
+    Analysed {
+        bpm: Bpm,
+        first_beat: f64,
+    },
+    /// The grid becomes what the analysis found: a tempo and a marker on its first beat, or
+    /// neither.
+    Reset(Option<(Bpm, f64)>),
+    /// The tempo found by the analysis, with a marker on its first beat for a grid without
+    /// markers.
+    ResetBpm {
+        bpm: Bpm,
+        first_beat: f64,
+    },
 }
 
 /// How far a jump or a move goes. Negative values go back.

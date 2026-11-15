@@ -17,6 +17,7 @@ use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::{Band, band_gain};
 
+use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
     ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
     MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
@@ -167,6 +168,8 @@ pub struct ClockSnapshot {
     pub snap: bool,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     pub quantize: bool,
+    /// A click on every beat of the clock, on the headphones.
+    pub metronome: bool,
 }
 
 impl Default for ClockSnapshot {
@@ -179,6 +182,7 @@ impl Default for ClockSnapshot {
             bpm: published.clock_bpm.get(),
             snap: false,
             quantize: false,
+            metronome: false,
         }
     }
 }
@@ -190,6 +194,10 @@ pub struct DeckSnapshot {
     pub peaks: Option<Arc<WaveformPeaks>>,
     /// A file is being decoded for this deck.
     pub loading: bool,
+    /// The loaded track is being analysed.
+    pub analysing: bool,
+    /// What the analysis of the loaded track found, once it has finished.
+    pub analysis: Option<TrackAnalysis>,
     pub playing: bool,
     pub position_seconds: f64,
     pub cue_seconds: f64,
@@ -217,6 +225,8 @@ impl Default for DeckSnapshot {
             track: None,
             peaks: None,
             loading: false,
+            analysing: false,
+            analysis: None,
             playing: false,
             position_seconds: 0.0,
             cue_seconds: 0.0,
@@ -249,8 +259,15 @@ struct DeckControl {
     track: Option<TrackInfo>,
     peaks: Option<Arc<WaveformPeaks>>,
     loading: bool,
+    analysing: bool,
+    analysis: Option<TrackAnalysis>,
+    /// The result of the analysis, waiting for room in the queue to the processor.
+    pending_analysis: Option<GridEdit>,
     /// Counts loads and ejects, so a decode that finishes late is recognised as stale.
     generation: u64,
+    /// The generation of the track the deck holds, so the analysis of a track that is no
+    /// longer in it, or never got in, is recognised as stale.
+    held: Option<u64>,
     controls: DeckControls,
     /// The grid, the loop and the stored cues as the processor last reported them.
     grid: BeatGrid,
@@ -265,10 +282,19 @@ struct Loaded {
     peaks: WaveformPeaks,
 }
 
-struct LoadResult {
-    deck: DeckId,
-    generation: u64,
-    result: Result<Loaded, DecodeError>,
+/// What a load worker sends back: the decoded track and then, once it is analysed, the
+/// analysis. A worker whose decode fails sends only the first.
+enum LoadResult {
+    Decoded {
+        deck: DeckId,
+        generation: u64,
+        result: Result<Loaded, DecodeError>,
+    },
+    Analysed {
+        deck: DeckId,
+        generation: u64,
+        analysis: TrackAnalysis,
+    },
 }
 
 pub struct Engine {
@@ -280,18 +306,26 @@ pub struct Engine {
     sync_mode: SyncMode,
     snap: bool,
     quantize: bool,
+    metronome: bool,
     clock_tap: TapTempo,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
+    /// Load workers that have not sent their last report.
     loads_running: usize,
     finished_loads: Receiver<LoadResult>,
     load_reports: Sender<LoadResult>,
+    analyser: Arc<dyn Analyser>,
 }
 
 impl Engine {
     /// Builds an engine that runs at `rate` and the processor that produces its audio. The
     /// processor goes to whoever drives the audio: the device callback or the render.
     pub fn new(rate: SampleRate) -> (Self, Processor) {
+        Self::with_analyser(rate, Arc::new(PlatterAnalyser::default()))
+    }
+
+    /// As [`Self::new`], with another analysis of the loaded tracks.
+    pub fn with_analyser(rate: SampleRate, analyser: Arc<dyn Analyser>) -> (Self, Processor) {
         let (ends, processor) = rt::channel(rate);
         let (load_reports, finished_loads) = channel();
         let engine = Self {
@@ -302,11 +336,13 @@ impl Engine {
             sync_mode: SyncMode::default(),
             snap: false,
             quantize: false,
+            metronome: false,
             clock_tap: TapTempo::default(),
             swaps_in_flight: 0,
             loads_running: 0,
             finished_loads,
             load_reports,
+            analyser,
         };
         (engine, processor)
     }
@@ -317,7 +353,7 @@ impl Engine {
     /// Tracks are not carried over: they are loaded again by whoever calls this, and the
     /// tempo master is chosen again.
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
-        let (mut engine, processor) = Self::new(rate);
+        let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();
@@ -342,6 +378,9 @@ impl Engine {
             RtCommand::Quantize {
                 on: previous.quantize,
             },
+            RtCommand::Metronome {
+                on: previous.metronome,
+            },
         ];
         // The tempo of a deck that was the tempo master may be one a clock does not take.
         clock.extend(
@@ -360,6 +399,7 @@ impl Engine {
         engine.sync_mode = previous.sync_mode;
         engine.snap = previous.snap;
         engine.quantize = previous.quantize;
+        engine.metronome = previous.metronome;
         (engine, processor)
     }
 
@@ -524,6 +564,28 @@ impl Engine {
             Command::DeckGridMarkerPrevious { deck } => (deck, GridEdit::MarkerPrevious),
             Command::DeckGridMarkerNext { deck } => (deck, GridEdit::MarkerNext),
             Command::DeckGridLockToggle { deck } => (deck, GridEdit::ToggleLock),
+            Command::DeckGridReset { deck } => match self.decks[deck.index()].analysis {
+                Some(analysis) => (
+                    deck,
+                    GridEdit::Reset(analysis.tempo.map(|tempo| (tempo.bpm, tempo.first_beat))),
+                ),
+                None => return Ok(()),
+            },
+            Command::DeckGridBpmReset { deck } => {
+                match self.decks[deck.index()]
+                    .analysis
+                    .and_then(|found| found.tempo)
+                {
+                    Some(tempo) => (
+                        deck,
+                        GridEdit::ResetBpm {
+                            bpm: tempo.bpm,
+                            first_beat: tempo.first_beat,
+                        },
+                    ),
+                    None => return Ok(()),
+                }
+            }
             other => return self.dispatch_sync(other),
         };
         self.send(RtCommand::Grid { deck, edit })
@@ -567,6 +629,12 @@ impl Engine {
                 let on = !self.quantize;
                 self.send(RtCommand::Quantize { on })?;
                 self.quantize = on;
+                return Ok(());
+            }
+            Command::ClockMetronomeToggle => {
+                let on = !self.metronome;
+                self.send(RtCommand::Metronome { on })?;
+                self.metronome = on;
                 return Ok(());
             }
             Command::GlobalSyncModeSet { mode } => {
@@ -729,16 +797,26 @@ impl Engine {
         state.generation += 1;
         let generation = state.generation;
         let reports = self.load_reports.clone();
+        let analyser = Arc::clone(&self.analyser);
         std::thread::Builder::new()
             .name("platter-load".to_owned())
             .spawn(move || {
                 let result = decode_file(&path).map(|decoded| prepare(decoded, path));
+                let audio = result.as_ref().ok().map(|loaded| loaded.audio.clone());
                 // The engine may be gone by now; then nobody waits for the result.
-                let _ = reports.send(LoadResult {
+                let _ = reports.send(LoadResult::Decoded {
                     deck,
                     generation,
                     result,
                 });
+                // The deck plays the track while it is analysed.
+                if let Some(audio) = audio {
+                    let _ = reports.send(LoadResult::Analysed {
+                        deck,
+                        generation,
+                        analysis: analyser.analyse(audio.samples(), audio.rate()),
+                    });
+                }
             })
             .map_err(EngineError::Worker)?;
         self.decks[deck.index()].loading = true;
@@ -753,6 +831,8 @@ impl Engine {
         state.loading = false;
         state.track = None;
         state.peaks = None;
+        state.held = None;
+        state.forget_analysis();
         Ok(())
     }
 
@@ -760,6 +840,7 @@ impl Engine {
     /// what frees the audio of replaced tracks.
     pub fn poll(&mut self) -> Vec<Event> {
         self.collect_retired();
+        self.send_pending_analyses();
         while let Ok(report) = self.ends.reports.pop() {
             let deck = &mut self.decks[report.deck.index()];
             if let Some(grid) = report.grid {
@@ -794,14 +875,30 @@ impl Engine {
     }
 
     fn finish_load(&mut self, finished: LoadResult) -> Option<Event> {
-        self.loads_running = self.loads_running.saturating_sub(1);
-        let deck = finished.deck;
-        if self.decks[deck.index()].generation != finished.generation {
+        let (deck, generation, result) = match finished {
+            LoadResult::Decoded {
+                deck,
+                generation,
+                result,
+            } => (deck, generation, result),
+            LoadResult::Analysed {
+                deck,
+                generation,
+                analysis,
+            } => {
+                self.finish_analysis(deck, generation, analysis);
+                return None;
+            }
+        };
+        if result.is_err() {
+            self.loads_running = self.loads_running.saturating_sub(1);
+        }
+        if self.decks[deck.index()].generation != generation {
             return None;
         }
         self.decks[deck.index()].loading = false;
         let failed = |message: String| Some(Event::LoadFailed { deck, message });
-        let loaded = match finished.result {
+        let loaded = match result {
             Ok(loaded) => loaded,
             Err(error) => return failed(error.to_string()),
         };
@@ -809,12 +906,42 @@ impl Engine {
             return failed(error.to_string());
         }
         let state = &mut self.decks[deck.index()];
+        state.held = Some(generation);
         state.track = Some(loaded.info.clone());
         state.peaks = Some(Arc::new(loaded.peaks));
+        state.forget_analysis();
+        state.analysing = true;
         Some(Event::Loaded {
             deck,
             info: loaded.info,
         })
+    }
+
+    fn finish_analysis(&mut self, deck: DeckId, generation: u64, analysis: TrackAnalysis) {
+        self.loads_running = self.loads_running.saturating_sub(1);
+        let state = &mut self.decks[deck.index()];
+        if state.held != Some(generation) {
+            return;
+        }
+        state.analysing = false;
+        state.analysis = Some(analysis);
+        state.pending_analysis = analysis.tempo.map(|tempo| GridEdit::Analysed {
+            bpm: tempo.bpm,
+            first_beat: tempo.first_beat,
+        });
+        self.send_pending_analyses();
+    }
+
+    /// Sends the results of the analyses to the processor, as far as its queue has room; the
+    /// rest wait for the next poll.
+    fn send_pending_analyses(&mut self) {
+        for deck in DeckId::ALL {
+            if let Some(edit) = self.decks[deck.index()].pending_analysis
+                && self.send(RtCommand::Grid { deck, edit }).is_ok()
+            {
+                self.decks[deck.index()].pending_analysis = None;
+            }
+        }
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -825,6 +952,8 @@ impl Engine {
                 track: control.track.clone(),
                 peaks: control.peaks.clone(),
                 loading: control.loading,
+                analysing: control.analysing,
+                analysis: control.analysis,
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
@@ -848,6 +977,7 @@ impl Engine {
                 bpm: shared.clock_bpm.get(),
                 snap: self.snap,
                 quantize: self.quantize,
+                metronome: self.metronome,
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
@@ -939,6 +1069,14 @@ fn gain_up_to(db: f64, max_db: f64) -> Result<f32, ValueError> {
 fn fader_gain(position: f64) -> Result<f32, ValueError> {
     let travel = f64::from(Gain::from_fraction(position)?.linear()) / FADER_UNITY;
     Ok((travel * travel) as f32)
+}
+
+impl DeckControl {
+    fn forget_analysis(&mut self) {
+        self.analysing = false;
+        self.analysis = None;
+        self.pending_analysis = None;
+    }
 }
 
 fn prepare(decoded: DecodedAudio, path: PathBuf) -> Loaded {

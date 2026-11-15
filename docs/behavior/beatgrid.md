@@ -2,8 +2,8 @@
 
 The tempo of a track in beats per minute and the grid markers that place its beats in time.
 Sync, quantized jumps, snapped cues and loops all read the grid, so it comes first in M3. This
-note covers the grid itself and the manual editing of it; detection by analysis, the reset to
-the analysed values and the beat tick come later in M3.
+note covers the grid itself and the manual editing of it. Detection by analysis and the reset to
+the analysed values are in `docs/behavior/analysis.md`; the beat tick comes later in M3.
 
 ## What the public manual says
 
@@ -93,7 +93,8 @@ that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
   single tempo Platter steps the tempo by the amount the command carries.
 - The tempo field cannot be typed into yet: it is dragged or stepped. Typing comes with the
   text field of the browser search, later in M3.
-- The reset buttons and the beat tick come with the analysis.
+- The reset commands are in `docs/behavior/analysis.md`; their keys on the GRID page and the
+  beat tick come later in M3.
 - The selected marker is the one on or before the play position, as the reference product
   selects it. Platter has no separate selection.
 - The grid lives with the loaded track and is lost when the track is loaded again, which a
@@ -110,7 +111,7 @@ that taps sets no tempo; it sets the tempo with `deck.grid.bpm.set`.
 | Double, halve or step with no tempo yet | Nothing changes |
 | A 129th marker | Not added |
 | Move, delete or previous before the first marker; next after the last | Nothing happens |
-| A new track | Its grid starts empty and unlocked |
+| A new track | Its grid starts empty and unlocked, until the analysis fills it (`docs/behavior/analysis.md`) |
 
 ## Tests
 

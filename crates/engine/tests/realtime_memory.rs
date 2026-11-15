@@ -124,6 +124,8 @@ fn commands() -> Vec<Command> {
         Command::DeckGridMarkerNext { deck: A },
         Command::DeckGridMarkerDelete { deck: A },
         Command::DeckGridLockToggle { deck: A },
+        Command::DeckGridReset { deck: A },
+        Command::DeckGridBpmReset { deck: A },
         Command::DeckGridTap { deck: B },
         Command::DeckPlay { deck: A },
         Command::DeckGridBpmSet {
@@ -262,6 +264,7 @@ fn commands() -> Vec<Command> {
         Command::ClockBend { amount: 0.1 },
         Command::ClockBend { amount: 0.0 },
         Command::ClockTap,
+        Command::ClockMetronomeToggle,
         Command::DeckMasterSet { deck: B },
         Command::DeckSyncToggle { deck: A },
         Command::ClockModeSet {

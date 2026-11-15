@@ -113,6 +113,14 @@ pub enum Command {
     DeckGridLockToggle {
         deck: DeckId,
     },
+    /// Replaces the grid with the tempo and the first beat the analysis found.
+    DeckGridReset {
+        deck: DeckId,
+    },
+    /// Sets the tempo the analysis found, keeping the markers.
+    DeckGridBpmReset {
+        deck: DeckId,
+    },
     /// Switches the loop off, or starts one of the selected size at the play position.
     DeckLoopToggle {
         deck: DeckId,
@@ -269,6 +277,8 @@ pub enum Command {
     ClockBend {
         amount: f64,
     },
+    /// A click on every beat of the clock, on the headphones.
+    ClockMetronomeToggle,
     GlobalSyncModeSet {
         mode: SyncMode,
     },
@@ -626,6 +636,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.grid.reset",
+        label: "Reset beatgrid",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.grid.bpm.reset",
+        label: "Reset beatgrid tempo",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.loop.toggle",
         label: "Loop",
         params: &[DECK],
@@ -842,6 +862,11 @@ pub const SPECS: &[CommandSpec] = &[
         id: "clock.bend",
         label: "Bend clock tempo",
         params: &[number("amount", -MAX_NUDGE, MAX_NUDGE)],
+    },
+    CommandSpec {
+        id: "clock.metronome.toggle",
+        label: "Metronome",
+        params: &[],
     },
     CommandSpec {
         id: "global.snap.toggle",
@@ -1210,6 +1235,7 @@ impl Command {
             "clock.bend" => Self::ClockBend {
                 amount: read.number("amount")?,
             },
+            "clock.metronome.toggle" => Self::ClockMetronomeToggle,
             "global.sync.mode.set" => Self::GlobalSyncModeSet {
                 mode: read.sync_mode()?,
             },
@@ -1278,6 +1304,8 @@ impl Command {
             "deck.grid.marker.previous" => Self::DeckGridMarkerPrevious { deck },
             "deck.grid.marker.next" => Self::DeckGridMarkerNext { deck },
             "deck.grid.lock.toggle" => Self::DeckGridLockToggle { deck },
+            "deck.grid.reset" => Self::DeckGridReset { deck },
+            "deck.grid.bpm.reset" => Self::DeckGridBpmReset { deck },
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
     }
@@ -1358,6 +1386,8 @@ impl Command {
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
             Self::DeckGridLockToggle { .. } => "deck.grid.lock.toggle",
+            Self::DeckGridReset { .. } => "deck.grid.reset",
+            Self::DeckGridBpmReset { .. } => "deck.grid.bpm.reset",
             Self::DeckLoopToggle { .. } => "deck.loop.toggle",
             Self::DeckLoopIn { .. } => "deck.loop.in",
             Self::DeckLoopOut { .. } => "deck.loop.out",
@@ -1395,6 +1425,7 @@ impl Command {
             Self::ClockTempoStep { .. } => "clock.tempo.step",
             Self::ClockTap => "clock.tap",
             Self::ClockBend { .. } => "clock.bend",
+            Self::ClockMetronomeToggle => "clock.metronome.toggle",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",

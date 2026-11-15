@@ -129,6 +129,8 @@ fn grid_command() -> impl Strategy<Value = Command> {
         deck().prop_map(|deck| Command::DeckGridMarkerPrevious { deck }),
         deck().prop_map(|deck| Command::DeckGridMarkerNext { deck }),
         deck().prop_map(|deck| Command::DeckGridLockToggle { deck }),
+        deck().prop_map(|deck| Command::DeckGridReset { deck }),
+        deck().prop_map(|deck| Command::DeckGridBpmReset { deck }),
     ]
 }
 
@@ -142,6 +144,7 @@ fn sync_command() -> impl Strategy<Value = Command> {
         1 => (15.0f64..420.0).prop_map(|bpm| Command::ClockTempoSet { bpm }),
         1 => number().prop_map(|amount| Command::ClockTempoStep { amount }),
         1 => proptest::strategy::Just(Command::ClockTap),
+        1 => proptest::strategy::Just(Command::ClockMetronomeToggle),
         1 => number().prop_map(|amount| Command::ClockBend { amount }),
         1 => sync_mode.prop_map(|mode| Command::GlobalSyncModeSet { mode }),
         1 => proptest::strategy::Just(Command::GlobalSnapToggle),
