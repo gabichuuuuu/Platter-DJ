@@ -14,7 +14,9 @@ use rtrb::Producer;
 use super::clock::{Candidate, Lead, Pulse};
 use super::lock::KeyLock;
 use super::looper::{Looper, Region, Track};
-use super::{CueEdit, DeckTrack, GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
+use super::{
+    CueEdit, DeckTrack, GridEdit, LoopEdit, LoopState, MAX_KEY_SHIFT, Retired, Span, TrackAudio,
+};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
@@ -112,6 +114,8 @@ pub(super) struct DeckPlayer {
     /// on those of the clock.
     beat_to_keep: Option<f64>,
     lock: KeyLock,
+    /// Shift of the key in semitones, played through key lock.
+    key_shift: f64,
     /// A loop or a hotcue of a playing deck keeps the timeline.
     flux: bool,
     /// Reverse is held.
@@ -151,6 +155,7 @@ impl DeckPlayer {
             quantize: false,
             beat_to_keep: None,
             lock: KeyLock::new(rate.as_f64()),
+            key_shift: 0.0,
             flux: false,
             reverse: false,
             timeline: None,
@@ -751,10 +756,62 @@ impl DeckPlayer {
 
     pub(super) fn toggle_key_lock(&mut self) {
         self.lock.toggle();
+        // Turned on again, key lock keeps the original key.
+        if !self.lock.is_on() {
+            self.shift_key(0.0);
+        }
     }
 
     pub(super) fn is_key_locked(&self) -> bool {
         self.lock.is_on()
+    }
+
+    pub(super) fn step_key(&mut self, up: bool) {
+        self.lock_key(self.key_shift + if up { 1.0 } else { -1.0 });
+    }
+
+    pub(super) fn set_key(&mut self, semitones: f64) {
+        self.lock_key(semitones);
+    }
+
+    /// Keeps the key the deck has at its speed from now on.
+    pub(super) fn persist_key(&mut self) {
+        self.lock_key(12.0 * self.set_speed().log2());
+    }
+
+    fn lock_key(&mut self, semitones: f64) {
+        if semitones.is_nan() {
+            return;
+        }
+        if !self.lock.is_on() {
+            self.lock.toggle();
+        }
+        self.shift_key(semitones.clamp(-MAX_KEY_SHIFT, MAX_KEY_SHIFT));
+    }
+
+    fn shift_key(&mut self, semitones: f64) {
+        self.key_shift = semitones;
+        self.lock.set_pitch((semitones / 12.0).exp2());
+    }
+
+    pub(super) fn key_shift(&self) -> f64 {
+        self.key_shift
+    }
+
+    /// Pitch the deck plays against the original, in semitones: the shift while key lock acts,
+    /// the pitch of the speed otherwise, in reverse too.
+    pub(super) fn pitch_semitones(&self) -> f64 {
+        let speed = self.set_speed();
+        if !self.reverse && self.lock.acts_at(speed) {
+            self.key_shift
+        } else {
+            12.0 * speed.log2()
+        }
+    }
+
+    /// Speed the deck is set to, bend included, without the pull of sync.
+    fn set_speed(&self) -> f64 {
+        f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()))
     }
 
     /// Speed the deck is set to, as a ratio of the original.

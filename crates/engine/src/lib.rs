@@ -25,7 +25,7 @@ pub use control::{
     FINE_MOVE_SECONDS, MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use peaks::WaveformPeaks;
-pub use platter_analysis::{Key, Mode, TempoRange};
+pub use platter_analysis::{Key, Mode, TempoRange, Transposed};
 pub use platter_dsp::crossfade::CrossfaderCurve;
 pub use platter_dsp::eq::Band;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};

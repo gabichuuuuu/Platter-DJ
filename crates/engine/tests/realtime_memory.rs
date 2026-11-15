@@ -318,6 +318,16 @@ fn commands() -> Vec<Command> {
             pressed: false,
         },
         Command::DeckFluxToggle { deck: A },
+        // Transposition: a step, a set and a persist while both decks play.
+        Command::DeckKeyStep {
+            deck: A,
+            direction: SizeStep::Up,
+        },
+        Command::DeckKeySet {
+            deck: B,
+            semitones: -2.5,
+        },
+        Command::DeckKeyPersist { deck: A },
         Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
         Command::DeckKeyLockToggle { deck: A },
@@ -396,6 +406,36 @@ fn process_neither_allocates_nor_frees() {
         (1200.0 * (hz / 440.0).log2()).abs() < 5.0,
         "key lock did not hold: {hz:.2} Hz"
     );
+    // Transposition: a change while the stretch plays, then one while paused, which the
+    // stretch applies before its seek. Their pitch shows the stretch played them.
+    let mut transposed = |rig: &mut Rig, semitones: f64| {
+        let mut heard = Vec::new();
+        for _ in 0..60 {
+            let (_, counted) = count(|| rig.processor.process(&mut block, 4));
+            events += counted;
+            heard.extend(block.iter().step_by(4).copied());
+        }
+        let hz = frequency(&heard[RATE as usize / 2..]);
+        let expected = 440.0 * (semitones / 12.0).exp2();
+        assert!(
+            (1200.0 * (hz / expected).log2()).abs() < 5.0,
+            "the shift of {semitones} did not hold: {hz:.2} Hz"
+        );
+    };
+    for _ in 0..2 {
+        rig.send(Command::DeckKeyStep {
+            deck: DeckId::A,
+            direction: SizeStep::Up,
+        });
+    }
+    transposed(&mut rig, 2.0);
+    rig.send(Command::DeckPause { deck: DeckId::A });
+    rig.send(Command::DeckKeySet {
+        deck: DeckId::A,
+        semitones: -2.0,
+    });
+    rig.send(Command::DeckPlay { deck: DeckId::A });
+    transposed(&mut rig, -2.0);
     // The track and its stretch go back to this thread too.
     rig.send(Command::DeckEject { deck: DeckId::A });
     for _ in 0..5 {

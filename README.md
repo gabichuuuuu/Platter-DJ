@@ -82,6 +82,9 @@ its own code, graphics and sounds.
   attack of kicks, the first milliseconds after a jump play with the pitch following the
   speed, a track below 32 kHz plays without it, and nobody has listened to it; only
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
+  Transposition by semitones, locking the current key and the resulting key exist in the
+  engine only too: the bridge after a jump plays 32 ms at the untransposed pitch, and nobody
+  has listened to a transposed deck (`docs/decisions/0028-transposition.md`).
 - Flux and reverse exist in the engine only: the window has no buttons and no marker for
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).

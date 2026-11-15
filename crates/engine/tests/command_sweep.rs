@@ -140,6 +140,10 @@ fn sync_command() -> impl Strategy<Value = Command> {
     prop_oneof![
         3 => deck().prop_map(|deck| Command::DeckSyncToggle { deck }),
         2 => deck().prop_map(|deck| Command::DeckKeyLockToggle { deck }),
+        2 => (deck(), prop::sample::select(vec![SizeStep::Down, SizeStep::Up]))
+            .prop_map(|(deck, direction)| Command::DeckKeyStep { deck, direction }),
+        2 => (deck(), number()).prop_map(|(deck, semitones)| Command::DeckKeySet { deck, semitones }),
+        1 => deck().prop_map(|deck| Command::DeckKeyPersist { deck }),
         2 => deck().prop_map(|deck| Command::DeckFluxToggle { deck }),
         2 => (deck(), any::<bool>()).prop_map(|(deck, pressed)| Command::DeckReverse { deck, pressed }),
         2 => deck().prop_map(|deck| Command::DeckMasterSet { deck }),

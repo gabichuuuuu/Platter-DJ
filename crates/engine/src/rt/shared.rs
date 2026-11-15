@@ -80,6 +80,11 @@ pub struct DeckShared {
     pub levels: [AtomicF32; 2],
     pub sync: Flag,
     pub key_lock: Flag,
+    /// Shift of the key in semitones.
+    pub key_shift: AtomicF64,
+    /// Pitch the deck plays against the original, in semitones: the shift while key lock
+    /// acts, the pitch of the speed otherwise.
+    pub pitch: AtomicF64,
     pub flux: Flag,
     pub reverse: Flag,
     /// Position of the timeline of flux in seconds of track time; not a number while the
@@ -104,6 +109,8 @@ impl Default for DeckShared {
             levels: Default::default(),
             sync: Flag::default(),
             key_lock: Flag::default(),
+            key_shift: AtomicF64::default(),
+            pitch: AtomicF64::default(),
             flux: Flag::default(),
             reverse: Flag::default(),
             timeline: AtomicF64::new(f64::NAN),

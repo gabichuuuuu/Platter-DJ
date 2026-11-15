@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
+use platter_analysis::Transposed;
 use platter_core::{
     BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
 };
@@ -20,7 +21,7 @@ use platter_dsp::eq::{Band, band_gain};
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
     ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
-    MAX_HEADPHONE_GAIN_DB, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
+    MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
     MAX_SEEK_SECONDS, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 use crate::peaks::WaveformPeaks;
@@ -215,6 +216,11 @@ pub struct DeckSnapshot {
     /// The deck keeps the key of its track while its tempo changes:
     /// `docs/behavior/keylock.md`.
     pub key_lock: bool,
+    /// Shift of the key in semitones, from -12 to +12.
+    pub key_shift: f64,
+    /// The key the analysis found, moved by the pitch the deck plays: the shift while key
+    /// lock acts, the pitch of the speed otherwise.
+    pub resulting_key: Option<Transposed>,
     /// Flux is on: `docs/behavior/flux.md`.
     pub flux: bool,
     /// Reverse is held.
@@ -247,6 +253,8 @@ impl Default for DeckSnapshot {
             levels: [0.0; 2],
             sync: false,
             key_lock: false,
+            key_shift: 0.0,
+            resulting_key: None,
             flux: false,
             reverse: false,
             timeline_seconds: None,
@@ -414,6 +422,12 @@ impl Engine {
             .into_iter()
             .filter(|deck| published.decks[deck.index()].key_lock.get());
         clock.extend(locked.map(|deck| RtCommand::KeyLockToggle { deck }));
+        // After key lock, which a shift turns on.
+        let shifted = DeckId::ALL.into_iter().filter_map(|deck| {
+            let semitones = published.decks[deck.index()].key_shift.get();
+            (semitones != 0.0).then_some(RtCommand::KeySet { deck, semitones })
+        });
+        clock.extend(shifted);
         let fluxed = DeckId::ALL
             .into_iter()
             .filter(|deck| published.decks[deck.index()].flux.get());
@@ -627,6 +641,20 @@ impl Engine {
         let command = match command {
             Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
             Command::DeckKeyLockToggle { deck } => RtCommand::KeyLockToggle { deck },
+            Command::DeckKeyStep { deck, direction } => RtCommand::KeyStep {
+                deck,
+                up: direction == SizeStep::Up,
+            },
+            Command::DeckKeySet { deck, semitones } => RtCommand::KeySet {
+                deck,
+                semitones: ValueError::check(
+                    "semitones",
+                    semitones,
+                    -MAX_KEY_SHIFT,
+                    MAX_KEY_SHIFT,
+                )?,
+            },
+            Command::DeckKeyPersist { deck } => RtCommand::KeyPersist { deck },
             Command::DeckFluxToggle { deck } => RtCommand::FluxToggle { deck },
             Command::DeckMasterSet { deck } => RtCommand::Master { deck },
             Command::ClockModeSet { mode } => {
@@ -1001,6 +1029,11 @@ impl Engine {
                 levels: [published.levels[0].get(), published.levels[1].get()],
                 sync: published.sync.get(),
                 key_lock: published.key_lock.get(),
+                key_shift: published.key_shift.get(),
+                resulting_key: control
+                    .analysis
+                    .and_then(|analysis| analysis.key)
+                    .and_then(|key| key.transposed(published.pitch.get())),
                 flux: published.flux.get(),
                 reverse: published.reverse.get(),
                 timeline_seconds: Some(published.timeline.get())

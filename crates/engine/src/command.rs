@@ -13,6 +13,7 @@ use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
 use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 
+pub use crate::rt::MAX_KEY_SHIFT;
 use crate::rt::Output;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -259,6 +260,21 @@ pub enum Command {
     },
     /// Keeps the key of the track while its tempo changes, or stops doing so.
     DeckKeyLockToggle {
+        deck: DeckId,
+    },
+    /// Moves the key of the deck by a semitone and turns key lock on:
+    /// `docs/behavior/keylock.md`, Transposition.
+    DeckKeyStep {
+        deck: DeckId,
+        direction: SizeStep,
+    },
+    /// Sets the shift of the key in semitones, `-12..=12`, and turns key lock on.
+    DeckKeySet {
+        deck: DeckId,
+        semitones: f64,
+    },
+    /// Turns key lock on with the key the deck has at its current speed.
+    DeckKeyPersist {
         deck: DeckId,
     },
     /// Turns flux on or off: `docs/behavior/flux.md`.
@@ -849,6 +865,21 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.key.step",
+        label: "Transpose by a semitone",
+        params: &[DECK, SIZE_STEP],
+    },
+    CommandSpec {
+        id: "deck.key.set",
+        label: "Set key",
+        params: &[DECK, number("semitones", -MAX_KEY_SHIFT, MAX_KEY_SHIFT)],
+    },
+    CommandSpec {
+        id: "deck.key.persist",
+        label: "Lock the current key",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.flux.toggle",
         label: "Flux",
         params: &[DECK],
@@ -1231,6 +1262,15 @@ impl Command {
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             "deck.keylock.toggle" => Self::DeckKeyLockToggle { deck: read.deck()? },
+            "deck.key.step" => Self::DeckKeyStep {
+                deck: read.deck()?,
+                direction: read.size_step()?,
+            },
+            "deck.key.set" => Self::DeckKeySet {
+                deck: read.deck()?,
+                semitones: read.number("semitones")?,
+            },
+            "deck.key.persist" => Self::DeckKeyPersist { deck: read.deck()? },
             "deck.flux.toggle" => Self::DeckFluxToggle { deck: read.deck()? },
             "deck.reverse" => Self::DeckReverse {
                 deck: read.deck()?,
@@ -1454,6 +1494,9 @@ impl Command {
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
+            Self::DeckKeyStep { .. } => "deck.key.step",
+            Self::DeckKeySet { .. } => "deck.key.set",
+            Self::DeckKeyPersist { .. } => "deck.key.persist",
             Self::DeckFluxToggle { .. } => "deck.flux.toggle",
             Self::DeckReverse { .. } => "deck.reverse",
             Self::DeckMasterSet { .. } => "deck.master.set",

@@ -155,6 +155,9 @@ impl Processor {
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
             RtCommand::KeyLockToggle { deck } => self.player(deck).toggle_key_lock(),
+            RtCommand::KeyStep { deck, up } => self.player(deck).step_key(up),
+            RtCommand::KeySet { deck, semitones } => self.player(deck).set_key(semitones),
+            RtCommand::KeyPersist { deck } => self.player(deck).persist_key(),
             RtCommand::FluxToggle { deck } => self.player(deck).toggle_flux(),
             RtCommand::Reverse { deck, pressed } => self.player(deck).reverse(pressed),
             RtCommand::Master { deck } => {
@@ -309,6 +312,8 @@ impl Processor {
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
             shared.key_lock.set(channel.player.is_key_locked());
+            shared.key_shift.set(channel.player.key_shift());
+            shared.pitch.set(channel.player.pitch_semitones());
             shared.flux.set(channel.player.is_flux_on());
             shared.reverse.set(channel.player.is_reversed());
             shared

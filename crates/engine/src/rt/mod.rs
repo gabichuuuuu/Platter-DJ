@@ -40,6 +40,9 @@ pub use shared::{DeckShared, MasterChoice, Shared};
 /// that sends faster gets an error instead of blocking.
 pub const COMMAND_CAPACITY: usize = 256;
 
+/// The most the key of a deck moves either way, in semitones.
+pub const MAX_KEY_SHIFT: f64 = 12.0;
+
 /// A track as a deck holds it: its audio and the stretch key lock plays it with, when one
 /// could be built for it.
 #[derive(Debug)]
@@ -228,6 +231,20 @@ pub enum RtCommand {
         deck: DeckId,
     },
     KeyLockToggle {
+        deck: DeckId,
+    },
+    /// Moves the key by a semitone, up or down, and turns key lock on.
+    KeyStep {
+        deck: DeckId,
+        up: bool,
+    },
+    /// Sets the shift of the key in semitones and turns key lock on.
+    KeySet {
+        deck: DeckId,
+        semitones: f64,
+    },
+    /// Turns key lock on with the key of the current speed.
+    KeyPersist {
         deck: DeckId,
     },
     FluxToggle {

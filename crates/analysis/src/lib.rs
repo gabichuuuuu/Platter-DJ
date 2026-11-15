@@ -9,7 +9,7 @@ mod tempo;
 
 use std::fmt;
 
-pub use key::{Key, Mode};
+pub use key::{Key, Mode, Transposed};
 pub use tempo::{BeatTempo, TempoRange};
 
 /// The longest stretch of a track that is read, in seconds.
