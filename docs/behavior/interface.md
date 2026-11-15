@@ -9,6 +9,7 @@ Sections of the reference manual, read on 13 November 2026:
 
 - *Overview*, section *Header*
 - *Overview*, section *Deck header*
+- *Preferences*, section *Global Settings page*, read on 15 November 2026 for full screen
 
 The header at the top of the window holds status indicators: one for the audio device, which
 changes colour when no device is connected or when the built-in sound card is in use; a load
@@ -16,7 +17,9 @@ indicator, the share of the time of an audio buffer that processing it takes; a 
 the main output; and the time of day. Below it the decks sit side by side with the mixer
 between them and the browser under all three. The header of a deck shows title, artist and
 album of the loaded track, its time and remaining time, the current tempo, the position of the
-tempo fader as a percentage and the base tempo of the track.
+tempo fader as a percentage and the base tempo of the track. The application can run on the
+whole screen: the global settings choose the zoom of the full-screen view and whether the
+application starts in it. The manual names no key for it.
 
 ## What Platter does
 
@@ -51,6 +54,11 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   (`mixer.clip.reset`).
 - **Languages.** English and Spanish. Every text comes from a translation file; changing the
   language in the preferences takes effect at once.
+- **Full screen.** `app.fullscreen.toggle` shows the window on the whole screen, or as a
+  window again. Its key sits in the status header beside the preferences, lit while the
+  window is on the whole screen, and F11 does the same. The layout follows the size of the
+  screen as it follows the size of a window. When the system takes the window out of full
+  screen by itself, the key follows.
 - **Window size.** The layout is designed 1440 points wide. A wider window gives the extra
   width to the waveform lanes and the file list; a taller or shorter one gains or loses rows
   of the file list. A narrower window shows the whole interface smaller.
@@ -62,6 +70,8 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   day needs the offset of the local time zone, which needs either a dependency outside the
   approved list or a call into the system. It is drawn when the application is given a time,
   as the capture mode does.
+- Full screen has no zoom of its own and no setting to start in it; the layout scales as it
+  does for a window.
 - The reference product hides or shows parts of the deck header by preference. Platter shows
   the same set always.
 - Screen readers get no information yet: the bridge to the accessibility service of the

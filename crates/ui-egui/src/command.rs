@@ -149,6 +149,8 @@ pub enum AppCommand {
     },
     /// Opens the keyboard shortcut file in the editor of the system.
     KeymapOpen,
+    /// Shows the window on the whole screen, or as a window again.
+    FullscreenToggle,
     /// Shows a folder in the file list.
     BrowserNavigate {
         path: PathBuf,
@@ -262,6 +264,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "app.keymap.open",
         label: "Open the shortcut file",
+        params: &[],
+    },
+    CommandSpec {
+        id: "app.fullscreen.toggle",
+        label: "Full screen",
         params: &[],
     },
     CommandSpec {
@@ -470,6 +477,7 @@ impl AppCommand {
                 language: read.choice("language", &Language::ALL, Language::code, "en, es")?,
             },
             "app.keymap.open" => Self::KeymapOpen,
+            "app.fullscreen.toggle" => Self::FullscreenToggle,
             "audio.device.set" => {
                 let device = read.text("device")?;
                 Self::AudioDeviceSet {
@@ -538,6 +546,7 @@ impl AppCommand {
             Self::SettingsRestoreDefaults => "app.settings.restore_defaults",
             Self::LanguageSet { .. } => "app.language.set",
             Self::KeymapOpen => "app.keymap.open",
+            Self::FullscreenToggle => "app.fullscreen.toggle",
             Self::AudioDeviceSet { .. } => "audio.device.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",

@@ -110,6 +110,8 @@ pub struct SettingsView {
     /// Output of the device for master left, master right, headphones left and right.
     pub routing: [u16; 4],
     pub language: Language,
+    /// The window covers the whole screen.
+    pub fullscreen: bool,
     /// Names of the two files of the user, as the pages mention them.
     pub settings_file: String,
     pub keymap_file: String,

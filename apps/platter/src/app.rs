@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use eframe::egui::ViewportCommand;
 use platter_audio_io::{
     AudioError, BUFFER_SIZES, DeviceInfo, DeviceKind, Output, SAMPLE_RATES, Source, StreamRequest,
 };
@@ -94,6 +95,10 @@ pub struct PlatterApp {
     last_device_scan: Instant,
     browser: FileBrowser,
     notices: [Option<DeckNotice>; DeckId::COUNT],
+    /// The window covers the whole screen, as the window last said.
+    fullscreen: bool,
+    /// Full screen asked for by a command, sent to the window in the next frame.
+    fullscreen_wanted: Option<bool>,
 }
 
 impl PlatterApp {
@@ -130,6 +135,8 @@ impl PlatterApp {
             last_device_scan: Instant::now(),
             browser,
             notices: [None; DeckId::COUNT],
+            fullscreen: false,
+            fullscreen_wanted: None,
         };
         app.log(
             Level::Info,
@@ -417,6 +424,7 @@ impl PlatterApp {
             }
             AppCommand::SettingsRestoreDefaults => self.restore_defaults(),
             AppCommand::KeymapOpen => self.open_keymap(),
+            AppCommand::FullscreenToggle => self.fullscreen_wanted = Some(!self.fullscreen),
             AppCommand::DeckNoticeDismiss { deck } => self.notices[deck.index()] = None,
             _ => {}
         }
@@ -573,6 +581,7 @@ impl PlatterApp {
                 routing.headphones[1],
             ],
             language: self.settings.language,
+            fullscreen: self.fullscreen,
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
         }
@@ -607,6 +616,13 @@ impl eframe::App for PlatterApp {
         let actions = self.shell.show(ui, &view);
         for action in actions {
             self.dispatch(action);
+        }
+        // The window manager may leave full screen by itself; the window says what it is.
+        if let Some(fullscreen) = self.fullscreen_wanted.take() {
+            ctx.send_viewport_cmd(ViewportCommand::Fullscreen(fullscreen));
+        }
+        if let Some(fullscreen) = ctx.input(|input| input.viewport().fullscreen) {
+            self.fullscreen = fullscreen;
         }
 
         let busy = engine.decks.iter().any(|deck| deck.playing || deck.loading)

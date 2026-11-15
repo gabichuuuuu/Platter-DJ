@@ -216,3 +216,7 @@ direction = "forward"
 keys = "Ctrl + Comma"
 command = "app.settings.open"
 page = "audio"
+
+[[binding]]
+keys = "F11"
+command = "app.fullscreen.toggle"

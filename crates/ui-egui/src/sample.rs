@@ -274,6 +274,7 @@ fn settings() -> SettingsView {
         buffer_frames: 256,
         routing: [0, 1, 2, 3],
         language: Language::English,
+        fullscreen: false,
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
     }
