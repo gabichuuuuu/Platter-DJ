@@ -226,7 +226,8 @@ design draws it, which leaves room for the row.
 - The sync mode is a preference of the Decks page, which comes with the rest of the
   preferences; until then `global.sync.mode.set` is sent from the command line.
 - Synchronisation to an external clock is M5.
-- Key lock is not there yet, so a synced deck changes pitch with its speed.
+- A synced deck changes pitch with its speed unless its key lock is on
+  (`docs/behavior/keylock.md`).
 
 ## Edge cases
 

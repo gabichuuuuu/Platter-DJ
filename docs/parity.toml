@@ -128,7 +128,7 @@ id = "key"
 title = "Key"
 features = [
   { id = "detection", name = "Key detection", milestone = "M3", status = "in_progress" },
-  { id = "key-lock", name = "Key lock", milestone = "M3", status = "planned" },
+  { id = "key-lock", name = "Key lock", milestone = "M3", status = "in_progress" },
   { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "planned" },
   { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "planned" },
   { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "planned" },

@@ -11,6 +11,7 @@ mod control;
 mod peaks;
 mod render;
 pub mod rt;
+mod stretch;
 mod tap;
 mod wav;
 

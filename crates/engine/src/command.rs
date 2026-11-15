@@ -257,6 +257,10 @@ pub enum Command {
     DeckSyncToggle {
         deck: DeckId,
     },
+    /// Keeps the key of the track while its tempo changes, or stops doing so.
+    DeckKeyLockToggle {
+        deck: DeckId,
+    },
     /// Makes the deck the tempo master, while the mode of the clock is not automatic.
     DeckMasterSet {
         deck: DeckId,
@@ -831,6 +835,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.keylock.toggle",
+        label: "Key lock",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.master.set",
         label: "Make tempo master",
         params: &[DECK],
@@ -1202,6 +1211,7 @@ impl Command {
                 direction: read.size_step()?,
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
+            "deck.keylock.toggle" => Self::DeckKeyLockToggle { deck: read.deck()? },
             sync if sync.starts_with("clock.")
                 || matches!(
                     sync,
@@ -1419,6 +1429,7 @@ impl Command {
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
+            Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
             Self::DeckMasterSet { .. } => "deck.master.set",
             Self::ClockModeSet { .. } => "clock.mode.set",
             Self::ClockTempoSet { .. } => "clock.tempo.set",
