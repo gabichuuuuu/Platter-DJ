@@ -60,7 +60,7 @@ stop and ask. Each gets a row in `ATTRIBUTION.md`.
 
 | Use | Piece | Licence seen | Milestone | Conditions |
 | --- | --- | --- | --- | --- |
-| Tempo, beatgrid and key | stratum-dsp | MIT OR Apache-2.0 | M3 | Pure Rust. Measured against the corpus before adoption |
+| Tempo, beatgrid and key | stratum-dsp | MIT OR Apache-2.0 | M3 | Measured on 15 November 2026 and not adopted: Platter detects them itself (`docs/decisions/0020-own-analysis.md`) |
 | Key lock | timestretch | MIT | M3 | Pure Rust. Measured against the next one |
 | Key lock | Signalsmith Stretch, through signalsmith-stretch | MIT | M3 | C++ with FFI: needs a C++ compiler and an `unsafe` exception isolated in its crate and written in `AGENTS.md` before use |
 | Stems | 4-stem Spleeter model exported to ONNX | See `docs/legal-notes.md` | M4 | Decided in M4; until then only the interface, without a model |
@@ -86,7 +86,7 @@ No external crate for these:
 | Jog wheels, faders, crossfader, meters and waveforms | `platter-ui-egui` | M2 |
 | Drawing the icons of `docs/design/icons/icons.toml` with the egui painter, without an SVG dependency | `platter-ui-egui` or `xtask` | M2 |
 | PNG writer for the visual comparison captures | `apps/platter` | M2 |
-| Tempo, beatgrid and key analysis, if the temporary piece is replaced | `platter-analysis` | M3 or later |
+| Tempo, beatgrid and key analysis, with its FFT | `platter-analysis` | M3 |
 | Key lock, if the temporary piece is replaced | `platter-dsp` | M3 or later |
 | Decoders from the public specifications, if symphonia is replaced | `platter-decode` | After M3 |
 | Own DVS timecode and its decoder | `platter-dsp` | M5 |

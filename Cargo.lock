@@ -2063,6 +2063,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "platter-analysis"
+version = "0.0.0"
+dependencies = [
+ "platter-core",
+]
+
+[[package]]
 name = "platter-audio-io"
 version = "0.0.0"
 dependencies = [
