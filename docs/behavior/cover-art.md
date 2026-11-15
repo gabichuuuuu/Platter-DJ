@@ -38,7 +38,7 @@ in memory) and returns it decoded, or nothing when the file carries no picture.
   smaller picture keeps its size. Each pixel of the result is the average of the pixels of the
   picture it covers, weighted by their opacity so that transparent pixels do not darken the
   edges. The result is 8-bit RGBA, rows from the top, alpha not premultiplied.
-- **Bounds.** A picture larger than 16 MiB as stored, or that declares more than 8192 pixels on
+- **Bounds.** A picture larger than 16 MiB as stored, or that declares more than 4096 pixels on
   a side, is refused before its pixels are decoded.
 - **Work.** Reading a cover opens the file and reads its tags; it decodes no audio. It is slow
   work for a worker thread, like reading the header of a file.
@@ -62,8 +62,8 @@ in memory) and returns it decoded, or nothing when the file carries no picture.
 | Picture in a format other than JPEG or PNG | Error "unsupported picture" |
 | Damaged picture | Error "the picture is damaged" |
 | Picture over 16 MiB as stored | Error "the picture is too large"; it is not decoded |
-| Picture that declares more than 8192 pixels on a side | Error "the picture is too large"; no pixels are decoded |
-| Very narrow picture (8192 by 1) | Scaled to 256 by 1; no side goes below one pixel |
+| Picture that declares more than 4096 pixels on a side | Error "the picture is too large"; no pixels are decoded |
+| Very narrow picture (4096 by 1) | Scaled to 256 by 1; no side goes below one pixel |
 | Audio file that cannot be opened or read | The error of the audio file (`docs/behavior/formats.md`) |
 | The decoding library or an image decoder panics on the content | Error, as for a damaged file (`docs/decisions/0008-decoder-panic-boundary.md`) |
 

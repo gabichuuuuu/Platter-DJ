@@ -408,7 +408,7 @@ fn scaling_keeps_the_proportions() {
     assert_eq!(pixel(&cover, 255, 127), [0, 0, 255, 255]);
 
     // A picture of one row keeps a row.
-    let picture = rgba_png(8_192, 1, |_, _| [9, 9, 9, 255]);
+    let picture = rgba_png(4_096, 1, |_, _| [9, 9, 9, 255]);
     let cover = cover_of(flac_with_pictures(&[(FRONT_COVER, &picture)]), "flac");
     assert_eq!((cover.width, cover.height), (COVER_SIDE as u32, 1));
 }

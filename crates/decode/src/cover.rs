@@ -26,10 +26,10 @@ use crate::{DecodeError, guarded, open};
 /// Largest picture accepted, in bytes as stored in the file. A front cover is rarely above a
 /// few hundred kilobytes; this leaves room for print-quality scans.
 pub const MAX_PICTURE_BYTES: usize = 16 * 1024 * 1024;
-/// Longest side a picture may declare, in pixels. At this size the decoded RGBA picture
-/// takes 256 MiB; the image decoders hold working memory on top of that while they decode,
-/// several times as much for a 16-bit PNG.
-pub const MAX_PICTURE_SIDE: usize = 8192;
+/// Longest side a picture may declare, in pixels: above the largest covers in use, and low
+/// enough that a decoded RGBA picture takes 64 MiB at most. The image decoders hold working
+/// memory on top of that while they decode, several times as much for a 16-bit PNG.
+pub const MAX_PICTURE_SIDE: usize = 4096;
 /// Longest side of a decoded cover, in pixels.
 pub const COVER_SIDE: usize = 256;
 
