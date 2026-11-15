@@ -1,4 +1,5 @@
-//! The processor: two decks, the mixer, the master section and the headphone output.
+//! The processor: two decks, the mixer, the master section and the headphone output, or
+//! each deck on its own outputs in external mixer mode.
 
 use std::sync::Arc;
 
@@ -18,8 +19,8 @@ use super::tick::Tick;
 use super::tone::TestTone;
 use super::{COMMAND_CAPACITY, DeckReport, Output, Queues, Retired, RtCommand, Shared};
 
-/// Channels a device needs for the headphones to have their own pair.
-const CHANNELS_WITH_HEADPHONES: usize = 4;
+/// Channels a device needs for a second pair: the headphones, or deck B in external mode.
+const CHANNELS_WITH_TWO_PAIRS: usize = 4;
 
 struct Channel {
     player: DeckPlayer,
@@ -56,6 +57,15 @@ pub struct Processor {
     headphone_limiter: Limiter,
     tone: TestTone,
     metronome: Metronome,
+    /// Zero mixes inside, one sends each deck to its own pair:
+    /// `docs/behavior/external-mixer.md`.
+    external: Smoothed,
+    /// One while the gain and the equaliser act in external mode.
+    external_eq_gain: Smoothed,
+    /// One while the master volume acts in external mode.
+    external_master_volume: Smoothed,
+    /// The limiters of the first and the second pair in external mode.
+    pair_limiters: [Limiter; 2],
 }
 
 impl Processor {
@@ -92,14 +102,19 @@ impl Processor {
             headphone_limiter: Limiter::new(rate),
             tone: TestTone::new(rate),
             metronome: Metronome::new(rate),
+            external: parameter(0.0),
+            external_eq_gain: parameter(0.0),
+            external_master_volume: parameter(0.0),
+            pair_limiters: [Limiter::new(rate), Limiter::new(rate)],
         }
     }
 
     /// Fills `output`, interleaved with `channels` channels per frame, with the next block
     /// of the mix. The master goes to the first two channels and, when there are four or
-    /// more, the headphones go to the third and the fourth; one channel gets the sum of
-    /// both sides of the master at half level; further channels are silent. This is the
-    /// function the audio callback calls, and the deviceless render calls the same one.
+    /// more, the headphones go to the third and the fourth; in external mode deck A and
+    /// deck B take those pairs instead. One channel gets the sum of both sides of the first
+    /// pair at half level; further channels are silent. This is the function the audio
+    /// callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
         self.clock.choose(self.candidates());
@@ -107,10 +122,10 @@ impl Processor {
             output.fill(0.0);
             return;
         }
-        let with_headphones = channels >= CHANNELS_WITH_HEADPHONES;
+        let two_pairs = channels >= CHANNELS_WITH_TWO_PAIRS;
         let mut frames = output.chunks_exact_mut(channels);
         for frame in &mut frames {
-            let ([left, right], headphones) = self.next_frame(with_headphones);
+            let ([left, right], pair) = self.next_frame(two_pairs);
             match frame {
                 [only] => *only = 0.5 * (left + right),
                 [first, second, rest @ ..] => {
@@ -118,8 +133,8 @@ impl Processor {
                     *second = right;
                     rest.fill(0.0);
                     if let [third, fourth, ..] = rest {
-                        *third = headphones[0];
-                        *fourth = headphones[1];
+                        *third = pair[0];
+                        *fourth = pair[1];
                     }
                 }
                 [] => {}
@@ -239,6 +254,16 @@ impl Processor {
             RtCommand::HeadphoneMix { position } => self.headphone_mix.set(position),
             RtCommand::HeadphoneGain { linear } => self.headphone_gain.set(linear),
             RtCommand::TestTone { output } => self.tone.play(output),
+            RtCommand::ExternalMixer {
+                on,
+                eq_gain,
+                master_volume,
+            } => {
+                let weight = |on: bool| if on { 1.0 } else { 0.0 };
+                self.external.set(weight(on));
+                self.external_eq_gain.set(weight(eq_gain));
+                self.external_master_volume.set(weight(master_volume));
+            }
             // The deck commands are handled by `apply`.
             _ => {}
         }
@@ -277,17 +302,30 @@ impl Processor {
         self.retarget_crossfader();
     }
 
-    /// The next frame of the master and of the headphones. Without headphones their frame
-    /// is silence and their part of the path is skipped, parameter ramps included.
-    fn next_frame(&mut self, with_headphones: bool) -> (Frame, Frame) {
+    /// The next frame of the first and the second pair of outputs. In internal mode they
+    /// are the master and the headphones; without a second pair the headphone part of the
+    /// path is skipped, parameter ramps included. In external mode they are deck A and
+    /// deck B, or both decks on the first pair; during the ramp between the modes both
+    /// paths run and their outputs are blended.
+    fn next_frame(&mut self, two_pairs: bool) -> (Frame, Frame) {
         let mut mix = [0.0f32; 2];
         let mut pre_listened = [0.0f32; 2];
+        let mut decks = [[0.0f32; 2]; 2];
+        let mut ticks = [0.0f32; 2];
+        let external = self.external.advance();
+        let routed = external > 0.0;
+        let metered_outside = self.external.target() > 0.0;
+        let eq_gain = self.external_eq_gain.advance();
+        let master_volume = self.external_master_volume.advance();
+        let gain = self.master_gain.advance();
+        let external_gain = 1.0 + (gain - 1.0) * master_volume;
         let master = self.clock.master();
         let lead = master.and_then(|deck| self.channels[deck.index()].player.lead());
         let pulse = self.clock.tick(lead);
         let click = self.metronome.next(pulse.phase);
         self.advance_fade(pulse.bpm);
-        for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
+        let channels = DeckId::ALL.into_iter().zip(&mut self.channels);
+        for (index, (deck, channel)) in channels.enumerate() {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
             channel.player.follow(clock, self.keep_beat);
@@ -296,41 +334,78 @@ impl Processor {
             let side = channel.crossfade.advance();
             mix[0] += strip.post[0] * side;
             mix[1] += strip.post[1] * side;
-            if with_headphones {
+            if two_pairs || routed {
                 if channel.player.on_beat() {
                     channel.tick.play();
                 }
+                ticks[index] = channel.tick.next();
+            }
+            if two_pairs {
                 let send = channel.pre_listen.advance();
                 pre_listened[0] += strip.pre[0] * send;
                 pre_listened[1] += strip.pre[1] * send;
             }
+            let sent = |side: usize| {
+                let source = played[side] + (strip.equalised[side] - played[side]) * eq_gain;
+                source * external_gain
+            };
+            decks[index] = [sent(0), sent(1)];
+            // The meter reads the signal the mode sends out.
+            channel.strip.feed_meter(if metered_outside {
+                decks[index]
+            } else {
+                strip.post
+            });
         }
-        let gain = self.master_gain.advance();
         let tone = self.tone.next(Output::Master);
         let master = self
             .limiter
             .process([mix[0] * gain + tone, mix[1] * gain + tone]);
-        self.master_meter.feed(master);
-        if !with_headphones {
-            return (master, [0.0; 2]);
+        let headphones = if two_pairs {
+            self.headphones(pre_listened, master, click, ticks[0] + ticks[1])
+        } else {
+            [0.0; 2]
+        };
+        if !routed {
+            self.master_meter.feed(master);
+            return (master, headphones);
         }
+        let with = |deck: Frame, added: f32| [deck[0] + added, deck[1] + added];
+        let [a, b] = decks;
+        let (first, second) = if two_pairs {
+            (
+                self.pair_limiters[0].process(with(a, ticks[0] + tone)),
+                self.pair_limiters[1].process(with(b, ticks[1])),
+            )
+        } else {
+            let both = [a[0] + b[0], a[1] + b[1]];
+            let first = self.pair_limiters[0].process(with(both, ticks[0] + ticks[1] + tone));
+            (first, [0.0; 2])
+        };
+        let blend = |inside: Frame, outside: Frame| {
+            [
+                inside[0] * (1.0 - external) + outside[0] * external,
+                inside[1] * (1.0 - external) + outside[1] * external,
+            ]
+        };
+        let first = blend(master, first);
+        self.master_meter.feed(first);
+        (first, blend(headphones, second))
+    }
+
+    /// The headphones: the pre-listened decks and the master, weighted by the mix knob, the
+    /// metronome and the beat ticks, through their own limiter.
+    fn headphones(&mut self, pre_listened: Frame, master: Frame, click: f32, tick: f32) -> Frame {
         let balance = self.headphone_mix.advance();
         let gain = self.headphone_gain.advance();
         let tone = self.tone.next(Output::Headphones);
-        // The beat ticks are heard whatever the mix; they and the metronome follow the
-        // headphone volume, which sets their level.
-        let tick: f32 = self
-            .channels
-            .iter_mut()
-            .map(|channel| channel.tick.next())
-            .sum();
+        // The beat tick and the metronome are heard whatever the mix, and follow the
+        // volume, which sets their level.
         let blend = |index: usize| {
             pre_listened[index] * (1.0 - balance) + master[index] * balance + click + tick
         };
-        let headphones = self
-            .headphone_limiter
-            .process([blend(0) * gain + tone, blend(1) * gain + tone]);
-        (master, headphones)
+        self.headphone_limiter
+            .process([blend(0) * gain + tone, blend(1) * gain + tone])
     }
 
     fn publish(&mut self) {
@@ -387,7 +462,14 @@ impl Processor {
         let levels = self.master_meter.levels();
         self.shared.master_levels[0].set(levels[0]);
         self.shared.master_levels[1].set(levels[1]);
-        self.shared.limiter_gain.set(self.limiter.gain());
+        let limiter = if self.external.target() > 0.0 {
+            self.pair_limiters[0]
+                .gain()
+                .min(self.pair_limiters[1].gain())
+        } else {
+            self.limiter.gain()
+        };
+        self.shared.limiter_gain.set(limiter);
     }
 }
 

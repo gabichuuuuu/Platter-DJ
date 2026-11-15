@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 
 use common::{RATE, Rig, rate, sine_file};
 use platter_core::{DeckId, SampleRate};
-use platter_engine::{Analyser, Command, Engine, TrackAnalysis};
+use platter_engine::{Analyser, Command, Engine, MixerMode, TrackAnalysis};
 use platter_testkit::files::wav_pcm16;
 use platter_testkit::signal::{channel, stereo, to_i16};
 
@@ -272,6 +272,20 @@ fn no_tick_while_paused_without_a_tempo_or_with_the_tick_off() {
     off.send(Command::DeckBeatTickToggle { deck: A });
     off.send(Command::DeckPlay { deck: A });
     assert!(onsets(&headphones(&mut off, 2.0)).is_empty());
+}
+
+#[test]
+fn in_external_mixer_mode_the_tick_is_on_the_pair_of_the_deck() {
+    let mut rig = ticking(silence(), Some(BPM));
+    rig.send(Command::MixerModeSet {
+        mode: MixerMode::External,
+    });
+    rig.run_channels(0.05, 4);
+    rig.send(Command::DeckPlay { deck: A });
+    let output = rig.run_channels(2.0, 4);
+    assert_ticks(&onsets(&channel(&output, 4, 0)), &beats(1.0, 1.98), FRAMES);
+    // Deck B, on the second pair, has no tick.
+    assert!(channel(&output, 4, 2).iter().all(|sample| *sample == 0.0));
 }
 
 #[test]

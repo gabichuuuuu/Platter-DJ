@@ -11,7 +11,7 @@ use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
+    CueStep, Direction, MixerMode, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -73,6 +73,10 @@ fn later_command() -> impl Strategy<Value = Command> {
             .prop_map(|direction| Command::MixerCrossfaderAutoFade { direction }),
         number().prop_map(|beats| Command::MixerCrossfaderFadeBeatsSet { beats }),
         prop::strategy::Just(Command::MixerAutogainToggle),
+        prop::sample::select(MixerMode::ALL.to_vec())
+            .prop_map(|mode| Command::MixerModeSet { mode }),
+        prop::strategy::Just(Command::MixerExternalEqGainToggle),
+        prop::strategy::Just(Command::MixerExternalMasterVolumeToggle),
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),

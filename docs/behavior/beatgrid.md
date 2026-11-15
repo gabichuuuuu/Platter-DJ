@@ -108,7 +108,7 @@ its own beats.
 - The tick joins the headphones after the mix between pre-listen and master and before their
   volume and limiter, so it is heard whatever the mix knob says and follows the volume.
 - It is never on the master. A device without a pair for the headphones, two channels, does
-  not play it.
+  not play it in internal mode. In external mixer mode it is on the pair of its deck.
 - It stays on for the next track and when the audio device changes, as key lock does.
 
 ## Differences
@@ -125,8 +125,8 @@ its own beats.
   change to the deck panel.
 - The sound of the tick, its level and its length are Platter's: the manual describes none of
   them.
-- With the external mixer mode, which Platter has not got yet (`external-mixer-mode`), the
-  tick will have to follow the signal of the deck, as the manual says.
+- In external mixer mode the tick is on the signal of the deck, on its pair of outputs, as
+  the manual says (`docs/behavior/external-mixer.md`).
 - The selected marker is the one on or before the play position, as the reference product
   selects it. Platter has no separate selection.
 - The grid lives with the loaded track and is lost when the track is loaded again, which a
@@ -145,7 +145,7 @@ its own beats.
 | Move, delete or previous before the first marker; next after the last | Nothing happens |
 | A new track | Its grid starts empty and unlocked, until the analysis fills it (`docs/behavior/analysis.md`) |
 | Beat tick on a deck without a grid tempo, paused, empty or loading | No tick |
-| Beat tick with two output channels | No tick: there are no headphones |
+| Beat tick with two output channels | No tick in internal mode: there are no headphones; in external mode it is on the shared pair |
 | Beat tick while the deck plays through a beat with its fader down or not pre-listened | Ticks: the tick does not go through the channel |
 
 ## Tests

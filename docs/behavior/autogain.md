@@ -77,8 +77,9 @@ it aims at.
 - The method and the level, -10 LUFS, are Platter's: the manual names neither.
 - The window has no autogain key and no restore key yet; they come with the next change to
   the mixer panel. The commands work from the command line and from mappings.
-- External mixer mode, where the manual applies autogain to the signal of each deck, does not
-  exist yet (`external-mixer-mode`).
+- In external mixer mode autogain acts through the gain of the channel, so only while the
+  gain and equaliser option of that mode is on (`docs/behavior/external-mixer.md`); the
+  reference product has an autogain option of its own for that mode.
 
 ## Edge cases
 

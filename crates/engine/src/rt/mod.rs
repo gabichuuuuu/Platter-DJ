@@ -227,6 +227,13 @@ pub enum RtCommand {
     MasterGain {
         linear: f32,
     },
+    /// Sends each deck to its own outputs instead of mixing them, and which controls of the
+    /// mixer still act then.
+    ExternalMixer {
+        on: bool,
+        eq_gain: bool,
+        master_volume: bool,
+    },
     /// Balance in the headphones: `0.0` is the pre-listened decks alone, `1.0` the master.
     HeadphoneMix {
         position: f32,

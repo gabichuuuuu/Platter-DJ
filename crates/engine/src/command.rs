@@ -272,6 +272,15 @@ pub enum Command {
     MixerCrossfaderFadeBeatsSet {
         beats: f64,
     },
+    /// Mixes inside Platter, or sends each deck to its own outputs:
+    /// `docs/behavior/external-mixer.md`.
+    MixerModeSet {
+        mode: MixerMode,
+    },
+    /// In external mode, lets the gain and the equaliser act on the decks, or not.
+    MixerExternalEqGainToggle,
+    /// In external mode, lets the master volume act on the decks, or not.
+    MixerExternalMasterVolumeToggle,
     MasterGainSet {
         db: f64,
     },
@@ -399,6 +408,7 @@ const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
+const MIXER_MODES: &[&str] = &["internal", "external"];
 /// The part of the travel of the crossfader one step moves it.
 pub const CROSSFADER_STEP: f64 = 0.1;
 pub const MIN_FADE_BEATS: f64 = 1.0;
@@ -480,6 +490,26 @@ impl CrossfaderDirection {
         match self {
             Self::Left => 0.0,
             Self::Right => 1.0,
+        }
+    }
+}
+
+/// Whether Platter mixes the decks or a hardware mixer does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MixerMode {
+    #[default]
+    Internal,
+    /// Each deck goes to its own pair of outputs.
+    External,
+}
+
+impl MixerMode {
+    pub const ALL: [Self; 2] = [Self::Internal, Self::External];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::External => "external",
         }
     }
 }
@@ -904,6 +934,24 @@ pub const SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "mixer.mode.set",
+        label: "Mixer mode",
+        params: &[ParamSpec {
+            name: "mode",
+            kind: ParamKind::Choice(MIXER_MODES),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.external.eq_gain.toggle",
+        label: "Gain and equaliser in external mode",
+        params: &[],
+    },
+    CommandSpec {
+        id: "mixer.external.master_volume.toggle",
+        label: "Master volume in external mode",
+        params: &[],
+    },
+    CommandSpec {
         id: "mixer.crossfader.step",
         label: "Step the crossfader",
         params: &[ParamSpec {
@@ -1196,6 +1244,17 @@ impl Reader<'_> {
                 expected: "left, right",
             })),
         }
+    }
+
+    fn mixer_mode(&self) -> Result<MixerMode, CommandError> {
+        let text = self.text("mode")?;
+        MixerMode::ALL
+            .into_iter()
+            .find(|mode| mode.name() == text)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "mode",
+                expected: "internal, external",
+            }))
     }
 
     fn size_step(&self) -> Result<SizeStep, CommandError> {
@@ -1549,6 +1608,11 @@ impl Command {
             "mixer.crossfader.fade_beats.set" => Self::MixerCrossfaderFadeBeatsSet {
                 beats: read.number("beats")?,
             },
+            "mixer.mode.set" => Self::MixerModeSet {
+                mode: read.mixer_mode()?,
+            },
+            "mixer.external.eq_gain.toggle" => Self::MixerExternalEqGainToggle,
+            "mixer.external.master_volume.toggle" => Self::MixerExternalMasterVolumeToggle,
             "mixer.xfader_assign.set" => Self::MixerCrossfaderAssign {
                 deck: read.deck()?,
                 side: CrossfaderSide::parse(read.text("side")?)?,
@@ -1622,6 +1686,9 @@ impl Command {
             Self::MixerCrossfaderStep { .. } => "mixer.crossfader.step",
             Self::MixerCrossfaderAutoFade { .. } => "mixer.crossfader.auto_fade",
             Self::MixerCrossfaderFadeBeatsSet { .. } => "mixer.crossfader.fade_beats.set",
+            Self::MixerModeSet { .. } => "mixer.mode.set",
+            Self::MixerExternalEqGainToggle => "mixer.external.eq_gain.toggle",
+            Self::MixerExternalMasterVolumeToggle => "mixer.external.master_volume.toggle",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",

@@ -22,8 +22,8 @@ use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
     CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
     MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS,
-    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MoveMode, MoveSize, SizeStep,
-    SyncMode,
+    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize,
+    SizeStep, SyncMode,
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
@@ -150,6 +150,13 @@ pub struct MixerControls {
     /// The gain of a channel is set from the loudness of each track analysed:
     /// `docs/behavior/autogain.md`.
     pub autogain: bool,
+    /// Platter mixes, or sends each deck to its own outputs:
+    /// `docs/behavior/external-mixer.md`.
+    pub mode: MixerMode,
+    /// In external mode, the gain and the equaliser act on the decks.
+    pub external_eq_gain: bool,
+    /// In external mode, the master volume acts on the decks.
+    pub external_master_volume: bool,
 }
 
 impl Default for MixerControls {
@@ -163,6 +170,9 @@ impl Default for MixerControls {
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
             autogain: true,
+            mode: MixerMode::Internal,
+            external_eq_gain: false,
+            external_master_volume: false,
         }
     }
 }
@@ -859,6 +869,18 @@ impl Engine {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
                 self.mixer.crossfader_curve = curve;
             }
+            Command::MixerModeSet { mode } => self.set_external(MixerControls {
+                mode,
+                ..self.mixer.clone()
+            })?,
+            Command::MixerExternalEqGainToggle => self.set_external(MixerControls {
+                external_eq_gain: !self.mixer.external_eq_gain,
+                ..self.mixer.clone()
+            })?,
+            Command::MixerExternalMasterVolumeToggle => self.set_external(MixerControls {
+                external_master_volume: !self.mixer.external_master_volume,
+                ..self.mixer.clone()
+            })?,
             Command::MixerCrossfaderAssign { deck, side } => {
                 self.send(RtCommand::CrossfaderAssign { deck, side })?;
                 self.mixer.crossfader_sides[deck.index()] = side;
@@ -895,6 +917,13 @@ impl Engine {
             // Every other command is handled before this point.
             _ => {}
         }
+        Ok(())
+    }
+
+    /// Sends the external mode and its options of `mixer`, and keeps them once sent.
+    fn set_external(&mut self, mixer: MixerControls) -> Result<(), EngineError> {
+        self.send(mixer.external())?;
+        self.mixer = mixer;
         Ok(())
     }
 
@@ -1216,7 +1245,15 @@ impl DeckControls {
 }
 
 impl MixerControls {
-    fn as_commands(&self) -> [RtCommand; 7] {
+    fn external(&self) -> RtCommand {
+        RtCommand::ExternalMixer {
+            on: self.mode == MixerMode::External,
+            eq_gain: self.external_eq_gain,
+            master_volume: self.external_master_volume,
+        }
+    }
+
+    fn as_commands(&self) -> [RtCommand; 8] {
         let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
         let assign = |deck: DeckId| RtCommand::CrossfaderAssign {
             deck,
@@ -1240,6 +1277,7 @@ impl MixerControls {
             RtCommand::HeadphoneGain {
                 linear: linear(self.headphone_gain_db),
             },
+            self.external(),
         ]
     }
 }

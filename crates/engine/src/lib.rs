@@ -20,7 +20,7 @@ pub use analyser::{
 };
 pub use command::{
     BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
-    Direction, MAX_FADE_BEATS, MIN_FADE_BEATS, MoveMode, MoveSize, SizeStep, SyncMode,
+    Direction, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,

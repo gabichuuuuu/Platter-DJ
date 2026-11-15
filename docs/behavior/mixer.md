@@ -85,6 +85,8 @@ pre-listened channel after its filter and before its fader.
 - The assignment acts on the master only: pre-listening in the headphones is before the
   fader and the crossfader.
 - The meter of a channel reads the peak of each side after the fader and the pan.
+- In external mixer mode the decks go to their own outputs past this mixer:
+  `docs/behavior/external-mixer.md`.
 - The headphones are the third and the fourth output of the device. Their signal is the sum
   of the pre-listened channels and the master, weighted by the mix knob in a straight line,
   times the volume, through a safety limiter of their own. With a device of fewer than four

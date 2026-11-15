@@ -94,6 +94,10 @@ its own code, graphics and sounds.
 - The assignment of a channel to a side of the crossfader, its steps and its automatic fade
   exist in the engine only: the mixer has no controls for them yet, and nobody has listened
   to a fade (`docs/behavior/mixer.md`).
+- External mixer mode, each deck on its own pair of outputs, exists in the engine only: the
+  settings have no control for it yet, deck A takes the master outputs of the routing and
+  deck B the headphone ones, and it has not run on a device with four outputs feeding a
+  hardware mixer (`docs/behavior/external-mixer.md`).
 - Flux and reverse exist in the engine only: the window has no buttons and no marker for
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).
