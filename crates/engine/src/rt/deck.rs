@@ -370,6 +370,15 @@ impl DeckPlayer {
                 grid.set_locked(!grid.is_locked());
                 true
             }
+            GridEdit::Analysed { bpm, first_beat } => {
+                grid.is_empty() && grid.set_bpm_from(bpm, first_beat.clamp(0.0, end))
+            }
+            GridEdit::Reset(found) => {
+                grid.replace(found.map(|(bpm, first_beat)| (bpm, first_beat.clamp(0.0, end))))
+            }
+            GridEdit::ResetBpm { bpm, first_beat } => {
+                grid.set_bpm_from(bpm, first_beat.clamp(0.0, end))
+            }
             GridEdit::MarkerPrevious | GridEdit::MarkerNext => false,
         };
         if changed && !arriving {

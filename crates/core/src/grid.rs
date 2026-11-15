@@ -118,6 +118,37 @@ impl BeatGrid {
         }
     }
 
+    /// No tempo and no markers.
+    pub fn is_empty(&self) -> bool {
+        self.bpm.is_none() && self.len == 0
+    }
+
+    /// Replaces the tempo and the markers with `bpm` and one marker at `marker` seconds, or
+    /// with neither when `found` is `None`, as a reset to the result of an analysis does.
+    pub fn replace(&mut self, found: Option<(Bpm, f64)>) -> bool {
+        if self.locked {
+            return false;
+        }
+        let before = *self;
+        self.bpm = None;
+        self.len = 0;
+        if let Some((bpm, marker)) = found {
+            self.add_marker(marker);
+            self.bpm = Some(bpm);
+        }
+        *self != before
+    }
+
+    /// Sets the tempo and, on a grid without markers, a marker at `marker` seconds rather
+    /// than at the start of the track.
+    pub fn set_bpm_from(&mut self, bpm: Bpm, marker: f64) -> bool {
+        if self.locked {
+            return false;
+        }
+        let added = self.len == 0 && self.add_marker(marker);
+        added | self.set_bpm(bpm)
+    }
+
     /// Adds a marker at `at` seconds, unless one is already there or the grid is full.
     pub fn add_marker(&mut self, at: f64) -> bool {
         if self.locked || !at.is_finite() || at < 0.0 || self.len >= MAX_MARKERS {
@@ -550,9 +581,37 @@ mod tests {
         assert!(!grid.add_marker(5.0));
         assert!(!grid.delete_marker(2.0));
         assert!(!grid.move_marker(2.0, 0.1, 10.0));
+        assert!(!grid.replace(None));
+        assert!(!grid.set_bpm_from(bpm(90.0), 0.5));
         assert_eq!(grid, before);
         assert_eq!(grid.next_marker(1.0), Some(2.0));
         grid.set_locked(false);
         assert!(grid.add_marker(5.0));
+    }
+
+    #[test]
+    fn a_replaced_grid_has_one_marker_or_none() {
+        let mut grid = grid_with(&[1.0, 2.0, 3.0]);
+        grid.set_bpm(bpm(120.0));
+        assert!(grid.replace(Some((bpm(128.0), 0.25))));
+        assert_eq!(grid.bpm(), Some(bpm(128.0)));
+        assert_eq!(grid.markers(), &[0.25]);
+        assert!(!grid.replace(Some((bpm(128.0), 0.25))));
+        assert!(grid.replace(None));
+        assert!(grid.is_empty());
+        assert!(!grid.replace(None));
+    }
+
+    #[test]
+    fn a_tempo_set_from_a_beat_places_the_marker_there_only_without_markers() {
+        let mut grid = BeatGrid::default();
+        assert!(grid.is_empty());
+        assert!(grid.set_bpm_from(bpm(124.0), 0.3));
+        assert_eq!(grid.markers(), &[0.3]);
+        assert!(grid.set_bpm_from(bpm(125.0), 0.7));
+        assert_eq!(grid.markers(), &[0.3]);
+        assert_eq!(grid.bpm(), Some(bpm(125.0)));
+        assert!(!grid.set_bpm_from(bpm(125.0), 0.7));
+        assert!(!grid.is_empty());
     }
 }

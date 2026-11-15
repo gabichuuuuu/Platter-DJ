@@ -55,8 +55,10 @@ Option 2, chosen by the maintainer on 15 November 2026 once these figures were s
 - Key: the energy of each pitch class from 55 Hz to 2 kHz in frames of 0.74 s, each frame
   weighted alike, correlated with the Krumhansl and Kessler profiles of the 24 keys.
 
-The detection is a function and not yet a trait: it has one implementation, and the trait
-comes with the engine, which is its first user, so a second implementation can take its place.
+The detection is a function of the crate. The engine calls it through its trait `Analyser`, with
+`PlatterAnalyser` as the implementation it starts with, so a second detection can take its
+place through `Engine::with_analyser`. The tests of the engine already use one: it holds the
+result back until the test lets it go, to check what happens while a track is analysed.
 
 ## How it was measured
 

@@ -5,6 +5,7 @@
 //! [`Processor`] is the real-time side: whoever owns the audio calls
 //! [`Processor::process`] for each block. [`render`] drives both without a sound card.
 
+mod analyser;
 pub mod command;
 mod control;
 mod peaks;
@@ -13,6 +14,7 @@ pub mod rt;
 mod tap;
 mod wav;
 
+pub use analyser::{AnalysedTempo, Analyser, PlatterAnalyser, TrackAnalysis};
 pub use command::{
     BpmScale, ClockMode, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
     SyncMode,
@@ -22,6 +24,7 @@ pub use control::{
     FINE_MOVE_SECONDS, MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use peaks::WaveformPeaks;
+pub use platter_analysis::{Key, Mode, TempoRange};
 pub use platter_dsp::crossfade::CrossfaderCurve;
 pub use platter_dsp::eq::Band;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};

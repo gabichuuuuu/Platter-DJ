@@ -63,6 +63,11 @@ impl TrackAudio {
         self.samples.len() / 2
     }
 
+    /// The interleaved stereo samples.
+    pub fn samples(&self) -> &[f32] {
+        &self.samples
+    }
+
     /// The frame at `index`, or silence outside the track.
     fn frame(&self, index: i64) -> Frame {
         usize::try_from(index)
@@ -262,6 +267,20 @@ pub enum GridEdit {
     MarkerPrevious,
     MarkerNext,
     ToggleLock,
+    /// The tempo and the first beat an analysis found, taken only by an empty grid.
+    Analysed {
+        bpm: Bpm,
+        first_beat: f64,
+    },
+    /// The grid becomes what the analysis found: a tempo and a marker on its first beat, or
+    /// neither.
+    Reset(Option<(Bpm, f64)>),
+    /// The tempo found by the analysis, with a marker on its first beat for a grid without
+    /// markers.
+    ResetBpm {
+        bpm: Bpm,
+        first_beat: f64,
+    },
 }
 
 /// How far a jump or a move goes. Negative values go back.

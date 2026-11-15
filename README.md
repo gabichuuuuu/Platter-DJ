@@ -65,16 +65,16 @@ its own code, graphics and sounds.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
   and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
   damaged input only, as the project has no encoder for them.
-- The beatgrid is set by hand on the GRID page of each deck: the detection of tempo, first
-  beat and key exists as a library but does not run on a loaded track yet, and has only been
-  measured on synthesised signals. The tempo field cannot be typed into, and the grid is lost
-  when the track is loaded again.
+- A loaded track is analysed in the background and its grid gets the tempo and the first beat
+  found; the detection has only been measured on synthesised signals, not on real tracks. The
+  key found is not shown yet, the GRID page has no reset keys yet, the tempo field cannot be
+  typed into, and edits of the grid are lost when the track is loaded again.
 - Nobody has listened to loops or jumps yet.
 - Stored cues are lost when the track is loaded again, the fade and load types are labels
   only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
-- Nobody has listened to sync yet. A deck needs a tempo tapped or stepped into its grid
-  before it can sync, the tempo of the clock cannot be typed, and the sync mode has no control
-  in the window.
+- Nobody has listened to sync yet. A deck syncs once its grid has a tempo, found by the
+  analysis or tapped or stepped in by hand; the tempo of the clock cannot be typed, and the
+  sync mode has no control in the window.
 - The metronome of the master clock has no key in the window yet: `clock.metronome.toggle`
   switches it from the command line. It clicks on the headphones only, so a device with two
   outputs does not play it, and nobody has listened to it.
