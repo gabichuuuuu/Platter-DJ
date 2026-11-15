@@ -27,6 +27,9 @@ pub struct KeySpec<'a> {
     /// Colour of the LED strip while the key is held down, for a key that is otherwise off.
     pub held: Option<Color32>,
     pub enabled: bool,
+    /// A disabled key that still shows whether it is on, for a key that only shows a state
+    /// while something else decides it.
+    pub keeps_led: bool,
     /// Style of the text; the button style unless a small key needs another.
     pub text: Option<TextStyle>,
 }
@@ -39,6 +42,7 @@ impl<'a> KeySpec<'a> {
             lit: None,
             held: None,
             enabled: true,
+            keeps_led: false,
             text: None,
         }
     }
@@ -50,12 +54,18 @@ impl<'a> KeySpec<'a> {
             lit: None,
             held: None,
             enabled: true,
+            keeps_led: false,
             text: None,
         }
     }
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    pub fn lit(mut self, lit: Option<Color32>) -> Self {
+        self.lit = lit;
         self
     }
 }
@@ -116,10 +126,12 @@ pub fn key(cx: &mut Cx<'_>, rect: Rect, id: Id, spec: KeySpec<'_>, press: Press)
     let lit = spec
         .lit
         .or(spec.held.filter(|_| down))
-        .filter(|_| spec.enabled);
-    let fill = if !spec.enabled {
+        .filter(|_| spec.enabled || spec.keeps_led);
+    let fill = if lit.is_some() {
+        color.surface_pressed
+    } else if !spec.enabled {
         Color32::TRANSPARENT
-    } else if down || lit.is_some() {
+    } else if down {
         color.surface_pressed
     } else if response.hovered() {
         color.surface_hover

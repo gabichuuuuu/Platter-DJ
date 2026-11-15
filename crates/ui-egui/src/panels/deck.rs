@@ -1,11 +1,12 @@
-//! A deck: its header, the overview of its track, the hotcues, the loop controls, a page of
-//! the advanced panel, the transport keys and the tempo control.
+//! A deck: its header, the overview of its track, the row of sync, the hotcues, the loop
+//! controls, a page of the advanced panel, the transport keys and the tempo control.
 //!
-//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `HotcuePads`, `LoopControls`,
-//! `MovePanel`, `CuePanel`, `GridEditor` and `Notice` in `docs/design/DESIGN.md`; placement from
-//! `docs/design/screens/M2-main.html` and, for the loop row and the pages,
-//! `docs/design/screens/First-version.html`. Behaviour notes: `docs/behavior/transport.md`,
-//! `docs/behavior/beatgrid.md`, `docs/behavior/loops.md` and `docs/behavior/cues.md`.
+//! Components: `DeckHeader`, `TransportButton`, `TempoControl`, `SyncControls`, `HotcuePads`,
+//! `LoopControls`, `MovePanel`, `CuePanel`, `GridEditor` and `Notice` in
+//! `docs/design/DESIGN.md`; placement from `docs/design/screens/M2-main.html` and, for the
+//! overview, the rows of sync and loops and the pages, `docs/design/screens/First-version.html`.
+//! Behaviour notes: `docs/behavior/transport.md`, `docs/behavior/beatgrid.md`,
+//! `docs/behavior/loops.md`, `docs/behavior/cues.md` and `docs/behavior/sync.md`.
 
 use std::path::PathBuf;
 
@@ -49,6 +50,12 @@ const ARROW_WIDTH: f32 = 28.0;
 const LOOP_SIZE_WIDTH: f32 = 48.0;
 const MOVE_SIZE_WIDTH: f32 = 40.0;
 const PAD_HEIGHT: f32 = 38.0;
+/// Height of the overview of the track, as `First-version.html` draws it.
+const OVERVIEW_HEIGHT: f32 = 36.0;
+const SYNC_WIDTH: f32 = 56.0;
+const MASTER_WIDTH: f32 = 68.0;
+const PHASE_WIDTH: f32 = 120.0;
+const PHASE_HEIGHT: f32 = 6.0;
 /// Height of the strip of its colour along the top of a pad that holds a cue.
 const PAD_STRIP: f32 = 4.0;
 const PAD_COLUMNS: usize = 4;
@@ -112,7 +119,7 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
     );
     let overview = Rect::from_min_size(
         inner.min + egui::vec2(0.0, 66.0),
-        egui::vec2(inner.width(), 72.0),
+        egui::vec2(inner.width(), OVERVIEW_HEIGHT),
     );
     waveform::overview(cx, overview, deck, snapshot);
 
@@ -129,9 +136,12 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         egui::pos2(tempo_column.left() - tokens.space.s5, controls.bottom()),
     );
     let mapping = state.cue_map[deck.index()];
+    sync_controls(cx, left, deck, view);
     // A notice takes the place of the hotcues for as long as it shows.
     if let Some(notice) = view.notices[deck.index()] {
-        let area = Rect::from_min_size(left.min, egui::vec2(left.width(), 52.0));
+        let top = left.top() + tokens.size.button_h + tokens.space.s3;
+        let area =
+            Rect::from_min_size(egui::pos2(left.left(), top), egui::vec2(left.width(), 52.0));
         deck_notice(cx, area, deck, notice);
     } else {
         hotcue_pads(cx, left, deck, snapshot, mapping);
@@ -146,6 +156,110 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
     }
     page_selector(cx, left, deck, page);
     tempo(cx, tempo_column, deck, snapshot);
+}
+
+/// The row of sync at the top of `area`: SYNC, MASTER, the phase meter and, beside it on the
+/// deck that is the tempo master, its caption.
+fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let snapshot = &view.engine.decks[deck.index()];
+    let clock = &view.engine.clock;
+    let lit = deck_color(theme, deck);
+    let letter = deck.letter().to_string();
+    let master = clock.master == Some(deck);
+    let height = tokens.size.button_h;
+    let gap = tokens.space.s3;
+    let mut row = Row {
+        x: area.left(),
+        top: area.top(),
+        height,
+        gap,
+    };
+
+    let label = texts.get("deck.sync");
+    let rect = row.place(key::width_for(cx, label, SYNC_WIDTH));
+    let name = texts.format("deck.sync_name", &[("deck", &letter)]);
+    let mut spec = KeySpec::text(label).lit((snapshot.sync && !master).then_some(lit));
+    spec.name = &name;
+    key::key(
+        cx,
+        rect,
+        id(("deck-sync", deck.index())),
+        spec,
+        Press::Click(Command::DeckSyncToggle { deck }.into()),
+    );
+
+    // In the automatic mode the engine chooses the tempo master and the key only shows it.
+    let label = texts.get("deck.master");
+    let rect = row.place(key::width_for(cx, label, MASTER_WIDTH));
+    let name = texts.format("deck.master_name", &[("deck", &letter)]);
+    let has_tempo = is_ready(snapshot) && snapshot.grid.bpm().is_some();
+    let mut spec = KeySpec::text(label)
+        .lit(master.then_some(lit))
+        .enabled(!clock.auto && has_tempo);
+    spec.name = &name;
+    spec.keeps_led = true;
+    key::key(
+        cx,
+        rect,
+        id(("deck-master", deck.index())),
+        spec,
+        Press::Click(Command::DeckMasterSet { deck }.into()),
+    );
+
+    let slot = Rect::from_min_size(
+        egui::pos2(row.x, area.top() + (height - PHASE_HEIGHT) / 2.0),
+        egui::vec2(PHASE_WIDTH, PHASE_HEIGHT),
+    );
+    let painter = cx.painter();
+    painter.rect(
+        slot,
+        paint::radius(tokens.radius.sm),
+        color.bg_app,
+        paint::hairline(theme, color.line_key),
+        StrokeKind::Inside,
+    );
+    // Half a beat behind fills the left half, half a beat ahead the right half.
+    if let Some(phase) = snapshot.phase.filter(|phase| phase.is_finite()) {
+        let reach = phase.clamp(-0.5, 0.5) * PHASE_WIDTH;
+        if reach.abs() >= 1.0 {
+            let centre = slot.center().x;
+            let bar = Rect::from_x_y_ranges(
+                centre.min(centre + reach)..=centre.max(centre + reach),
+                slot.top() + 1.0..=slot.bottom() - 1.0,
+            );
+            painter.rect_filled(bar, CornerRadius::ZERO, lit);
+        }
+    }
+    let centre = slot.center().x;
+    painter.vline(
+        centre,
+        slot.top() - 4.0..=slot.bottom() + 4.0,
+        paint::hairline(theme, color.line_control),
+    );
+    let name = texts.format("deck.phase_name", &[("deck", &letter)]);
+    let response = cx
+        .ui
+        .interact(slot, id(("deck-phase", deck.index())), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Image, true, &name));
+    if master {
+        let caption = Rect::from_min_max(
+            egui::pos2(slot.right() + gap, area.top()),
+            egui::pos2(area.right(), area.top() + height),
+        );
+        paint::text(
+            painter,
+            theme,
+            caption,
+            Align2::LEFT_CENTER,
+            texts.get("deck.tempo_master"),
+            tokens.text.label,
+            color.text_secondary,
+        );
+    }
 }
 
 /// The tops of the two rows of a page of the advanced panel, above the transport keys at
@@ -1307,9 +1421,9 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
         }
     }
 
-    // Tempo: the current tempo, and the fader offset with the base tempo.
-    let controls = &snapshot.controls;
-    let offset = format::signed_percent(controls.tempo_ratio - 1.0);
+    // Tempo: the current tempo, and its offset from the base tempo. Both follow the speed
+    // of the deck, which sync sets apart from the fader.
+    let offset = format::signed_percent(snapshot.speed - 1.0);
     // The tempo of the grid; until there is one, the tempo the tag gives.
     let base = snapshot
         .grid
@@ -1326,7 +1440,7 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
     };
     let (tempo, detail) = match base {
         Some(base) => (
-            format::bpm(base * controls.tempo_ratio),
+            format::bpm(base * snapshot.speed),
             texts.format(
                 "deck.tempo_of",
                 &[("offset", &offset), ("base", &format::bpm(base))],
@@ -1516,6 +1630,7 @@ fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         lit: snapshot.playing.then_some(lit),
         held: None,
         enabled: loaded,
+        keeps_led: false,
         text: None,
     };
     key::key(

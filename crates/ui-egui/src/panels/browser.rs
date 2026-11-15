@@ -319,6 +319,7 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
             lit: None,
             held: None,
             enabled: has_track,
+            keeps_led: false,
             text: None,
         };
         key::key(
