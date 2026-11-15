@@ -215,6 +215,12 @@ pub struct DeckSnapshot {
     /// The deck keeps the key of its track while its tempo changes:
     /// `docs/behavior/keylock.md`.
     pub key_lock: bool,
+    /// Flux is on: `docs/behavior/flux.md`.
+    pub flux: bool,
+    /// Reverse is held.
+    pub reverse: bool,
+    /// Where the timeline of flux is, in seconds, while the deck has one.
+    pub timeline_seconds: Option<f64>,
     /// Speed the deck is set to, as a ratio of the original. It is `controls.tempo_ratio`
     /// until sync sets it.
     pub speed: f64,
@@ -241,6 +247,9 @@ impl Default for DeckSnapshot {
             levels: [0.0; 2],
             sync: false,
             key_lock: false,
+            flux: false,
+            reverse: false,
+            timeline_seconds: None,
             speed: 1.0,
             phase: None,
         }
@@ -405,6 +414,10 @@ impl Engine {
             .into_iter()
             .filter(|deck| published.decks[deck.index()].key_lock.get());
         clock.extend(locked.map(|deck| RtCommand::KeyLockToggle { deck }));
+        let fluxed = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].flux.get());
+        clock.extend(fluxed.map(|deck| RtCommand::FluxToggle { deck }));
         for command in clock {
             let _ = engine.send(command);
         }
@@ -427,6 +440,9 @@ impl Engine {
             Command::DeckCueSet { deck } => self.send(RtCommand::CueSet { deck }),
             Command::DeckCueGoto { deck } => self.send(RtCommand::CueGoto { deck }),
             Command::DeckCue { deck, pressed } => self.send(RtCommand::CueButton { deck, pressed }),
+            Command::DeckReverse { deck, pressed } => {
+                self.send(RtCommand::Reverse { deck, pressed })
+            }
             Command::DeckCup { deck, pressed } => self.send(RtCommand::CupButton { deck, pressed }),
             Command::DeckSeek { deck, seconds } => {
                 let seconds = ValueError::check("seconds", seconds, 0.0, MAX_SEEK_SECONDS)?;
@@ -611,6 +627,7 @@ impl Engine {
         let command = match command {
             Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
             Command::DeckKeyLockToggle { deck } => RtCommand::KeyLockToggle { deck },
+            Command::DeckFluxToggle { deck } => RtCommand::FluxToggle { deck },
             Command::DeckMasterSet { deck } => RtCommand::Master { deck },
             Command::ClockModeSet { mode } => {
                 let on = mode == ClockMode::Auto;
@@ -984,6 +1001,10 @@ impl Engine {
                 levels: [published.levels[0].get(), published.levels[1].get()],
                 sync: published.sync.get(),
                 key_lock: published.key_lock.get(),
+                flux: published.flux.get(),
+                reverse: published.reverse.get(),
+                timeline_seconds: Some(published.timeline.get())
+                    .filter(|seconds| seconds.is_finite()),
                 speed: published.speed.get(),
                 phase: Some(published.phase.get()).filter(|phase| phase.is_finite()),
             }

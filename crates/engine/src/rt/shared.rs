@@ -80,6 +80,11 @@ pub struct DeckShared {
     pub levels: [AtomicF32; 2],
     pub sync: Flag,
     pub key_lock: Flag,
+    pub flux: Flag,
+    pub reverse: Flag,
+    /// Position of the timeline of flux in seconds of track time; not a number while the
+    /// deck has none.
+    pub timeline: AtomicF64,
     /// Speed the deck is set to, as a ratio of the original.
     pub speed: AtomicF64,
     /// How far the beat of the deck is from that of the clock, in beats: negative behind,
@@ -99,6 +104,9 @@ impl Default for DeckShared {
             levels: Default::default(),
             sync: Flag::default(),
             key_lock: Flag::default(),
+            flux: Flag::default(),
+            reverse: Flag::default(),
+            timeline: AtomicF64::new(f64::NAN),
             speed: AtomicF64::new(1.0),
             phase,
         }

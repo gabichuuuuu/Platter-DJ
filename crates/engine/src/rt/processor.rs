@@ -155,6 +155,8 @@ impl Processor {
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
             RtCommand::KeyLockToggle { deck } => self.player(deck).toggle_key_lock(),
+            RtCommand::FluxToggle { deck } => self.player(deck).toggle_flux(),
+            RtCommand::Reverse { deck, pressed } => self.player(deck).reverse(pressed),
             RtCommand::Master { deck } => {
                 let candidate = self.player(deck).candidate();
                 self.clock.set_master(deck, candidate);
@@ -307,6 +309,11 @@ impl Processor {
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
             shared.key_lock.set(channel.player.is_key_locked());
+            shared.flux.set(channel.player.is_flux_on());
+            shared.reverse.set(channel.player.is_reversed());
+            shared
+                .timeline
+                .set(channel.player.timeline_seconds().unwrap_or(f64::NAN));
             shared.speed.set(f64::from(channel.player.speed()));
             let ahead = channel.player.beats_ahead(pulse);
             shared

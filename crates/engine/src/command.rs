@@ -261,6 +261,15 @@ pub enum Command {
     DeckKeyLockToggle {
         deck: DeckId,
     },
+    /// Turns flux on or off: `docs/behavior/flux.md`.
+    DeckFluxToggle {
+        deck: DeckId,
+    },
+    /// Plays the track backwards while held: `docs/behavior/flux.md`.
+    DeckReverse {
+        deck: DeckId,
+        pressed: bool,
+    },
     /// Makes the deck the tempo master, while the mode of the clock is not automatic.
     DeckMasterSet {
         deck: DeckId,
@@ -840,6 +849,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "deck.flux.toggle",
+        label: "Flux",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.reverse",
+        label: "Reverse",
+        params: &[DECK, BUTTON_ACTION],
+    },
+    CommandSpec {
         id: "deck.master.set",
         label: "Make tempo master",
         params: &[DECK],
@@ -1212,6 +1231,11 @@ impl Command {
             },
             "deck.move.fine.toggle" => Self::DeckMoveFineToggle { deck: read.deck()? },
             "deck.keylock.toggle" => Self::DeckKeyLockToggle { deck: read.deck()? },
+            "deck.flux.toggle" => Self::DeckFluxToggle { deck: read.deck()? },
+            "deck.reverse" => Self::DeckReverse {
+                deck: read.deck()?,
+                pressed: read.pressed()?,
+            },
             sync if sync.starts_with("clock.")
                 || matches!(
                     sync,
@@ -1430,6 +1454,8 @@ impl Command {
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
+            Self::DeckFluxToggle { .. } => "deck.flux.toggle",
+            Self::DeckReverse { .. } => "deck.reverse",
             Self::DeckMasterSet { .. } => "deck.master.set",
             Self::ClockModeSet { .. } => "clock.mode.set",
             Self::ClockTempoSet { .. } => "clock.tempo.set",

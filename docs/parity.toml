@@ -58,8 +58,8 @@ features = [
   { id = "cup", name = "CUP: jump to the cue point and play on release", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport cue_play_button" },
   { id = "tempo-fader", name = "Tempo fader with ranges", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test mixer tempo_range; cargo test -p platter-ui-egui --test panels" },
   { id = "tempo-bend", name = "Tempo bend (nudge)", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport nudge; cargo test -p platter-ui-egui --test panels" },
-  { id = "flux", name = "Flux mode", milestone = "M3", status = "planned" },
-  { id = "reverse", name = "Reverse", milestone = "M3", status = "planned" },
+  { id = "flux", name = "Flux mode", milestone = "M3", status = "in_progress" },
+  { id = "reverse", name = "Reverse", milestone = "M3", status = "in_progress" },
 ]
 
 [[area]]

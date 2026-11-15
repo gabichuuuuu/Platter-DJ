@@ -2,7 +2,8 @@
 //!
 //! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
 //! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
-//! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`.
+//! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`; for flux and reverse,
+//! `docs/behavior/flux.md`.
 
 use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo};
 use platter_dsp::Frame;
@@ -44,15 +45,18 @@ struct Tail {
     level: f32,
     /// What the level loses per frame.
     decay: f32,
+    /// The direction it goes on in: the one the deck had when it left it.
+    forward: bool,
 }
 
 impl Tail {
     /// A tail that fades over `frames` frames of output, when that is long enough to fade.
-    fn over(position: f64, frames: f64) -> Option<Self> {
+    fn over(position: f64, frames: f64, forward: bool) -> Option<Self> {
         (frames >= 1.0).then_some(Self {
             position,
             level: 1.0,
             decay: (1.0 / frames) as f32,
+            forward,
         })
     }
 }
@@ -108,6 +112,14 @@ pub(super) struct DeckPlayer {
     /// on those of the clock.
     beat_to_keep: Option<f64>,
     lock: KeyLock,
+    /// A loop or a hotcue of a playing deck keeps the timeline.
+    flux: bool,
+    /// Reverse is held.
+    reverse: bool,
+    /// Where the deck would be had it played on, while a detour lasts.
+    timeline: Option<f64>,
+    /// The hotcue whose key holds a detour of flux.
+    flux_hotcue: Option<HotcueSlot>,
 }
 
 impl DeckPlayer {
@@ -139,6 +151,10 @@ impl DeckPlayer {
             quantize: false,
             beat_to_keep: None,
             lock: KeyLock::new(rate.as_f64()),
+            flux: false,
+            reverse: false,
+            timeline: None,
+            flux_hotcue: None,
         }
     }
 
@@ -159,6 +175,7 @@ impl DeckPlayer {
         self.looper.clear();
         self.set_cues(Cues::default());
         self.pending_swap = Some(track);
+        self.drop_timeline();
     }
 
     /// The track the deck holds once the pending swap is applied.
@@ -334,12 +351,91 @@ impl DeckPlayer {
         self.cue_preview = false;
         self.held_hotcue = None;
         self.pending_seek = Some(SeekTarget::Frame(self.settled_cue()));
+        self.drop_timeline();
     }
 
     pub(super) fn seek_seconds(&mut self, seconds: f64) {
         if seconds.is_finite() && self.will_be_loaded() {
             self.pending_seek = Some(SeekTarget::Seconds(seconds));
+            self.drop_timeline();
         }
+    }
+
+    pub(super) fn toggle_flux(&mut self) {
+        self.flux = !self.flux;
+        if !self.flux {
+            self.flux_hotcue = None;
+            if !self.reverse {
+                self.timeline = None;
+            }
+        }
+    }
+
+    pub(super) fn is_flux_on(&self) -> bool {
+        self.flux
+    }
+
+    pub(super) fn is_reversed(&self) -> bool {
+        self.reverse
+    }
+
+    /// The reverse button. Pressing it starts a timeline; releasing it returns to the
+    /// timeline when no other detour holds it. The turn crossfades what was heard, going on
+    /// in its old direction, under what the deck plays now.
+    pub(super) fn reverse(&mut self, pressed: bool) {
+        if pressed == self.reverse || (pressed && !self.will_be_loaded()) {
+            return;
+        }
+        let heard = Tail::over(
+            self.position,
+            SPLICE_SECONDS * self.engine_rate,
+            !self.reverse,
+        );
+        self.reverse = pressed;
+        if pressed {
+            self.start_timeline(self.settled_position());
+        } else {
+            self.end_detour();
+        }
+        if self.playing && self.pending_swap.is_none() && self.pending_seek.is_none() {
+            self.tail = heard;
+        }
+    }
+
+    /// Whether something still keeps the timeline: reverse, the key of a hotcue, or a loop
+    /// with flux on.
+    fn detour_held(&self) -> bool {
+        self.reverse || self.flux_hotcue.is_some() || (self.flux && self.looper.region().is_some())
+    }
+
+    fn start_timeline(&mut self, at: f64) {
+        if self.timeline.is_none() {
+            self.timeline = Some(at);
+        }
+    }
+
+    /// Goes to the timeline once no detour keeps it any more.
+    fn end_detour(&mut self) {
+        if self.detour_held() {
+            return;
+        }
+        if let Some(timeline) = self.timeline.take()
+            && (timeline - self.settled_position()).abs() >= 1.0
+        {
+            self.jump_to(timeline);
+        }
+    }
+
+    /// Ends the timeline without going there; reverse held starts its own from where the
+    /// deck will be.
+    fn drop_timeline(&mut self) {
+        self.flux_hotcue = None;
+        self.timeline = self.reverse.then(|| self.settled_position());
+    }
+
+    /// Where the timeline is, in seconds, while there is one.
+    pub(super) fn timeline_seconds(&self) -> Option<f64> {
+        self.timeline.map(|frame| self.seconds(frame))
     }
 
     /// Applies an edit to the grid of the track the deck holds once the pending changes are
@@ -424,6 +520,10 @@ impl DeckPlayer {
         };
         let before = self.looper.region();
         let mut target = self.looper.edit(edit, placed, track);
+        let looping = self.looper.region().is_some();
+        if looping && self.flux && self.playing && !self.cue_preview {
+            self.start_timeline(at);
+        }
         // An end that Snap put elsewhere than the play position: the deck plays on to it,
         // or, when it is already past it, goes on from where it is counted around the loop.
         if edit == LoopEdit::Out && placed != at {
@@ -435,6 +535,9 @@ impl DeckPlayer {
         }
         if let Some(target) = target {
             self.jump_to(target);
+        }
+        if !looping {
+            self.end_detour();
         }
     }
 
@@ -459,7 +562,11 @@ impl DeckPlayer {
         if self.pending_swap.is_some() || self.pending_seek.is_some() {
             self.pending_seek = Some(SeekTarget::Frame(frame));
         } else {
-            self.tail = Tail::over(self.position, SPLICE_SECONDS * self.engine_rate);
+            self.tail = Tail::over(
+                self.position,
+                SPLICE_SECONDS * self.engine_rate,
+                !self.reverse,
+            );
             self.position = frame;
         }
     }
@@ -498,6 +605,12 @@ impl DeckPlayer {
             } => {
                 if self.cue_preview && self.held_hotcue == Some(slot) {
                     self.goto_cue();
+                } else if self.flux_hotcue == Some(slot) {
+                    self.flux_hotcue = None;
+                    if cues.get(slot).and_then(Cue::region).is_some() {
+                        self.looper.clear();
+                    }
+                    self.end_detour();
                 }
             }
             CueEdit::Store => {
@@ -568,6 +681,12 @@ impl DeckPlayer {
         }
         if self.playing && !self.cue_preview {
             let at = self.settled_position().clamp(0.0, track.frames);
+            if self.flux && (key.is_some() || loop_frames.is_some()) {
+                self.start_timeline(at);
+                if key.is_some() {
+                    self.flux_hotcue = key;
+                }
+            }
             self.jump_to(self.quantized(frame, at, loop_frames, track));
             return;
         }
@@ -659,9 +778,11 @@ impl DeckPlayer {
         }
         let audio = self.audio.as_ref()?;
         let speed = f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()));
+        // A deck on a detour of flux keeps the beat of the track as it would have played on.
+        let at = self.timeline.unwrap_or(self.position);
         Some(Pulse {
             bpm: self.grid.bpm()?.value() * speed,
-            phase: self.grid.phase_at(self.position / audio.rate().as_f64())?,
+            phase: self.grid.phase_at(at / audio.rate().as_f64())?,
         })
     }
 
@@ -670,7 +791,9 @@ impl DeckPlayer {
         Some(Lead {
             pulse: self.pulse()?,
             // A deck held playing by a cue key is on its way back to the cue.
-            keeps_the_beat: self.playing && !self.cue_preview && self.loop_keeps_the_beat(),
+            keeps_the_beat: self.playing
+                && !self.cue_preview
+                && (self.timeline.is_some() || self.loop_keeps_the_beat()),
         })
     }
 
@@ -800,14 +923,25 @@ impl DeckPlayer {
             self.apply_pending(retired);
             return [0.0; 2];
         }
-        let pull = self.pull_to_the_beat();
+        let reverse = self.reverse;
+        // On a detour the timeline keeps the beat; the deck comes back to it.
+        let pull = if reverse || self.timeline.is_some() {
+            1.0
+        } else {
+            self.pull_to_the_beat()
+        };
         let Some(audio) = &self.audio else {
             return [0.0; 2];
         };
         let speed =
             f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance())) * pull;
         let step = speed * audio.rate().as_f64() / self.engine_rate;
-        let locked = self.lock.play(audio.samples(), self.position, step, speed);
+        let locked = if reverse {
+            self.lock.silence();
+            None
+        } else {
+            self.lock.play(audio.samples(), self.position, step, speed)
+        };
         let mut frame = match locked {
             Some(locked) => {
                 // The stretch says where the deck is: its tempo is the one asked, its
@@ -821,34 +955,53 @@ impl DeckPlayer {
                         .map(|side| plain[side] + (locked.frame[side] - plain[side]) * locked.level)
                 }
             }
+            // Backwards at the start of the track there is nothing to read.
+            None if reverse && self.position <= 0.0 => [0.0; 2],
             None => read(audio, self.position),
         };
         if let Some(tail) = &mut self.tail {
             tail.level -= tail.decay;
             if tail.level > 0.0 {
-                // What was heard before the jump: the stretch, when it was playing.
-                let old = self
-                    .lock
-                    .tail_frame()
-                    .unwrap_or_else(|| read(audio, tail.position));
+                // What was heard before the jump: the stretch, when it was playing forward.
+                let old = if reverse || !tail.forward {
+                    read(audio, tail.position)
+                } else {
+                    self.lock
+                        .tail_frame()
+                        .unwrap_or_else(|| read(audio, tail.position))
+                };
                 frame = [0, 1].map(|side| frame[side] + (old[side] - frame[side]) * tail.level);
-                tail.position += step;
+                tail.position += if tail.forward { step } else { -step };
             } else {
                 self.tail = None;
             }
         }
+        let end = audio.frames() as f64;
+        if let Some(timeline) = &mut self.timeline {
+            *timeline = (*timeline + step).min(end);
+        }
         let before = self.position;
-        self.position += step;
+        let after = if reverse {
+            before - step
+        } else {
+            before + step
+        };
         // The loop belongs to the track that arrives while a swap waits.
-        if self.pending_swap.is_none()
-            && let Some((start, length)) = self.looper.wrap(before, self.position)
-        {
+        let wrapped = if self.pending_swap.is_some() {
+            None
+        } else if reverse {
+            self.looper.wrap_back(before, after)
+        } else {
+            self.looper.wrap(before, after)
+        };
+        if let Some((start, length)) = wrapped {
             // At most half a pass of the loop, so one crossfade ends before the next.
             let frames = (SPLICE_SECONDS * self.engine_rate).min(length / (2.0 * step));
-            self.tail = Tail::over(self.position, frames);
+            self.tail = Tail::over(after, frames, !reverse);
             self.position = start;
+        } else {
+            self.position = after.max(0.0);
         }
-        let end = audio.frames() as f64;
         if self.position >= end {
             self.position = end;
             self.playing = false;

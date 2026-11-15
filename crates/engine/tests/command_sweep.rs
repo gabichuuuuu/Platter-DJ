@@ -140,6 +140,8 @@ fn sync_command() -> impl Strategy<Value = Command> {
     prop_oneof![
         3 => deck().prop_map(|deck| Command::DeckSyncToggle { deck }),
         2 => deck().prop_map(|deck| Command::DeckKeyLockToggle { deck }),
+        2 => deck().prop_map(|deck| Command::DeckFluxToggle { deck }),
+        2 => (deck(), any::<bool>()).prop_map(|(deck, pressed)| Command::DeckReverse { deck, pressed }),
         2 => deck().prop_map(|deck| Command::DeckMasterSet { deck }),
         2 => clock_mode.prop_map(|mode| Command::ClockModeSet { mode }),
         1 => (15.0f64..420.0).prop_map(|bpm| Command::ClockTempoSet { bpm }),

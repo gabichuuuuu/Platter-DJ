@@ -230,6 +230,13 @@ pub enum RtCommand {
     KeyLockToggle {
         deck: DeckId,
     },
+    FluxToggle {
+        deck: DeckId,
+    },
+    Reverse {
+        deck: DeckId,
+        pressed: bool,
+    },
     /// Makes a deck the tempo master, while the choice is not automatic.
     Master {
         deck: DeckId,

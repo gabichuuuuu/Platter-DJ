@@ -82,6 +82,9 @@ its own code, graphics and sounds.
   attack of kicks, the first milliseconds after a jump play with the pitch following the
   speed, a track below 32 kHz plays without it, and nobody has listened to it; only
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
+- Flux and reverse exist in the engine only: the window has no buttons and no marker for
+  them yet, they are reached through the shortcut file, and nobody has listened to them
+  (`docs/behavior/flux.md`).
 - The store of the library (collection, playlists and history) exists as a crate only: nothing
   in the application uses it yet. It can import a folder, but the application does not read
   the tags for it nor offer the import.

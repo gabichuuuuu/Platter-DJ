@@ -295,6 +295,29 @@ fn commands() -> Vec<Command> {
         hotcue(3, false),
         hotcue(4, true),
         hotcue(4, false),
+        // Flux: a loop, a hotcue and reverse as detours, and reverse inside the loop.
+        Command::DeckFluxToggle { deck: A },
+        Command::DeckLoopToggle { deck: A },
+        Command::DeckReverse {
+            deck: A,
+            pressed: true,
+        },
+        Command::DeckReverse {
+            deck: A,
+            pressed: false,
+        },
+        Command::DeckLoopToggle { deck: A },
+        hotcue(3, true),
+        hotcue(3, false),
+        Command::DeckReverse {
+            deck: B,
+            pressed: true,
+        },
+        Command::DeckReverse {
+            deck: B,
+            pressed: false,
+        },
+        Command::DeckFluxToggle { deck: A },
         Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
         Command::DeckKeyLockToggle { deck: A },
