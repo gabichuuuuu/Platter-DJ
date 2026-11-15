@@ -54,12 +54,15 @@ How it is configured (`release-plz.toml`):
 
 How it runs (`.github/workflows/release.yml`), on each push to `main`:
 
-1. `release-pr` opens or updates the release pull request.
-2. `release` does nothing unless the last commit is a merged release pull request. Then it pushes
+1. `release` does nothing unless the last commit is a merged release pull request. Then it pushes
    the tag and creates the GitHub release as a draft.
+2. `release-pr` opens or updates the release pull request. It waits for `release`, so the tag of a
+   version just merged already exists when the next version is computed.
 3. `binaries` builds `platter` and `platter-cli` from the tag on Linux, Windows and macOS, without
    a dependency cache and with `--remap-path-prefix` for the workspace and the Cargo home, and
-   attaches one archive per system with its SHA-256.
+   attaches one archive per system with its SHA-256. On Windows the Cargo home is converted with
+   `cygpath -w`, because the shell gives it in a form rustc does not match, and the linker gets
+   `/PDBALTPATH:%_PDB%` so the executable names its PDB without a path.
 4. `publish` publishes the draft and marks it as the latest release.
 
 The binaries are built by jobs of the same run because a separate workflow would never start
@@ -87,6 +90,12 @@ release-plz at the tag `release-plz-v0.4.3`:
   `git_only_respects_release_commits_regex`);
 - a package that inherits the workspace version moves with it even when it is not released
   (`crates/release_plz_core/src/command/update/updater.rs`).
+
+The remapping was measured on Windows x64 with the commands of the build step, building
+`platter-cli` in release in Git Bash: with the Cargo home in the form the shell gives
+(`/c/...`), the executable held the local user name 222 times; with `cygpath -w` and
+`/PDBALTPATH:%_PDB%`, it held no user name, no local path and only the file name of its PDB.
+`platter` and the Linux and macOS builds were not measured; they use the same flags.
 
 The workflow has not run yet: its first run is the first push to `main` after it is merged. To
 check then: that the release pull request proposes 0.2.0, that its changelog lists only features

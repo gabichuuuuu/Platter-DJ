@@ -15,6 +15,9 @@ permissions:
 
 jobs:
   release-pr:
+    # After `release`, so the tag of a version just merged exists when the next version is
+    # computed.
+    needs: release
     if: github.repository == 'gabichuuuuu/Platter-DJ'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -118,12 +121,18 @@ jobs:
         run: rustup toolchain install
 
       # No dependency cache: a released binary is built from a clean state. The paths of the
-      # runner are remapped so the binaries carry no machine path.
+      # runner are remapped so the binaries carry no machine path. On Windows the paths are
+      # given in the form rustc sees, and the linker writes only the file name of the PDB.
       - name: Build
         run: |
           set -euo pipefail
           cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-          export RUSTFLAGS="--remap-path-prefix=${GITHUB_WORKSPACE}=/platter --remap-path-prefix=${cargo_home}=/cargo"
+          flags="--remap-path-prefix=${GITHUB_WORKSPACE}=/platter"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cargo_home=$(cygpath -w "$cargo_home")
+            flags="$flags -C link-arg=/PDBALTPATH:%_PDB%"
+          fi
+          export RUSTFLAGS="$flags --remap-path-prefix=${cargo_home}=/cargo"
           cargo build --release --locked -p platter -p platter-cli
 
       - name: Package and attach to the release

@@ -137,8 +137,9 @@ How a version ships:
 1. After each merge into `main`, `.github/workflows/release.yml` opens or updates one release
    pull request, `chore: release vX.Y.Z`, which raises the version in `Cargo.toml` and adds the
    changes to `CHANGELOG.md`.
-2. Close and reopen that pull request so the required checks run on it; GitHub does not start
-   them on a pull request opened by Actions.
+2. Right before merging it, close and reopen that pull request so the required checks run on
+   its latest state; GitHub does not start them on a pull request opened or updated by Actions,
+   and every merge into `main` updates it again.
 3. Merge it when a version should ship. The workflow then creates the tag `vX.Y.Z`, builds the
    binaries of Windows, macOS and Linux and publishes the GitHub release with them.
 
