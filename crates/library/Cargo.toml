@@ -1,0 +1,17 @@
+[package]
+name = "platter-library"
+description = "The library of Platter: the track collection, playlists and history, kept in one file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-core = { path = "../core" }
+rusqlite.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

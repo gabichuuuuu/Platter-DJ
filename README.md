@@ -75,7 +75,9 @@ its own code, graphics and sounds.
   controls for them, its tempo readout does not show the speed of a synced deck, and nobody
   has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
   sync.
-- No key lock, no collection, no MIDI: those are milestone M3.
+- The store of the library (collection, playlists and history) exists as a crate only: nothing
+  in the application uses it yet and nothing imports tracks into it.
+- No key lock, no browser of the collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
