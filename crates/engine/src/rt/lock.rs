@@ -139,6 +139,26 @@ impl KeyLock {
         };
     }
 
+    /// The deck turns to play backwards, where the stretch cannot follow. As at a jump, the
+    /// stretch goes on a little where it was, for the deck to fade out what was heard, and
+    /// starts again when the deck plays forward.
+    pub fn turn_back(&mut self, track: &[f32], speed: f64) {
+        self.tail_length = 0;
+        self.tail_taken = 0;
+        if let (Some(stretch), State::Playing { .. }) = (self.stretch.as_mut(), self.state)
+            && (MIN_TEMPO..=MAX_TEMPO).contains(&speed)
+        {
+            while self.tail_length < self.tail_frames {
+                let Some((frame, _)) = stretch.0.next(track, speed) else {
+                    break;
+                };
+                self.tail[self.tail_length] = frame;
+                self.tail_length += 1;
+            }
+        }
+        self.silence();
+    }
+
     /// The frame key lock plays for a deck at `position` that moves `step` frames of its
     /// track per frame of output at `speed`; `None` where the plain read plays alone.
     pub fn play(&mut self, track: &[f32], position: f64, step: f64, speed: f64) -> Option<Locked> {

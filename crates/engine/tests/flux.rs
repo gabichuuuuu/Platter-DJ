@@ -353,3 +353,31 @@ fn flux_stays_with_the_deck_for_the_next_track_and_shows_in_the_snapshot() {
     assert!(next.flux && !next.reverse);
     assert!(!deck_of(&mut rig, B).flux);
 }
+
+#[test]
+fn reverse_with_key_lock_at_another_tempo_turns_without_a_click_and_locks_again() {
+    let mut rig = rig("flux-keylock");
+    rig.send(Command::DeckKeyLockToggle { deck: A });
+    rig.send(Command::DeckTempoSet {
+        deck: A,
+        ratio: 1.08,
+    });
+    rig.send(Command::DeckSeek {
+        deck: A,
+        seconds: 2.0,
+    });
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.5);
+    reverse(&mut rig, true);
+    let pressed = rig.run(0.3);
+    reverse(&mut rig, false);
+    let released = rig.run(0.5);
+    // The slope of the tone at 1.08 is 0.031 per frame; a cut between two waveforms would
+    // be up to the whole swing of 1.
+    assert!(max_step(&pressed) < 0.04, "{}", max_step(&pressed));
+    assert!(max_step(&released) < 0.04, "{}", max_step(&released));
+    // Back forward, key lock takes over again: the tone is at 440 Hz, not 1.08 times it.
+    let tail = &released[released.len() - 9600..];
+    let fit = platter_testkit::measure::sine_fit(tail, 440.0, f64::from(RATE));
+    assert!(fit.snr_db() > 30.0, "{}", fit.snr_db());
+}

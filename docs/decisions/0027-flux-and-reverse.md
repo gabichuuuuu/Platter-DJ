@@ -58,6 +58,9 @@ For sync during a detour:
 - A timeline past the end brings the deck to the end.
 - A synced deck stays within 0.01 beats of a reversed tempo master.
 - A 44.1 kHz track counts in the time of the track.
+- With key lock at a tempo of 1.08, both turns stay below a step of 0.04, and key lock is back
+  at 440 Hz half a second after the release. Before the stretch rendered what it was playing
+  at the press, that turn stepped by 0.147.
 
 `realtime_memory` runs flux and reverse under the test allocator, and the command sweep sends
 them at random.

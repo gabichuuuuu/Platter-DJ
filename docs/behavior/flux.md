@@ -62,8 +62,10 @@ On a paused deck flux changes nothing: a hotcue keeps its preview of the cue but
   does, so the turn does not click.
 - At the start of the track the deck stays at the start and is silent until reverse is
   released.
-- Key lock does not act while the deck plays backwards: the pitch follows the speed. It comes
-  back, with the bridge it uses after a jump, when the deck plays forward again.
+- Key lock does not act while the deck plays backwards: the pitch follows the speed. At the
+  press, what the stretch played goes on for the crossfade, as at a jump, so the turn does not
+  click at another tempo either. Key lock comes back, with the bridge it uses after a jump,
+  when the deck plays forward again.
 
 ### Sync
 

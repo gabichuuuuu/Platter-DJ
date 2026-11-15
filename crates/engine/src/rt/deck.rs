@@ -399,6 +399,10 @@ impl DeckPlayer {
         }
         if self.playing && self.pending_swap.is_none() && self.pending_seek.is_none() {
             self.tail = heard;
+            if pressed && let Some(audio) = &self.audio {
+                let speed = f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()));
+                self.lock.turn_back(audio.samples(), speed);
+            }
         }
     }
 
@@ -963,7 +967,7 @@ impl DeckPlayer {
             tail.level -= tail.decay;
             if tail.level > 0.0 {
                 // What was heard before the jump: the stretch, when it was playing forward.
-                let old = if reverse || !tail.forward {
+                let old = if !tail.forward {
                     read(audio, tail.position)
                 } else {
                     self.lock
