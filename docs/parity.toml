@@ -248,10 +248,10 @@ id = "control"
 title = "Control"
 features = [
   { id = "keyboard-shortcuts", name = "Customisable keyboard shortcuts", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --lib keymap; cargo test -p platter-ui-egui --test panels" },
-  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "planned" },
+  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "in_progress" },
   { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "planned" },
   { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "planned" },
-  { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "planned" },
+  { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "in_progress" },
   { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "planned" },
 ]
 

@@ -2130,6 +2130,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "platter-control"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "toml",
+]
+
+[[package]]
 name = "platter-core"
 version = "0.0.0"
 

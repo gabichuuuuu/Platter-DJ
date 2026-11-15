@@ -87,6 +87,8 @@ its own code, graphics and sounds.
   the tags for it nor offer the import.
 - No browser of the collection, no MIDI: those are milestone M3.
 
+The reading of MIDI mapping files exists as a crate only: nothing opens a MIDI port yet.
+
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 
 ## Building
