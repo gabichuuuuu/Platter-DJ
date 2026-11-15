@@ -1,0 +1,166 @@
+name: Release
+
+# Keeps a release pull request open and, when the maintainer merges it, tags the version, builds
+# the binaries and publishes the GitHub release (docs/decisions/0027-release-workflow.md).
+#
+# The default token cannot start other workflows, so nothing here waits for a tag or release
+# event: the binaries are built by jobs of this same run.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-pr:
+    if: github.repository == 'gabichuuuuu/Platter-DJ'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    # A run waits for the previous one instead of cancelling it, so two runs never edit the
+    # release pull request at the same time.
+    concurrency:
+      group: release-pr
+      cancel-in-progress: false
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Open or update the release pull request
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  release:
+    if: github.repository == 'gabichuuuuu/Platter-DJ'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      # Does nothing unless the last commit of main is a merged release pull request.
+      - name: Tag and draft the release
+        id: release-plz
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Read the tag of the release
+        id: tag
+        env:
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          set -euo pipefail
+          tag=$(jq -r '[.[] | select(.package_name == "platter") | .tag][0] // ""' <<< "${RELEASES:-[]}")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    needs: release
+    if: needs.release.outputs.tag != ''
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+
+      - name: Install system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            pkg-config libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      # No dependency cache: a released binary is built from a clean state. The paths of the
+      # runner are remapped so the binaries carry no machine path.
+      - name: Build
+        run: |
+          set -euo pipefail
+          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          export RUSTFLAGS="--remap-path-prefix=${GITHUB_WORKSPACE}=/platter --remap-path-prefix=${cargo_home}=/cargo"
+          cargo build --release --locked -p platter -p platter-cli
+
+      - name: Package and attach to the release
+        run: |
+          set -euo pipefail
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          name="platter-${TAG}-${target}"
+          mkdir "$name"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/platter.exe target/release/platter-cli.exe "$name/"
+          else
+            cp target/release/platter target/release/platter-cli "$name/"
+          fi
+          cp README.md LICENSE-MIT LICENSE-APACHE NOTICE "$name/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            archive="$name.zip"
+            7z a -tzip "$archive" "$name" > /dev/null
+          else
+            archive="$name.tar.gz"
+            tar -czf "$archive" "$name"
+          fi
+          if command -v sha256sum > /dev/null; then
+            sha256sum "$archive" > "$archive.sha256"
+          else
+            shasum -a 256 "$archive" > "$archive.sha256"
+          fi
+          gh release upload "$TAG" "$archive" "$archive.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+  publish:
+    needs: [release, binaries]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"

@@ -82,6 +82,10 @@ its own code, graphics and sounds.
 
 ## Building
 
+No version has been released yet. Releases, with binaries for Windows, macOS and Linux built in
+CI, will appear in the GitHub releases of this repository; until then Platter is built from
+source.
+
 Requirements: Rust through `rustup` (the toolchain in `rust-toolchain.toml` is installed on first
 use) and `cargo-deny` 0.20.2. Details are in [`docs/development.md`](docs/development.md).
 

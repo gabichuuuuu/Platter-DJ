@@ -1,0 +1,74 @@
+# Configuration of release-plz, which runs only in `.github/workflows/release.yml`.
+# The reasons for each setting are in `docs/decisions/0027-release-workflow.md`.
+
+[workspace]
+# Platter is released as one product with one version, the one in `[workspace.package]`.
+# Versions come from the Git tags `vX.Y.Z`; nothing is published to a registry.
+git_only = true
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+# Only the `platter` package below creates the tag, the GitHub release and the changelog.
+git_tag_enable = false
+git_release_enable = false
+changelog_update = false
+# A version is released only when the maintainer merges the release pull request.
+release_always = false
+# Only features, fixes, performance work and breaking changes lead to a new version.
+release_commits = '^(feat|fix|perf)(\([^)]*\))?!?:|^[a-z]+(\([^)]*\))?!:|(?m:^BREAKING[ -]CHANGE:)'
+# Platter is an application, not a library: a feature raises the minor number in 0.x too.
+features_always_increment_minor = true
+semver_check = false
+pr_body = """
+Release of Platter {% for release in releases %}{% if release.package == "platter" %}{{ release.next_version }}{% endif %}{% endfor %}.
+
+Merging this pull request creates the tag, builds the binaries for Windows, macOS and Linux in
+CI and publishes the GitHub release (`docs/development.md`, section "Releases").
+
+The checks of `main` do not start on their own on a pull request opened by GitHub Actions:
+close and reopen this pull request to run them.
+{% for release in releases %}{% if release.package == "platter" and release.changelog %}
+{{ release.changelog }}
+{% endif %}{% endfor %}
+"""
+
+[changelog]
+# Commits that match no parser stay out of the changelog.
+commit_parsers = [
+  { message = "^feat", group = "added" },
+  { message = "^fix", group = "fixed" },
+  { message = "^perf", group = "changed" },
+]
+protect_breaking_commits = true
+
+[[package]]
+name = "platter"
+git_tag_enable = true
+git_release_enable = true
+# The release stays a draft until the binaries are attached; the workflow then publishes it.
+git_release_draft = true
+git_release_body = """
+{{ changelog }}
+
+Platter is in development. What works and what does not is in the README; the checks that wait
+for equipment are listed in https://github.com/gabichuuuuu/Platter-DJ/blob/main/ROADMAP.md
+"""
+changelog_update = true
+changelog_path = "./CHANGELOG.md"
+changelog_include = [
+  "platter-cli",
+  "platter-audio-io",
+  "platter-core",
+  "platter-decode",
+  "platter-dsp",
+  "platter-engine",
+  "platter-ui-egui",
+]
+
+# Development tools: their commits never release Platter.
+[[package]]
+name = "xtask"
+release = false
+
+[[package]]
+name = "platter-testkit"
+release = false

@@ -33,6 +33,9 @@ maintainer, on the free plan, and is public.
 1. Discussions: the categories for questions, ideas and controllers, in Discussions > Categories
    on the web.
 2. With more than one maintainer, require at least one approval in the rule of `main`.
+3. Releases: in Settings > Actions > General > Workflow permissions, tick "Allow GitHub Actions
+   to create and approve pull requests". `release.yml` needs it to open the release pull
+   request; the default permissions stay read-only and each job asks for what it needs.
 
 ## Files in this repository that GitHub reads
 
@@ -42,6 +45,8 @@ maintainer, on the free plan, and is public.
 | `.github/workflows/pages.yml` | Progress page on GitHub Pages |
 | `.github/workflows/pr-quality.yml` | Quality filter for pull requests from outside the project |
 | `.github/workflows/pr-intake.yml` | One open pull request per author until their first is merged |
+| `.github/workflows/release.yml` | Release pull request, tag, binaries and GitHub release (`docs/decisions/0027-release-workflow.md`) |
+| `release-plz.toml` | How `release.yml` computes the version and the changelog |
 | `.github/dependabot.yml` | Weekly updates of cargo dependencies and of the pinned actions |
 | `.github/pull_request_template.md` | Checklist of a pull request |
 | `.github/ISSUE_TEMPLATE/` | Forms for bugs, features and controller reports |
