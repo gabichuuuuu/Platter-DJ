@@ -7,7 +7,7 @@ and the reset to the analysed values are in `docs/behavior/analysis.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 14 November 2026:
+Sections of the public manual, read on 14 November 2026:
 
 - *Global concepts*, section *Beatgrid*
 - *Advanced usage tutorials*, section *Adjusting beatgrids*
@@ -115,7 +115,7 @@ its own beats.
 
 - One tempo per track in M3: the markers re-anchor the beats, they do not start a new tempo.
   The tempo buttons act on the whole track, not on the zone of the play position.
-- The step buttons of the reference product add or remove one beat in a closed zone; with a
+- The step buttons of the documented application add or remove one beat in a closed zone; with a
   single tempo Platter steps the tempo by the amount the command carries.
 - The tempo field cannot be typed into yet: it is dragged or stepped. Typing comes with the
   text field of the browser search, later in M3.
@@ -127,7 +127,7 @@ its own beats.
   them.
 - In external mixer mode the tick is on the signal of the deck, on its pair of outputs, as
   the manual says (`docs/behavior/external-mixer.md`).
-- The selected marker is the one on or before the play position, as the reference product
+- The selected marker is the one on or before the play position, as the documented application
   selects it. Platter has no separate selection.
 - The grid lives with the loaded track and is lost when the track is loaded again, which a
   change of sample rate of the audio device also does, until the collection stores it later

@@ -6,7 +6,7 @@ playlists and search.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Overview*, section *Browser*
 
@@ -69,7 +69,7 @@ From M3 the tree starts with the collection, the tracks imported into the librar
 
 ### What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Overview*, section *Browser*
 - *Basic usage tutorials*, section *Performing a Text Search*
@@ -131,7 +131,7 @@ the whole collection. A track is loaded into a deck from the list.
 
 ### What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Basic usage tutorials*, section *Performing a Text Search*
 - *Overview*, section *Browser*
@@ -184,7 +184,7 @@ collection.
 
 ### What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Overview*, section *Browser*
 - *Working with Playlists*

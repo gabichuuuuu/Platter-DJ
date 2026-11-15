@@ -172,5 +172,5 @@ later record supersedes it.
 ## Behaviour notes
 
 Before implementing a function of the inventory, write its note in `docs/behavior/<area>.md`:
-what the public manual says it does, with the URL of the section; where Platter departs from it
+what its public documentation says it does, with the section cited; where Platter departs from it
 and why; the edge cases. The tests of the function refer to the note.

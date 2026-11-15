@@ -7,7 +7,7 @@ and automatic fades of the crossfader.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026 (*Crossfade controls* again on
+Sections of the public manual, read on 13 November 2026 (*Crossfade controls* again on
 15 November 2026, for the assignment):
 
 - *Overview*, section *Mixer channel*
@@ -96,10 +96,10 @@ pre-listened channel after its filter and before its fader.
 
 - The crossfader has three named curves instead of a continuous control.
 - One equaliser model and one filter model; the others are M4.
-- The pan knob and the pre-listen button are always visible; the reference product shows them
+- The pan knob and the pre-listen button are always visible; the documented application shows them
   only in some layouts.
 - The fader adds up to 5 dB above its unity mark.
-- The reference manual names a left and a right assign button and does not say what a
+- The public manual names a left and a right assign button and does not say what a
   channel assigned to neither does. Platter makes that state, `thru`, explicit: the channel
   bypasses the crossfader. The design system draws it as a three-way control under each
   fader; the window has no such control yet, it comes with the next change to the mixer
@@ -107,7 +107,7 @@ pre-listened channel after its filter and before its fader.
 - A step is a tenth of the travel and the time of an automatic fade is counted in beats of
   the master clock, so a fade ends on the beat count the DJ chose at any tempo; the manual
   says neither. The keys for steps and fades come with the next change to the mixer panel.
-- The Fade In and Fade Out markers that start an automatic crossfade in the reference product
+- The Fade In and Fade Out markers that start an automatic crossfade in the documented application
   are not part of this: the fade and load cue types are labels only
   (`docs/behavior/cues.md`).
 

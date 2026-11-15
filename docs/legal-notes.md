@@ -16,16 +16,15 @@ keeps the copyright of their contribution and licenses it under the same terms
 Platter is an independent implementation of the functions DJs expect from professional DJ
 software, and uses no material of any other product.
 
-- Sources of behaviour: public user documentation of DJ software (mainly the reference manual),
-  public specifications and scientific papers. Each behaviour is written down in Platter's own
-  words in `docs/behavior/`. The URL of every cited section lives in `reference/sources.md`,
-  which Git ignores.
+- Sources of behaviour: public user documentation of DJ software, public specifications and
+  scientific papers. Each behaviour is written down in Platter's own words in
+  `docs/behavior/`, with the section it comes from.
 - No code, icon, text, skin, sound, kit, mapping or screenshot of any other product is copied.
   Binaries and files of other products are not disassembled, inspected or instrumented.
 - The layout follows the general conventions of DJ software; graphics, icons, colours, type,
   control shapes and texts are original (`docs/design/`).
-- The names of the reference product and of its vendor appear nowhere in the repository, so
-  no trademark of theirs is used; `cargo xtask cleanroom` enforces it.
+- The names of the documented applications and of their vendors appear nowhere in the
+  repository, so no trademark of theirs is used; `cargo xtask cleanroom` enforces it.
 
 ## Third-party code
 

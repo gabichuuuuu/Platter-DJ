@@ -2,7 +2,7 @@
 
 ## What the public manual says
 
-Sections of the reference manual:
+Sections of the public manual:
 
 - *Overview*, section *Master control panel*
 - *Preferences*, section *Mixer page*
@@ -34,7 +34,7 @@ preference chooses the limiter type, one of which is a third-party maximiser.
 - The limiter cannot be switched off. It is a guard against clipping, not an effect, and with
   it off a hot mix would clip at the converter.
 - There is one limiter type. Platter's own maximiser arrives in M4; the third-party one of the
-  reference product is out of scope (`docs/gaps.md`).
+  documented application is out of scope (`docs/gaps.md`).
 
 ## Edge cases
 

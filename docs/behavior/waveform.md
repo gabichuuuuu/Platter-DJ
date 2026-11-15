@@ -5,7 +5,7 @@ zoom.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Overview*, section *Track deck*
 - *Basic usage tutorials*, section *Working with the waveform and the stripe*
@@ -37,8 +37,8 @@ waveform in and out. Both views share one colour mode out of four.
 
 - One colour mode; the other three are M4.
 - No key resets the zoom; five steps make it two presses away at most.
-- Dragging the scrolling waveform does nothing in M2. The drag modes of the reference
-  product arrive with the beatgrid in M3.
+- Dragging the scrolling waveform does nothing in M2. The drag modes of the documented
+  application arrive with the beatgrid in M3.
 
 ## Edge cases
 

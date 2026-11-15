@@ -4,7 +4,7 @@ Status: accepted (M3).
 
 ## Context
 
-The reference manual has two key locks: the one of the deck, which keeps the original key and
+The public manual has two key locks: the one of the deck, which keeps the original key and
 transposes it with semitone buttons, and the one of the mixer channel (Persist Key), which
 keeps the key of the current speed and fine-tunes it with a key knob
 (`docs/behavior/keylock.md`). It gives neither the range of the knob nor the size of a step,
@@ -15,14 +15,14 @@ beside its tempo, from 0.25 to 4, with the pitch over the tempo between 0.25 and
 
 ## Options
 
-1. Two locks per deck, as the reference product shows them, each with its own state.
+1. Two locks per deck, as the documented application shows them, each with its own state.
 2. One key lock per deck with a shift in semitones. Locking the original key is a shift of 0;
    locking the key of the current speed is a shift of 12 * log2(speed); the semitone buttons
    and the key knob move the shift.
 
 ## Choice
 
-- Option 2. The two locks of the reference product differ only in the key they keep, and
+- Option 2. The two locks of the documented application differ only in the key they keep, and
   both end in the same state: a stretch at the tempo asked for and a pitch ratio. One state
   leaves no question of which lock wins when both are pressed.
 - Range ±12 semitones, an octave each way: wide enough for the knob and for a persist at the

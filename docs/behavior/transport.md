@@ -6,7 +6,7 @@ of the interface.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Overview*, section *Transport controls*
 - *Overview*, section *Synchronization and tempo controls*
@@ -77,7 +77,7 @@ with 4 % of the tempo while held and zero on release.
   follows the convention of DJ players for it, as the table above describes.
 - Three tempo ranges (8 %, 16 %, 50 %), chosen on the deck, instead of a list of fourteen in
   the preferences. `deck.tempo.set` itself accepts any ratio from 0 to 2.
-- The bend is a fixed 4 %; the reference product has a sensitivity setting and a progressive
+- The bend is a fixed 4 %; the documented application has a sensitivity setting and a progressive
   mode.
 - `deck.cue.set` and `deck.cue.goto` remain as separate commands for scripts and mappings.
 

@@ -4,11 +4,11 @@ Keyboard shortcuts and keyboard operation of the controls.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Preferences*, section *Controller Manager page*
 
-The reference product treats the keyboard as a controller: a mapping assigns keys to
+The documented application treats the keyboard as a controller: a mapping assigns keys to
 functions, and the user can change the assignments and keep several mappings.
 
 ## What Platter does

@@ -8,7 +8,7 @@ choices of transposition in `docs/decisions/0031-transposition.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Overview*, section *Track deck*, the key lock controls
 - *Overview*, the mixer channel, its key lock button and key knob
@@ -90,7 +90,7 @@ has no resulting key.
 
 ## Differences
 
-- The reference manual has a key lock on the deck and another on the mixer channel. Platter
+- The public manual has a key lock on the deck and another on the mixer channel. Platter
   has one key lock per deck with a shift in semitones: the key lock of the channel is
   `deck.key.persist`, which turns that key lock on with the shift of the current speed, and the
   key knob is `deck.key.set`. The buttons and the knob are not in the window yet: the commands
@@ -100,14 +100,14 @@ has no resulting key.
 - The 32 ms bridge after a jump plays with the pitch following the speed, without the shift:
   with a deck transposed by two semitones, every jump and every pass of a loop starts with
   32 ms at the untransposed pitch before the crossfade into the transposed sound.
-- The reference manual does not say what is heard at a jump with key lock on. Platter plays the
+- The public manual does not say what is heard at a jump with key lock on. Platter plays the
   first 32 ms after it with the pitch following the speed, because the stretch needs about
   5 ms of work before its first sound and one callback cannot hold that beside the other
   deck; the work is spread over those 32 ms. Each pass of a loop is such a jump, so a loop
   shorter than 32 ms plays without key lock, and on a loop of one beat at 128 BPM the bridge
   is about 8 % of each pass.
 - The stretch takes tracks from 32 to 192 kHz only.
-- The reference manual does not say whether key lock keeps the tempo or the pitch exact when
+- The public manual does not say whether key lock keeps the tempo or the pitch exact when
   both cannot be. Platter keeps the tempo, so sync holds.
 - The stretch softens the attack of a kick and raises its peak: measured on a synthesised
   kick, its rise takes about 4 ms instead of 0.5 ms and its peak is about 1.3 dB higher. An own

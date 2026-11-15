@@ -5,7 +5,7 @@ interface shows when something is missing.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the public manual, read on 13 November 2026:
 
 - *Overview*, section *Header*
 - *Overview*, section *Deck header*
@@ -87,7 +87,7 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
 ## Differences
 
 - No indicators for battery or recording; recording arrives in M4.
-- The reference product has two indicators for controllers, one for signals and one for
+- The documented application has two indicators for controllers, one for signals and one for
   connections. Platter draws one, with both: the count of open controllers and the light of
   the messages. A controller is counted as open when its input opened at start; one that is
   unplugged later is still counted, since the system does not tell the input it is gone
@@ -104,7 +104,7 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   does for a window.
   Full screen has been checked only through its command and its key in the tests, not yet
   in a real window.
-- The reference product hides or shows parts of the deck header by preference. Platter shows
+- The documented application hides or shows parts of the deck header by preference. Platter shows
   the same set always.
 - Screen readers get no information yet: the bridge to the accessibility service of the
   system is a cargo feature that is off, because on Linux it brings three crates that an

@@ -9,7 +9,7 @@ and how folders are imported in `docs/decisions/0023-folder-import.md`.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Managing your track collection*, sections *About the Track Collection*, *Adding Music from
   Other Folders*, *Checking Consistency of your Track Collection*, *Relocating Missing Tracks*
@@ -121,7 +121,7 @@ the user types.
 
 ### M3U files
 
-The reference manual (*Working with Playlists*, sections *Exporting Playlists*, *Importing
+The public manual (*Working with Playlists*, sections *Exporting Playlists*, *Importing
 Playlists* and *Editing Smartlists*) exports a playlist with its tracks for another computer and
 imports playlist files into the collection; M3U is one of the formats it names. Platter reads and
 writes M3U, the plain list of paths most DJ and media software understands. This part is the
@@ -158,26 +158,26 @@ playlists of the browser.
 
 ## Differences
 
-- The reference manual does not say how several words are searched. Platter asks for all of
+- The public manual does not say how several words are searched. Platter asks for all of
   them.
-- The reference manual sorts the collection into views by artist, release, label and genre.
+- The public manual sorts the collection into views by artist, release, label and genre.
   Platter gives the same through sorting and search; the views come with the browser.
-- The reference manual does not say what happens to the history when a track is removed.
+- The public manual does not say what happens to the history when a track is removed.
   Platter keeps the entries, with the title and artist they were played with.
-- The reference manual imports music folders from a list in the preferences, also at start.
+- The public manual imports music folders from a list in the preferences, also at start.
   Platter's import pass works on one folder; the list and the import at start come with the
   settings of the browser.
-- The reference manual includes the folders inside a folder in the import and updates the
+- The public manual includes the folders inside a folder in the import and updates the
   collection, without saying whether the tags of tracks already in it are read again. Platter
   leaves those tracks as they are; importing one file again updates its tags.
 - The genre is not read yet: the decoder reads title, artist, album and tempo. It comes with the
   reader of tags.
-- The reference manual also imports and exports playlists in a format of its own. Platter does
+- The public manual also imports and exports playlists in a format of its own. Platter does
   not read or write it: M3U is the format other software shares. Smart playlists are M4.
 - An exported M3U holds absolute paths and no copy of the tracks; another computer finds them
   only at the same paths. A track with an artist and no title is written as its artist and
   reads back as a title.
-- The reference manual marks one playlist as a preparation list. That comes with the browser.
+- The public manual marks one playlist as a preparation list. That comes with the browser.
 
 ## Edge cases
 
