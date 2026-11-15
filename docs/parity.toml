@@ -77,14 +77,14 @@ features = [
 id = "sync"
 title = "Sync"
 features = [
-  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "in_progress" },
-  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "in_progress" },
-  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "in_progress" },
+  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels" },
+  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels master_only" },
+  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels the_phase_meter" },
   { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "in_progress" },
   { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "in_progress" },
   { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "in_progress" },
-  { id = "snap", name = "SNAP", milestone = "M3", status = "in_progress" },
-  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "in_progress" },
+  { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
+  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
   { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
 ]
@@ -93,10 +93,10 @@ features = [
 id = "beatgrid"
 title = "Beatgrid"
 features = [
-  { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "planned" },
+  { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "in_progress" },
   { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-ui-egui --test panels" },
   { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
-  { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "planned" },
+  { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "in_progress" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "planned" },
   { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
@@ -127,8 +127,8 @@ features = [
 id = "key"
 title = "Key"
 features = [
-  { id = "detection", name = "Key detection", milestone = "M3", status = "planned" },
-  { id = "key-lock", name = "Key lock", milestone = "M3", status = "planned" },
+  { id = "detection", name = "Key detection", milestone = "M3", status = "in_progress" },
+  { id = "key-lock", name = "Key lock", milestone = "M3", status = "in_progress" },
   { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "planned" },
   { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "planned" },
   { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "planned" },
@@ -205,9 +205,9 @@ features = [
 id = "browser"
 title = "Browser"
 features = [
-  { id = "collection", name = "Track collection", milestone = "M3", status = "planned" },
-  { id = "folder-import", name = "Folder import", milestone = "M3", status = "planned" },
-  { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "planned" },
+  { id = "collection", name = "Track collection", milestone = "M3", status = "in_progress" },
+  { id = "folder-import", name = "Folder import", milestone = "M3", status = "in_progress" },
+  { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
   { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "planned" },
   { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
   { id = "search", name = "Live search", milestone = "M3", status = "planned" },
@@ -248,10 +248,10 @@ id = "control"
 title = "Control"
 features = [
   { id = "keyboard-shortcuts", name = "Customisable keyboard shortcuts", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --lib keymap; cargo test -p platter-ui-egui --test panels" },
-  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "planned" },
+  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "in_progress" },
   { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "planned" },
   { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "planned" },
-  { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "planned" },
+  { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "in_progress" },
   { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "planned" },
 ]
 

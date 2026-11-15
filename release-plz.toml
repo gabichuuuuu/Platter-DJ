@@ -56,11 +56,14 @@ changelog_update = true
 changelog_path = "./CHANGELOG.md"
 changelog_include = [
   "platter-cli",
+  "platter-analysis",
   "platter-audio-io",
+  "platter-control",
   "platter-core",
   "platter-decode",
   "platter-dsp",
   "platter-engine",
+  "platter-library",
   "platter-ui-egui",
 ]
 

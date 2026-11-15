@@ -12,7 +12,7 @@ today; a crate is created when it has code, in the milestone the table names.
 | L1 | `platter-decode` | From a file to `f32` PCM in memory, with basic metadata | M1 |
 | L1 | `platter-analysis` | Tempo, beatgrid, key, waveform peaks | M3 (waveform peaks live in the engine until then) |
 | L1 | `platter-library` | Collection, playlists, history | M3 |
-| L1 | `platter-control` | Mappings: from keyboard and MIDI events to commands | M3 (the keyboard of M2 lives in the interface crate) |
+| L1 | `platter-control` | Mappings: from MIDI messages to commands, with modifiers | M3 (the keyboard of M2 lives in the interface crate) |
 | L1 | `platter-stems` | Stem separation | M4 |
 | L2 | `platter-engine` | Decks, mixer, command registry, real-time processor, background track loading, three-band waveform peaks, render without a device | M1 |
 | L3 | `platter-audio-io` | Devices and the output stream with cpal; a null backend for tests | M2 |
@@ -68,7 +68,9 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
 - **Sample rate.** The engine runs at the rate of the device. A track is read at the ratio
   `tempo * (track_rate / engine_rate)` with interpolation; it is not resampled on load. The
   interpolation is chosen by measurement (distortion and aliasing of a sine) and recorded in an
-  ADR. There is no key lock until M3: pitch follows tempo.
+  ADR. With key lock on, a stretch behind the trait `Stretch` of `platter-dsp` plays the
+  track instead, at the tempo of the deck and the pitch of the track
+  (`docs/decisions/0021-key-lock-stretch.md`).
 - **Beatgrid.** `BeatGrid` in `platter-core`: a tempo, up to 128 markers and a lock, in a
   fixed-size value. In M3 the markers share the one tempo; M4 gives each marker its own (a
   flexible grid). The processor holds the grid of each deck and reports it to the control side
