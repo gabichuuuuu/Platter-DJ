@@ -205,7 +205,7 @@ features = [
 id = "browser"
 title = "Browser"
 features = [
-  { id = "collection", name = "Track collection", milestone = "M3", status = "planned" },
+  { id = "collection", name = "Track collection", milestone = "M3", status = "in_progress" },
   { id = "folder-import", name = "Folder import", milestone = "M3", status = "planned" },
   { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
   { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "planned" },

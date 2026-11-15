@@ -82,7 +82,9 @@ its own code, graphics and sounds.
   attack of kicks, the first milliseconds after a jump play with the pitch following the
   speed, a track below 32 kHz plays without it, and nobody has listened to it; only
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
-- No collection, no MIDI: those are milestone M3.
+- The store of the library (collection, playlists and history) exists as a crate only: nothing
+  in the application uses it yet and nothing imports tracks into it.
+- No browser of the collection, no MIDI: those are milestone M3.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 
