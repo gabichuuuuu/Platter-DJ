@@ -11,7 +11,7 @@ use std::collections::{BTreeSet, HashSet};
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
-use platter_engine::Command;
+use platter_engine::{ClockMode, Command};
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
@@ -58,6 +58,13 @@ fn states() -> Vec<State> {
     let mut cues = state("cues", sample::playing(), None);
     cues.pages = [DeckPage::Cue; 2];
     cues.mapping = [false, true];
+    // The clock is the tempo master, chosen by hand, with Quantize on: the keys of the
+    // clock and MASTER can be operated.
+    let mut clock = sample::playing();
+    clock.engine.clock.auto = false;
+    clock.engine.clock.master = None;
+    clock.engine.clock.quantize = true;
+    let clock = state("clock", clock, None);
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -73,6 +80,7 @@ fn states() -> Vec<State> {
         ),
         trouble,
         cues,
+        clock,
     ]
 }
 
@@ -310,6 +318,167 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
             }
         }
     }
+}
+
+#[test]
+fn the_controls_of_the_header_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for state in states().into_iter().filter(|state| state.page.is_none()) {
+            let stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| control.rect.bottom() <= 40.0)
+                .collect();
+            assert!(controls.len() > 10, "{}", controls.len());
+            for (index, first) in controls.iter().enumerate() {
+                assert!(first.rect.left() >= 0.0 && first.rect.right() <= DESIGN_WIDTH);
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{}, {language:?}: {} at {:?} overlaps {} at {:?}",
+                        state.name,
+                        first.command,
+                        first.rect,
+                        second.command,
+                        second.rect,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Whether each control that emits `command` is enabled, left to right.
+fn enabled(stage: &Stage, command: &str) -> Vec<bool> {
+    let mut controls: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == command)
+        .collect();
+    controls.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    controls.iter().map(|control| control.enabled).collect()
+}
+
+fn state_named(name: &str) -> State {
+    states()
+        .into_iter()
+        .find(|state| state.name == name)
+        .unwrap()
+}
+
+#[test]
+fn the_tempo_keys_of_the_clock_rest_while_a_deck_is_the_tempo_master() {
+    // In the main state deck A is the tempo master, chosen automatically.
+    let main = Stage::new(&state_named("main"));
+    let clock = Stage::new(&state_named("clock"));
+    for command in ["clock.tempo.set", "clock.tap"] {
+        assert_eq!(enabled(&main, command), [false], "{command}");
+        assert_eq!(enabled(&clock, command), [true], "{command}");
+    }
+    for command in ["clock.tempo.step", "clock.bend"] {
+        assert_eq!(enabled(&main, command), [false, false], "{command}");
+        assert_eq!(enabled(&clock, command), [true, true], "{command}");
+    }
+    for stage in [&main, &clock] {
+        assert_eq!(enabled(stage, "clock.mode.set"), [true, true]);
+        assert_eq!(enabled(stage, "global.snap.toggle"), [true]);
+        assert_eq!(enabled(stage, "deck.sync.toggle"), [true, true]);
+    }
+}
+
+#[test]
+fn master_only_shows_the_tempo_master_while_it_is_chosen_automatically() {
+    assert_eq!(
+        enabled(&Stage::new(&state_named("main")), "deck.master.set"),
+        [false, false]
+    );
+    assert_eq!(
+        enabled(&Stage::new(&state_named("clock")), "deck.master.set"),
+        [true, true]
+    );
+    // Deck A of the start screen is empty, so it has no tempo to lead with.
+    let mut startup = state_named("startup");
+    startup.scene.engine.clock.auto = false;
+    assert_eq!(
+        enabled(&Stage::new(&startup), "deck.master.set"),
+        [false, false]
+    );
+}
+
+#[test]
+fn the_modes_of_the_clock_send_the_mode_they_name() {
+    let stage = Stage::new(&state_named("main"));
+    let mut modes: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "clock.mode.set")
+        .collect();
+    modes.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    for (control, mode) in modes.iter().zip([ClockMode::Auto, ClockMode::Master]) {
+        let actions = Stage::new(&state_named("main")).click(control.rect.center());
+        assert!(
+            actions.contains(&Action::Engine(Command::ClockModeSet { mode })),
+            "{actions:?}"
+        );
+    }
+}
+
+/// The filled rectangles of a frame in `color`.
+fn filled(shapes: &[ClippedShape], color: Color32) -> Vec<Rect> {
+    fn collect(shape: &Shape, color: Color32, out: &mut Vec<Rect>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, color, out)),
+            Shape::Rect(rect) if rect.fill == color => out.push(rect.rect),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in shapes {
+        collect(&clipped.shape, color, &mut out);
+    }
+    out
+}
+
+#[test]
+fn the_phase_meter_grows_from_its_centre_by_the_offset_of_the_beat() {
+    let tokens = platter_ui_egui::tokens::Tokens::load().unwrap();
+    let deck_b = tokens.all_colors["deck-b"];
+    // Behind and ahead by 0.12 of a beat, then on the beat.
+    let mut found = Vec::new();
+    for phase in [-0.12, 0.12, 0.0] {
+        let mut state = state_named("main");
+        state.scene.engine.decks[1].phase = Some(phase);
+        let mut stage = Stage::new(&state);
+        let (_, shapes) = stage.frame(Vec::new());
+        let sync = stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == "deck.sync.toggle")
+            .max_by(|first, second| first.rect.left().total_cmp(&second.rect.left()))
+            .unwrap();
+        // The bar is the thin one in the colour of the deck on the row of SYNC.
+        let bars: Vec<Rect> = filled(&shapes, deck_b)
+            .into_iter()
+            .filter(|rect| {
+                rect.height() < 6.0
+                    && rect.center().y > sync.rect.top()
+                    && rect.center().y < sync.rect.bottom()
+                    && rect.left() > sync.rect.right()
+            })
+            .collect();
+        found.push(bars);
+    }
+    let [behind, ahead, on] = [&found[0], &found[1], &found[2]];
+    assert_eq!(behind.len(), 1, "{behind:?}");
+    assert_eq!(ahead.len(), 1, "{ahead:?}");
+    assert!(on.is_empty(), "{on:?}");
+    let width = 0.12 * 120.0;
+    assert!((behind[0].width() - width).abs() < 0.01, "{behind:?}");
+    assert!((ahead[0].width() - width).abs() < 0.01, "{ahead:?}");
+    // Both start at the centre of the slot: one ends there, the other begins there.
+    assert!((behind[0].right() - ahead[0].left()).abs() < 0.01);
 }
 
 /// The first hotcue of deck A, which holds a cue in the sample scene.
@@ -833,6 +1002,15 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "deck.cue.select",
         "deck.cue.type.set",
         "deck.cue.delete",
+        "deck.sync.toggle",
+        "deck.master.set",
+        "clock.mode.set",
+        "clock.tempo.set",
+        "clock.tempo.step",
+        "clock.tap",
+        "clock.bend",
+        "global.snap.toggle",
+        "global.quantize.toggle",
         "mixer.gain.set",
         "mixer.eq.set",
         "mixer.eq.kill.toggle",

@@ -77,14 +77,14 @@ features = [
 id = "sync"
 title = "Sync"
 features = [
-  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "in_progress" },
-  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "in_progress" },
-  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "in_progress" },
+  { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels" },
+  { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels master_only" },
+  { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels the_phase_meter" },
   { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "in_progress" },
   { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "in_progress" },
   { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "in_progress" },
-  { id = "snap", name = "SNAP", milestone = "M3", status = "in_progress" },
-  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "in_progress" },
+  { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
+  { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
   { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
 ]
