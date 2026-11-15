@@ -293,6 +293,14 @@ fn aiff_with_id3(tag: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Silent MPEG-1 Layer III frames: 128 kbit/s, 44.1 kHz, stereo, no CRC, so 417 bytes each
+/// (ISO/IEC 11172-3, 2.4.2.3). Side information and main data are all zero: no audio bits.
+fn silent_mp3(frames: usize) -> Vec<u8> {
+    let mut frame = vec![0u8; 417];
+    frame[..4].copy_from_slice(&[0xFF, 0xFB, 0x90, 0x00]);
+    frame.repeat(frames)
+}
+
 fn cover_of(bytes: Vec<u8>, extension: &str) -> Cover {
     cover_bytes(bytes, Some(extension)).unwrap().unwrap()
 }
@@ -430,7 +438,7 @@ fn the_front_cover_is_preferred() {
 }
 
 #[test]
-fn reads_an_id3v2_picture_in_aiff_and_in_front_of_flac() {
+fn reads_an_id3v2_picture_in_aiff_and_in_front_of_flac_and_mp3() {
     let front = solid_png([12, 34, 56, 255]);
     let tag = id3v2(&[(FRONT_COVER, &front)]);
     let cover = cover_of(aiff_with_id3(&tag), "aiff");
@@ -445,6 +453,12 @@ fn reads_an_id3v2_picture_in_aiff_and_in_front_of_flac() {
         &[("TITLE", "Test tone")],
     ));
     let cover = cover_of(bytes, "flac");
+    assert_eq!(pixel(&cover, 0, 0), [12, 34, 56, 255]);
+
+    // And in front of MP3 frames, where the tag usually is.
+    let mut bytes = tag;
+    bytes.extend_from_slice(&silent_mp3(12));
+    let cover = cover_of(bytes, "mp3");
     assert_eq!(pixel(&cover, 0, 0), [12, 34, 56, 255]);
 }
 
@@ -468,6 +482,7 @@ fn a_file_without_a_picture_has_no_cover() {
         (wav_pcm16(RATE, 2, &SILENCE), "wav"),
         (aiff_pcm16(RATE, 2, &SILENCE), "aiff"),
         (flac_pcm16(RATE, 2, &SILENCE), "flac"),
+        (silent_mp3(12), "mp3"),
         (
             flac_pcm16_tagged(RATE, 2, &SILENCE, &[("TITLE", "Test tone")]),
             "flac",

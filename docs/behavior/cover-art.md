@@ -12,7 +12,7 @@ Sections of the reference manual, read on 15 November 2026:
 - *Overview*, section *Browser*
 
 The browser has an area, Cover Artwork, that shows the cover of the track selected in the
-track list. The header of a deck shows the cover of the track loaded in it.
+track list.
 
 A cover is imported for one track or a selection of tracks from a menu of the track list, by
 choosing an image file; the section names JPEG files. The cover is then stored in the track
@@ -30,8 +30,8 @@ in memory) and returns it decoded, or nothing when the file carries no picture.
   and in Ogg Vorbis) and the cover items of an M4A file. Every set of tags in the file is
   looked at, not only the last one.
 - **Which picture.** A picture marked as the front cover wins. Without one, the first picture
-  found is used. An M4A cover item is always taken as a front cover: the format has no other
-  kind.
+  found is used. The decoding library marks every cover item of an M4A file as a front
+  cover.
 - **Image formats.** JPEG and PNG, recognised by their content; the type the tag declares is
   ignored. A PNG keeps its transparency.
 - **Size.** The picture is scaled down to fit in 256 by 256 pixels, keeping its proportions; a
@@ -48,8 +48,8 @@ in memory) and returns it decoded, or nothing when the file carries no picture.
 - Platter only reads covers. Importing a cover into a file and deleting it are not
   implemented; they belong to the editing of tags, planned for later in M3.
 - PNG pictures are read as well as JPEG.
-- The decoding library reads no tags from WAV files, so a WAV file shows no cover, even with a
-  picture in an ID3 chunk.
+- The decoding library does not read the ID3 chunk of a WAV file, so a WAV file shows no
+  cover, even with a picture in that chunk.
 - Other image formats a tag may hold (GIF, BMP, WebP) are not decoded.
 
 ## Edge cases
@@ -74,11 +74,11 @@ No input makes reading a cover panic.
 `crates/decode/tests/cover.rs`. The pictures are built in the test: PNG files written by hand,
 and baseline JPEG files from a small encoder of flat 8 by 8 blocks. They are embedded in FLAC
 files synthesised in the test as a picture block and as a `METADATA_BLOCK_PICTURE` comment, and
-in an ID3v2 tag placed in front of a FLAC file and inside an AIFF file. The tests check the
-decoded size and pixels, the scaling, the choice of the front cover, damaged and oversized
-pictures and a file without a picture.
+in an ID3v2 tag placed in front of a FLAC file, in front of silent MP3 frames and inside an AIFF
+file. Reading a cover decodes no audio, so frames without audio bits are enough for MP3. The
+tests check the decoded size and pixels, the scaling, the choice of the front cover, damaged
+and oversized pictures and a file without a picture.
 
-MP3, M4A and Ogg Vorbis need an encoder to produce a valid file, and the project has none. For
-those three the reading of the picture was checked in the source of the decoding library, not
-by a test: MP3 shares the ID3v2 reader tested through AIFF and FLAC, and Ogg Vorbis the Vorbis
-comment reader tested through FLAC.
+M4A and Ogg Vorbis need an encoder to produce a valid file, and the project has none. For those
+two the reading of the picture was checked in the source of the decoding library, not by a
+test; Ogg Vorbis shares the Vorbis comment reader tested through FLAC.

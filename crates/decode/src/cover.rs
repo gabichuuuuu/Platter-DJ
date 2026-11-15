@@ -26,8 +26,9 @@ use crate::{DecodeError, guarded, open};
 /// Largest picture accepted, in bytes as stored in the file. A front cover is rarely above a
 /// few hundred kilobytes; this leaves room for print-quality scans.
 pub const MAX_PICTURE_BYTES: usize = 16 * 1024 * 1024;
-/// Longest side a picture may declare, in pixels. At this size the decoded picture takes
-/// 256 MiB, the most Platter reserves for one cover.
+/// Longest side a picture may declare, in pixels. At this size the decoded RGBA picture
+/// takes 256 MiB; the image decoders hold working memory on top of that while they decode,
+/// several times as much for a 16-bit PNG.
 pub const MAX_PICTURE_SIDE: usize = 8192;
 /// Longest side of a decoded cover, in pixels.
 pub const COVER_SIDE: usize = 256;
