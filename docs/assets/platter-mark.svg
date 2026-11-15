@@ -2,10 +2,9 @@
 <title>Platter</title>
 <rect width="128" height="128" fill="#111111"/>
 <g transform="translate(16 16)" fill="none" stroke="#ededed" stroke-linecap="round">
-<circle cx="48" cy="48" r="42" stroke-width="4"/>
-<circle cx="48" cy="48" r="32" stroke-width="2"/>
-<circle cx="48" cy="48" r="22" stroke-width="2"/>
-<circle cx="48" cy="48" r="6" fill="#ededed" stroke="none"/>
-<path d="M48 6v24" stroke-width="4"/>
+<circle cx="48" cy="48" r="41" stroke-width="8"/>
+<path d="M52.34 23.38A25 25 0 0 1 72.62 43.66" stroke-width="7"/>
+<path d="M43.66 72.62A25 25 0 0 1 23.38 52.34" stroke-width="7"/>
+<circle cx="48" cy="48" r="10" fill="#ededed" stroke="none"/>
 </g>
 </svg>

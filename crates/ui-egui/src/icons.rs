@@ -797,14 +797,16 @@ mod tests {
     }
 
     #[test]
-    fn the_mark_has_three_rings_a_filled_centre_and_a_line() {
+    fn the_mark_has_a_ring_two_arcs_and_a_filled_centre() {
         let mark = Mark::load().unwrap();
         assert_eq!(mark.view_box, 96.0);
-        assert_eq!(mark.outlines.len(), 5);
+        assert_eq!(mark.outlines.len(), 4);
         let widths: Vec<_> = mark.outlines.iter().map(|outline| outline.width).collect();
-        assert_eq!(widths, [Some(4.0), Some(2.0), Some(2.0), None, Some(4.0)]);
+        assert_eq!(widths, [Some(8.0), Some(7.0), Some(7.0), None]);
         let filled: Vec<_> = mark.outlines.iter().map(|outline| outline.filled).collect();
-        assert_eq!(filled, [false, false, false, true, false]);
+        assert_eq!(filled, [false, false, false, true]);
+        let closed: Vec<_> = mark.outlines.iter().map(|outline| outline.closed).collect();
+        assert_eq!(closed, [true, false, false, true]);
     }
 
     #[test]
