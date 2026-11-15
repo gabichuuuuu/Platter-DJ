@@ -44,6 +44,10 @@ pub struct Processor {
     crossfader_curve: CrossfaderCurve,
     /// The side of the crossfader each channel is on.
     crossfader_sides: [CrossfaderSide; 2],
+    /// The automatic fade the crossfader is in.
+    fade: Option<Fade>,
+    /// The length of one frame in minutes.
+    frame_minutes: f64,
     master_gain: Smoothed,
     limiter: Limiter,
     master_meter: PeakMeter,
@@ -78,6 +82,8 @@ impl Processor {
             crossfader_position: position,
             crossfader_curve: curve,
             crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
+            fade: None,
+            frame_minutes: 1.0 / (rate.as_f64() * 60.0),
             master_gain: parameter(1.0),
             limiter: Limiter::new(rate),
             master_meter: PeakMeter::new(rate),
@@ -214,12 +220,16 @@ impl Processor {
                 self.channels[deck.index()].pre_listen.set(target);
             }
             RtCommand::Crossfader { position } => {
+                self.fade = None;
                 self.crossfader_position = position;
                 self.retarget_crossfader();
             }
             RtCommand::CrossfaderCurve { curve } => {
                 self.crossfader_curve = curve;
                 self.retarget_crossfader();
+            }
+            RtCommand::CrossfaderFade { to, beats } => {
+                self.fade = (to != self.crossfader_position).then_some(Fade { to, beats });
             }
             RtCommand::CrossfaderAssign { deck, side } => {
                 self.crossfader_sides[deck.index()] = side;
@@ -251,6 +261,22 @@ impl Processor {
         }
     }
 
+    /// Moves the crossfader one frame of its automatic fade, at the tempo of the clock.
+    fn advance_fade(&mut self, bpm: f64) {
+        let Some(fade) = self.fade else {
+            return;
+        };
+        let step = (bpm * self.frame_minutes) as f32 / fade.beats;
+        let distance = fade.to - self.crossfader_position;
+        if distance.abs() <= step {
+            self.crossfader_position = fade.to;
+            self.fade = None;
+        } else {
+            self.crossfader_position += step.copysign(distance);
+        }
+        self.retarget_crossfader();
+    }
+
     /// The next frame of the master and of the headphones. Without headphones their frame
     /// is silence and their part of the path is skipped, parameter ramps included.
     fn next_frame(&mut self, with_headphones: bool) -> (Frame, Frame) {
@@ -260,6 +286,7 @@ impl Processor {
         let lead = master.and_then(|deck| self.channels[deck.index()].player.lead());
         let pulse = self.clock.tick(lead);
         let click = self.metronome.next(pulse.phase);
+        self.advance_fade(pulse.bpm);
         for (deck, channel) in DeckId::ALL.into_iter().zip(&mut self.channels) {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
@@ -332,6 +359,7 @@ impl Processor {
         let pulse = self.clock.pulse();
         self.shared.master.set(self.clock.master());
         self.shared.clock_bpm.set(pulse.bpm);
+        self.shared.crossfader.set(self.crossfader_position);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
             shared.key_lock.set(channel.player.is_key_locked());
@@ -361,4 +389,12 @@ impl Processor {
         self.shared.master_levels[1].set(levels[1]);
         self.shared.limiter_gain.set(self.limiter.gain());
     }
+}
+
+/// An automatic fade of the crossfader: where it goes and how many beats the whole travel
+/// takes.
+#[derive(Clone, Copy)]
+struct Fade {
+    to: f32,
+    beats: f32,
 }

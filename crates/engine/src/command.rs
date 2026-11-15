@@ -260,6 +260,18 @@ pub enum Command {
         deck: DeckId,
         side: CrossfaderSide,
     },
+    /// Moves the crossfader [`CROSSFADER_STEP`] of its travel towards a side.
+    MixerCrossfaderStep {
+        direction: CrossfaderDirection,
+    },
+    /// Moves the crossfader to an end by itself: `docs/behavior/mixer.md`.
+    MixerCrossfaderAutoFade {
+        direction: CrossfaderDirection,
+    },
+    /// How many beats of the master clock an automatic fade across the whole travel takes.
+    MixerCrossfaderFadeBeatsSet {
+        beats: f64,
+    },
     MasterGainSet {
         db: f64,
     },
@@ -386,6 +398,11 @@ const MIN_GAIN_DB: f64 = -90.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
+const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
+/// The part of the travel of the crossfader one step moves it.
+pub const CROSSFADER_STEP: f64 = 0.1;
+pub const MIN_FADE_BEATS: f64 = 1.0;
+pub const MAX_FADE_BEATS: f64 = 64.0;
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
 const BPM_SCALES: &[&str] = &["double", "half"];
@@ -446,6 +463,23 @@ impl Direction {
         match self {
             Self::Back => -1.0,
             Self::Forward => 1.0,
+        }
+    }
+}
+
+/// Which end of the crossfader a step or an automatic fade goes towards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CrossfaderDirection {
+    Left,
+    Right,
+}
+
+impl CrossfaderDirection {
+    /// The position of the crossfader at that end.
+    pub fn end(self) -> f64 {
+        match self {
+            Self::Left => 0.0,
+            Self::Right => 1.0,
         }
     }
 }
@@ -870,6 +904,27 @@ pub const SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "mixer.crossfader.step",
+        label: "Step the crossfader",
+        params: &[ParamSpec {
+            name: "direction",
+            kind: ParamKind::Choice(CROSSFADER_DIRECTIONS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.crossfader.auto_fade",
+        label: "Auto fade",
+        params: &[ParamSpec {
+            name: "direction",
+            kind: ParamKind::Choice(CROSSFADER_DIRECTIONS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.crossfader.fade_beats.set",
+        label: "Set the length of an auto fade",
+        params: &[number("beats", MIN_FADE_BEATS, MAX_FADE_BEATS)],
+    },
+    CommandSpec {
         id: "mixer.xfader_assign.set",
         label: "Assign to crossfader side",
         params: &[
@@ -1128,6 +1183,17 @@ impl Reader<'_> {
             _ => Err(CommandError::Value(ValueError::UnknownChoice {
                 name: "direction",
                 expected: "back, forward",
+            })),
+        }
+    }
+
+    fn crossfader_direction(&self) -> Result<CrossfaderDirection, CommandError> {
+        match self.text("direction")? {
+            "left" => Ok(CrossfaderDirection::Left),
+            "right" => Ok(CrossfaderDirection::Right),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "direction",
+                expected: "left, right",
             })),
         }
     }
@@ -1474,6 +1540,15 @@ impl Command {
             "mixer.crossfader.curve.set" => Self::MixerCrossfaderCurveSet {
                 curve: CrossfaderCurve::parse(read.text("curve")?)?,
             },
+            "mixer.crossfader.step" => Self::MixerCrossfaderStep {
+                direction: read.crossfader_direction()?,
+            },
+            "mixer.crossfader.auto_fade" => Self::MixerCrossfaderAutoFade {
+                direction: read.crossfader_direction()?,
+            },
+            "mixer.crossfader.fade_beats.set" => Self::MixerCrossfaderFadeBeatsSet {
+                beats: read.number("beats")?,
+            },
             "mixer.xfader_assign.set" => Self::MixerCrossfaderAssign {
                 deck: read.deck()?,
                 side: CrossfaderSide::parse(read.text("side")?)?,
@@ -1544,6 +1619,9 @@ impl Command {
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
             Self::MixerCrossfaderAssign { .. } => "mixer.xfader_assign.set",
+            Self::MixerCrossfaderStep { .. } => "mixer.crossfader.step",
+            Self::MixerCrossfaderAutoFade { .. } => "mixer.crossfader.auto_fade",
+            Self::MixerCrossfaderFadeBeatsSet { .. } => "mixer.crossfader.fade_beats.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",

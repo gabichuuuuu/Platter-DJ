@@ -13,6 +13,10 @@ const ORDER: Ordering = Ordering::Relaxed;
 pub struct AtomicF32(AtomicU32);
 
 impl AtomicF32 {
+    fn new(value: f32) -> Self {
+        Self(AtomicU32::new(value.to_bits()))
+    }
+
     pub fn get(&self) -> f32 {
         f32::from_bits(self.0.load(ORDER))
     }
@@ -128,6 +132,8 @@ pub struct Shared {
     pub master: MasterChoice,
     /// Tempo the decks follow, in beats per minute.
     pub clock_bpm: AtomicF64,
+    /// Where the crossfader is, which an automatic fade moves.
+    pub crossfader: AtomicF32,
     /// Peak level of the left and the right side of the master output, linear.
     pub master_levels: [AtomicF32; 2],
     /// Gain the limiter is applying: one when it is idle, lower while it works. It reads
@@ -141,6 +147,7 @@ impl Default for Shared {
             decks: Default::default(),
             master: MasterChoice::default(),
             clock_bpm: AtomicF64::new(INITIAL_BPM),
+            crossfader: AtomicF32::new(0.5),
             master_levels: Default::default(),
             limiter_gain: AtomicF32::default(),
         }

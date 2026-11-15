@@ -10,8 +10,8 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
-    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderSide, CueStep, Direction,
-    MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
+    CueStep, Direction, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -67,6 +67,11 @@ fn later_command() -> impl Strategy<Value = Command> {
         deck().prop_map(|deck| Command::MixerGainRestore { deck }),
         (deck(), prop::sample::select(CrossfaderSide::ALL.to_vec()))
             .prop_map(|(deck, side)| Command::MixerCrossfaderAssign { deck, side }),
+        prop::sample::select(vec![CrossfaderDirection::Left, CrossfaderDirection::Right])
+            .prop_map(|direction| Command::MixerCrossfaderStep { direction }),
+        prop::sample::select(vec![CrossfaderDirection::Left, CrossfaderDirection::Right])
+            .prop_map(|direction| Command::MixerCrossfaderAutoFade { direction }),
+        number().prop_map(|beats| Command::MixerCrossfaderFadeBeatsSet { beats }),
         prop::strategy::Just(Command::MixerAutogainToggle),
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),

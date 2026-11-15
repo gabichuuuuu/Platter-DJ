@@ -20,9 +20,10 @@ use platter_dsp::eq::{Band, band_gain};
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
-    ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
-    MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
-    MAX_SEEK_SECONDS, MoveMode, MoveSize, SizeStep, SyncMode,
+    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
+    MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS,
+    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MoveMode, MoveSize, SizeStep,
+    SyncMode,
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
@@ -140,6 +141,8 @@ pub struct MixerControls {
     pub crossfader_curve: CrossfaderCurve,
     /// The side of the crossfader each channel is on, deck A first.
     pub crossfader_sides: [CrossfaderSide; 2],
+    /// Beats of the master clock an automatic fade across the whole travel takes.
+    pub fade_beats: f64,
     pub master_gain_db: f64,
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
@@ -155,6 +158,7 @@ impl Default for MixerControls {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
             crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
+            fade_beats: 8.0,
             master_gain_db: 0.0,
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
@@ -347,6 +351,9 @@ pub struct Engine {
     quantize: bool,
     metronome: bool,
     clock_tap: TapTempo,
+    /// An automatic fade was started and nothing has set the crossfader since: the
+    /// processor knows where it is.
+    crossfading: bool,
     /// Swaps sent whose retired item has not come back yet.
     swaps_in_flight: usize,
     /// Load workers that have not sent their last report.
@@ -378,6 +385,7 @@ impl Engine {
             quantize: false,
             metronome: false,
             clock_tap: TapTempo::default(),
+            crossfading: false,
             swaps_in_flight: 0,
             loads_running: 0,
             finished_loads,
@@ -403,10 +411,15 @@ impl Engine {
             }
             engine.decks[deck.index()].controls = controls;
         }
-        for command in previous.mixer.as_commands() {
+        // A running fade stops where the crossfader is.
+        let mixer = MixerControls {
+            crossfader: previous.crossfader(),
+            ..previous.mixer.clone()
+        };
+        for command in mixer.as_commands() {
             let _ = engine.send(command);
         }
-        engine.mixer = previous.mixer.clone();
+        engine.mixer = mixer;
         let published = &previous.ends.shared;
         let mut clock = vec![
             RtCommand::ClockAuto {
@@ -819,10 +832,28 @@ impl Engine {
         match command {
             Command::MixerCrossfaderSet { position } => {
                 let position = ValueError::check("position", position, 0.0, 1.0)?;
-                self.send(RtCommand::Crossfader {
-                    position: position as f32,
+                self.set_crossfader(position)?;
+            }
+            Command::MixerCrossfaderStep { direction } => {
+                let towards = direction.end();
+                let from = self.crossfader();
+                let position = if towards > from {
+                    (from + CROSSFADER_STEP).min(towards)
+                } else {
+                    (from - CROSSFADER_STEP).max(towards)
+                };
+                self.set_crossfader(position)?;
+            }
+            Command::MixerCrossfaderAutoFade { direction } => {
+                self.send(RtCommand::CrossfaderFade {
+                    to: direction.end() as f32,
+                    beats: self.mixer.fade_beats as f32,
                 })?;
-                self.mixer.crossfader = position;
+                self.crossfading = true;
+            }
+            Command::MixerCrossfaderFadeBeatsSet { beats } => {
+                let beats = ValueError::check("beats", beats, MIN_FADE_BEATS, MAX_FADE_BEATS)?;
+                self.mixer.fade_beats = beats;
             }
             Command::MixerCrossfaderCurveSet { curve } => {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
@@ -865,6 +896,24 @@ impl Engine {
             _ => {}
         }
         Ok(())
+    }
+
+    fn set_crossfader(&mut self, position: f64) -> Result<(), EngineError> {
+        self.send(RtCommand::Crossfader {
+            position: position as f32,
+        })?;
+        self.mixer.crossfader = position;
+        self.crossfading = false;
+        Ok(())
+    }
+
+    /// Where the crossfader is: during an automatic fade, as the processor last reported.
+    fn crossfader(&self) -> f64 {
+        if self.crossfading {
+            f64::from(self.ends.shared.crossfader.get())
+        } else {
+            self.mixer.crossfader
+        }
     }
 
     fn set_gain(&mut self, deck: DeckId, db: f64) -> Result<(), EngineError> {
@@ -1102,7 +1151,10 @@ impl Engine {
         };
         Snapshot {
             decks: [deck(DeckId::A), deck(DeckId::B)],
-            mixer: self.mixer.clone(),
+            mixer: MixerControls {
+                crossfader: self.crossfader(),
+                ..self.mixer.clone()
+            },
             clock: ClockSnapshot {
                 auto: self.clock_auto,
                 sync_mode: self.sync_mode,

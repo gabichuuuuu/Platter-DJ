@@ -2,7 +2,8 @@
 
 The mixer channels, the crossfader and the headphone output. M1 delivered gain, equaliser,
 filter, fader and crossfader; M2 adds the kill buttons, pan, pre-listening and the controls of
-the interface; M3 adds the assignment of a channel to a side of the crossfader.
+the interface; M3 adds the assignment of a channel to a side of the crossfader and the step
+and automatic fades of the crossfader.
 
 ## What the public manual says
 
@@ -23,7 +24,10 @@ the level and a mix knob sets the balance between the cued channels and the main
 one way the cued channels, turned the other way the main mix. The crossfader blends the two
 sides, and a preference shapes its curve continuously from smooth to sharp. Assign buttons
 put a channel on the left or the right side of the crossfader, so it is heard when the
-crossfader is on that side. The preferences
+crossfader is on that side. Fade buttons move the crossfader step by step towards a side, and
+auto fade buttons move it by itself from one side to the other; a preference of the mixer
+page sets the time the automatic crossfade takes (*Preferences*, section *Mixer page*, read
+on 15 November 2026). The manual gives neither the size of a step nor the unit of that time. The preferences
 also offer several equaliser types and filter types. The section of the manual on the mixer
 channel does not describe the one-knob filter; the behaviour below (low-pass one way,
 high-pass the other) is Platter's own definition.
@@ -48,6 +52,9 @@ pre-listened channel after its filter and before its fader.
 | `mixer.cue.volume.set` | Headphone volume in decibels, silence to +12 dB |
 | `mixer.crossfader.set` | Position, 0 (left side alone) to 1 (right side alone) |
 | `mixer.crossfader.curve.set` | `smooth` (equal power), `linear` or `sharp` |
+| `mixer.crossfader.step` | `direction` `left` or `right`: moves the crossfader a tenth of its travel that way |
+| `mixer.crossfader.auto_fade` | `direction` `left` or `right`: moves the crossfader to that end by itself |
+| `mixer.crossfader.fade_beats.set` | `beats` 1 to 64: how long an automatic fade across the whole travel takes |
 | `mixer.xfader_assign.set` | `side` of the crossfader the channel is on: `left`, `thru` or `right` |
 
 - Every parameter follows a 10 ms ramp; none of them steps. That includes the kill buttons
@@ -66,6 +73,15 @@ pre-listened channel after its filter and before its fader.
   blended them. A channel on a side gets the gain the curve gives that side; a channel on
   `thru` passes at full level wherever the crossfader is. Both channels can be on the same
   side, and then the crossfader fades both together. The change follows the 10 ms ramp.
+- An automatic fade moves the crossfader at a steady speed: the whole travel in the number of
+  beats set, 8 to begin with, at the tempo of the master clock (`docs/behavior/sync.md`); from
+  the centre it takes half of that. It follows the clock when the tempo changes during the
+  fade, and stops at the end. It runs on the audio thread, so it is as smooth as a ramp.
+- During an automatic fade the snapshot shows where the crossfader is. `mixer.crossfader.set`
+  or a step stops the fade where the crossfader is and acts from there; another automatic
+  fade turns it to its own end. An automatic fade towards the end the crossfader is at does
+  nothing.
+- A step goes from where the crossfader is, during a fade too, and stops at the end.
 - The assignment acts on the master only: pre-listening in the headphones is before the
   fader and the crossfader.
 - The meter of a channel reads the peak of each side after the fader and the pan.
@@ -86,6 +102,12 @@ pre-listened channel after its filter and before its fader.
   bypasses the crossfader. The design system draws it as a three-way control under each
   fader; the window has no such control yet, it comes with the next change to the mixer
   panel.
+- A step is a tenth of the travel and the time of an automatic fade is counted in beats of
+  the master clock, so a fade ends on the beat count the DJ chose at any tempo; the manual
+  says neither. The keys for steps and fades come with the next change to the mixer panel.
+- The Fade In and Fade Out markers that start an automatic crossfade in the reference product
+  are not part of this: the fade and load cue types are labels only
+  (`docs/behavior/cues.md`).
 
 ## Edge cases
 
@@ -99,7 +121,9 @@ pre-listened channel after its filter and before its fader.
 | A channel on a side with the crossfader fully on the other one | The channel is exactly silent on the master |
 | A channel on `thru` | It passes bit for bit at every crossfader position and curve |
 | A `side` other than `left`, `thru` or `right` | The command is rejected |
-| A change of sample rate of the audio device | The assignment is kept |
+| A change of sample rate of the audio device | The assignment and the length of a fade are kept; a running fade stops where it is |
+| A step past an end, or an automatic fade towards the end it is at | The crossfader stays at the end |
+| `direction` other than `left` or `right`, `beats` outside 1 to 64 | The command is rejected |
 | Pre-listening or a headphone test tone on a device with two outputs | Nothing reaches the outputs |
 | Everything turned up in the headphones | The output stays inside full scale |
 
@@ -107,4 +131,5 @@ pre-listened channel after its filter and before its fader.
 
 `crates/dsp/src/eq.rs`, `crates/dsp/src/filter.rs`, `crates/dsp/src/crossfade.rs`,
 `crates/dsp/src/balance.rs`, `crates/engine/tests/mixer.rs` and
-`crates/engine/tests/monitoring.rs`.
+`crates/engine/tests/monitoring.rs`; the steps and the automatic fades in
+`crates/engine/tests/crossfade.rs`.

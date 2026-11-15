@@ -219,6 +219,11 @@ pub enum RtCommand {
         deck: DeckId,
         side: CrossfaderSide,
     },
+    /// Moves the crossfader to `to` by itself, the whole travel in `beats` of the clock.
+    CrossfaderFade {
+        to: f32,
+        beats: f32,
+    },
     MasterGain {
         linear: f32,
     },

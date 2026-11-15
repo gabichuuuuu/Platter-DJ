@@ -19,8 +19,8 @@ pub use analyser::{
     AUTOGAIN_LUFS, AnalysedTempo, Analyser, MAX_AUTOGAIN_DB, PlatterAnalyser, TrackAnalysis,
 };
 pub use command::{
-    BpmScale, ClockMode, Command, CommandError, CueStep, Direction, MoveMode, MoveSize, SizeStep,
-    SyncMode,
+    BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
+    Direction, MAX_FADE_BEATS, MIN_FADE_BEATS, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
