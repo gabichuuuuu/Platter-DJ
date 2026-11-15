@@ -22,15 +22,17 @@ pub enum SettingsPage {
     #[default]
     Audio,
     General,
+    Mixer,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 2] = [Self::Audio, Self::General];
+    pub const ALL: [Self; 3] = [Self::Audio, Self::General, Self::Mixer];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Audio => "audio",
             Self::General => "general",
+            Self::Mixer => "mixer",
         }
     }
 }

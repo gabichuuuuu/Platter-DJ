@@ -9,7 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
-use platter_engine::CrossfaderCurve;
+use platter_engine::{CrossfaderCurve, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode};
 use platter_ui_egui::command::MAX_OUTPUTS;
 use platter_ui_egui::i18n::Language;
 
@@ -59,6 +59,13 @@ pub struct Settings {
     pub buffer_frames: u32,
     pub routing: Routing,
     pub crossfader_curve: CrossfaderCurve,
+    /// The settings of the Mixer page: `docs/behavior/settings.md`.
+    pub mixer_mode: MixerMode,
+    pub autogain: bool,
+    pub external_eq_gain: bool,
+    pub external_master_volume: bool,
+    /// Beats of an automatic fade across the whole travel of the crossfader.
+    pub fade_beats: u32,
     /// The folder the file selector showed last.
     pub folder: Option<PathBuf>,
     /// Folders shown as roots of the file selector beside the home folder, such as a
@@ -75,6 +82,11 @@ impl Default for Settings {
             buffer_frames: 256,
             routing: Routing::default(),
             crossfader_curve: CrossfaderCurve::default(),
+            mixer_mode: MixerMode::Internal,
+            autogain: true,
+            external_eq_gain: false,
+            external_master_volume: false,
+            fade_beats: 8,
             folder: None,
             roots: Vec::new(),
         }
@@ -95,6 +107,7 @@ impl Settings {
         let number = |table: Option<&toml::Table>, name: &str| {
             u32::try_from(table?.get(name)?.as_integer()?).ok()
         };
+        let flag = |table: Option<&toml::Table>, name: &str| table?.get(name)?.as_bool();
         let audio = table("audio");
         let routing = audio
             .and_then(|audio| audio.get("routing"))
@@ -129,6 +142,17 @@ impl Settings {
             crossfader_curve: text(table("mixer"), "crossfader_curve")
                 .and_then(|name| CrossfaderCurve::parse(&name).ok())
                 .unwrap_or(defaults.crossfader_curve),
+            mixer_mode: text(table("mixer"), "mode")
+                .and_then(|name| MixerMode::ALL.into_iter().find(|mode| mode.name() == name))
+                .unwrap_or(defaults.mixer_mode),
+            autogain: flag(table("mixer"), "autogain").unwrap_or(defaults.autogain),
+            external_eq_gain: flag(table("mixer"), "external_eq_gain")
+                .unwrap_or(defaults.external_eq_gain),
+            external_master_volume: flag(table("mixer"), "external_master_volume")
+                .unwrap_or(defaults.external_master_volume),
+            fade_beats: number(table("mixer"), "fade_beats")
+                .filter(|beats| (MIN_FADE_BEATS..=MAX_FADE_BEATS).contains(&f64::from(*beats)))
+                .unwrap_or(defaults.fade_beats),
             folder: text(table("browser"), "folder")
                 .filter(|folder| !folder.is_empty())
                 .map(PathBuf::from),
@@ -172,6 +196,18 @@ impl Settings {
             "crossfader_curve".to_owned(),
             toml::Value::String(self.crossfader_curve.name().to_owned()),
         );
+        mixer.insert(
+            "mode".to_owned(),
+            toml::Value::String(self.mixer_mode.name().to_owned()),
+        );
+        for (name, on) in [
+            ("autogain", self.autogain),
+            ("external_eq_gain", self.external_eq_gain),
+            ("external_master_volume", self.external_master_volume),
+        ] {
+            mixer.insert(name.to_owned(), toml::Value::Boolean(on));
+        }
+        mixer.insert("fade_beats".to_owned(), integer(self.fade_beats));
         let mut root = toml::Table::new();
         root.insert(
             "language".to_owned(),
@@ -225,7 +261,7 @@ mod tests {
     use std::path::PathBuf;
 
     use platter_audio_io::Routing;
-    use platter_engine::CrossfaderCurve;
+    use platter_engine::{CrossfaderCurve, MixerMode};
     use platter_ui_egui::i18n::Language;
 
     use super::Settings;
@@ -242,6 +278,11 @@ mod tests {
                 headphones: [0, 1],
             },
             crossfader_curve: CrossfaderCurve::Sharp,
+            mixer_mode: MixerMode::External,
+            autogain: false,
+            external_eq_gain: true,
+            external_master_volume: true,
+            fade_beats: 32,
             folder: Some(PathBuf::from("music").join("sets")),
             roots: vec![PathBuf::from("records"), PathBuf::from("more records")],
         };
@@ -256,7 +297,8 @@ mod tests {
     fn what_cannot_be_used_falls_back_to_its_default_one_setting_at_a_time() {
         let source = "language = \"fr\"\n[audio]\ndevice = \"\"\nsample_rate = 12345\n\
                       buffer_frames = 512\n[audio.routing]\nmaster_left = 900\nmaster_right = 5\n\
-                      [mixer]\ncrossfader_curve = 7\n";
+                      [mixer]\ncrossfader_curve = 7\nmode = \"hardware\"\nautogain = \"no\"\n\
+                      external_eq_gain = true\nfade_beats = 65\n";
         let settings = Settings::parse(source);
         let defaults = Settings::default();
         assert_eq!(settings.language, defaults.language);
@@ -267,6 +309,10 @@ mod tests {
         assert_eq!(settings.routing.master, [0, 5]);
         assert_eq!(settings.routing.headphones, [2, 3]);
         assert_eq!(settings.crossfader_curve, defaults.crossfader_curve);
+        assert_eq!(settings.mixer_mode, defaults.mixer_mode);
+        assert_eq!(settings.autogain, defaults.autogain);
+        assert!(settings.external_eq_gain);
+        assert_eq!(settings.fade_beats, defaults.fade_beats);
     }
 
     #[test]

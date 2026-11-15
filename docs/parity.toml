@@ -274,7 +274,7 @@ features = [
   { id = "output-routing", name = "Output routing", milestone = "M3", status = "planned" },
   { id = "loading", name = "Loading", milestone = "M3", status = "planned" },
   { id = "transport", name = "Transport", milestone = "M3", status = "planned" },
-  { id = "mixer", name = "Mixer", milestone = "M3", status = "planned" },
+  { id = "mixer", name = "Mixer", milestone = "M3", status = "in_progress" },
   { id = "global", name = "Global settings", milestone = "M3", status = "planned" },
   { id = "browser", name = "Browser", milestone = "M3", status = "planned" },
   { id = "file-management", name = "File management", milestone = "M3", status = "planned" },

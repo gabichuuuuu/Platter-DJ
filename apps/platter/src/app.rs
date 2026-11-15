@@ -139,6 +139,7 @@ impl PlatterApp {
         app.open_audio(Some(source_of(processor)));
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
+        app.apply_mixer_settings();
         app
     }
 
@@ -283,12 +284,84 @@ impl PlatterApp {
                     }
                     _ => {}
                 }
-                let id = command.id();
-                if let Err(error) = self.engine.dispatch(command) {
-                    self.log(Level::Warning, &format!("{id}: {error}"));
+                let mixer_setting = matches!(
+                    command,
+                    Command::MixerModeSet { .. }
+                        | Command::MixerAutogainToggle
+                        | Command::MixerExternalEqGainToggle
+                        | Command::MixerExternalMasterVolumeToggle
+                        | Command::MixerCrossfaderFadeBeatsSet { .. }
+                );
+                self.dispatch_engine(command);
+                if mixer_setting {
+                    self.keep_mixer_settings();
                 }
             }
             Action::App(command) => self.dispatch_app(command),
+        }
+    }
+
+    fn dispatch_engine(&mut self, command: Command) {
+        let id = command.id();
+        if let Err(error) = self.engine.dispatch(command) {
+            self.log(Level::Warning, &format!("{id}: {error}"));
+        }
+    }
+
+    /// Brings the mixer of the engine to the settings of the Mixer page.
+    fn apply_mixer_settings(&mut self) {
+        let mixer = self.engine.snapshot().mixer;
+        let settings = &self.settings;
+        let mut commands = vec![
+            Command::MixerModeSet {
+                mode: settings.mixer_mode,
+            },
+            Command::MixerCrossfaderFadeBeatsSet {
+                beats: f64::from(settings.fade_beats),
+            },
+        ];
+        for (now, wanted, toggle) in [
+            (
+                mixer.autogain,
+                settings.autogain,
+                Command::MixerAutogainToggle,
+            ),
+            (
+                mixer.external_eq_gain,
+                settings.external_eq_gain,
+                Command::MixerExternalEqGainToggle,
+            ),
+            (
+                mixer.external_master_volume,
+                settings.external_master_volume,
+                Command::MixerExternalMasterVolumeToggle,
+            ),
+        ] {
+            if now != wanted {
+                commands.push(toggle);
+            }
+        }
+        for command in commands {
+            self.dispatch_engine(command);
+        }
+    }
+
+    /// Keeps the settings of the Mixer page as the engine has them, whatever changed them:
+    /// the page, a shortcut or a controller.
+    fn keep_mixer_settings(&mut self) {
+        let mixer = self.engine.snapshot().mixer;
+        let kept = Settings {
+            mixer_mode: mixer.mode,
+            autogain: mixer.autogain,
+            external_eq_gain: mixer.external_eq_gain,
+            external_master_volume: mixer.external_master_volume,
+            // A length set by a command between whole beats is saved to the nearest one.
+            fade_beats: mixer.fade_beats.round() as u32,
+            ..self.settings.clone()
+        };
+        if kept != self.settings {
+            self.settings = kept;
+            self.save_settings();
         }
     }
 
@@ -384,6 +457,7 @@ impl PlatterApp {
         self.set_language(self.settings.language);
         let curve = self.settings.crossfader_curve;
         self.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
+        self.apply_mixer_settings();
         self.reopen_audio();
     }
 

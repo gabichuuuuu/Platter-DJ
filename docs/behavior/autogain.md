@@ -75,8 +75,10 @@ it aims at.
 - The analysis does not yet offer to measure the gain alone, nor to replace the value of a
   locked track: the value is always measured on load, and the grid lock does not keep it.
 - The method and the level, -10 LUFS, are Platter's: the manual names neither.
-- The window has no autogain key and no restore key yet; they come with the next change to
-  the mixer panel. The commands work from the command line and from mappings.
+- Autogain is switched on and off on the Mixer page of the preferences
+  (`docs/behavior/settings.md`), which keeps the choice in the settings file. The mixer has
+  no restore key yet; it comes with the next change to the mixer panel. The commands work
+  from the command line and from mappings too.
 - In external mixer mode autogain acts through the gain of the channel, so only while the
   gain and equaliser option of that mode is on (`docs/behavior/external-mixer.md`); the
   reference product has an autogain option of its own for that mode.

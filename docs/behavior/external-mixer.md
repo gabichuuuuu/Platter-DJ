@@ -66,8 +66,10 @@ deck (`docs/behavior/beatgrid.md`).
 - The option for mixer effects waits for the effects (M4). The limiter is always on and has
   no headroom setting.
 - Autogain has no option of its own in external mode: it follows the gain, as above.
-- The commands exist; the window has no control for the mode yet. It comes with the audio
-  page of the settings.
+- The mode and both options are on the Mixer page of the preferences
+  (`docs/behavior/settings.md`), which keeps them in the settings file. The design system
+  collapses the mixer panel to the controls that still act in external mode; the panel does
+  not do that yet, it comes with the next change to the mixer panel.
 - Measured only with synthesised signals in the tests. It has not run on a device with four
   outputs feeding a hardware mixer.
 

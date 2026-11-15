@@ -88,16 +88,18 @@ its own code, graphics and sounds.
 - The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
   the headphones, so a device with two channels does not play it, and nobody has listened to
   it against a real track (`docs/behavior/beatgrid.md`).
-- Autogain is on and sets the gain of a channel when a track is analysed, but the window has
-  no key to switch it off or to restore it yet, the value is measured again on each load, and
-  nobody has listened to its level, -10 LUFS (`docs/decisions/0029-autogain-level.md`).
+- Autogain is on and sets the gain of a channel when a track is analysed. It is switched off
+  on the Mixer page of the preferences; the mixer has no key to restore it yet, the value is
+  measured again on each load, and nobody has listened to its level, -10 LUFS
+  (`docs/decisions/0029-autogain-level.md`).
 - The assignment of a channel to a side of the crossfader, its steps and its automatic fade
-  exist in the engine only: the mixer has no controls for them yet, and nobody has listened
-  to a fade (`docs/behavior/mixer.md`).
-- External mixer mode, each deck on its own pair of outputs, exists in the engine only: the
-  settings have no control for it yet, deck A takes the master outputs of the routing and
-  deck B the headphone ones, and it has not run on a device with four outputs feeding a
-  hardware mixer (`docs/behavior/external-mixer.md`).
+  have no controls in the mixer yet; the length of the fade is set on the Mixer page of the
+  preferences. Nobody has listened to a fade (`docs/behavior/mixer.md`).
+- External mixer mode, each deck on its own pair of outputs, is chosen on the Mixer page of
+  the preferences. Deck A takes the master outputs of the routing and deck B the headphone
+  ones, the mixer panel does not collapse to the controls that still act, and it has not run
+  on a device with four outputs feeding a hardware mixer
+  (`docs/behavior/external-mixer.md`).
 - Flux and reverse exist in the engine only: the window has no buttons and no marker for
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).
