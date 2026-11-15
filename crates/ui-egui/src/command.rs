@@ -227,7 +227,7 @@ const fn choice(name: &'static str, choices: &'static [&'static str]) -> ParamSp
     }
 }
 
-const PAGES: &[&str] = &["audio", "general"];
+const PAGES: &[&str] = &["audio", "general", "mixer"];
 const LANGUAGES: &[&str] = &["en", "es"];
 const SLOTS: &[&str] = &[
     "master_left",
@@ -475,7 +475,7 @@ impl AppCommand {
                     "page",
                     &SettingsPage::ALL,
                     SettingsPage::name,
-                    "audio, general",
+                    "audio, general, mixer",
                 )?,
             },
             "app.settings.close" => Self::SettingsClose,
@@ -632,7 +632,7 @@ mod tests {
 
     use platter_engine::command::{Args, CommandError, CommandSpec, ParamKind, Value};
 
-    use super::{APP_SPECS, Action, AppCommand};
+    use super::{APP_SPECS, Action, AppCommand, PAGES, SettingsPage};
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
     fn sample_args(spec: &CommandSpec) -> Args {
@@ -665,6 +665,12 @@ mod tests {
             );
             assert!(!spec.label.is_empty());
         }
+    }
+
+    #[test]
+    fn the_choices_a_specification_lists_name_every_value() {
+        let pages: Vec<_> = SettingsPage::ALL.into_iter().map(SettingsPage::name).collect();
+        assert_eq!(pages, PAGES);
     }
 
     #[test]
