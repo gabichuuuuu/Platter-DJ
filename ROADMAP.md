@@ -81,13 +81,22 @@ until it is done and its result is written in the note or the decision it names:
   `docs/decisions/0026-midi-in-the-application.md`).
 - **Listening with real tracks.** Key lock, including the attack of kicks and the start of
   each pass of a short loop (`docs/decisions/0021-key-lock-stretch.md`); sync and the master
-  clock; loops, beatjump and hotcues. Until then the README says nobody has listened to them.
+  clock; loops, beatjump and hotcues; flux and reverse (`docs/decisions/0030-flux-and-reverse.md`);
+  a transposed deck, its change of shift and the untransposed bridge after a jump
+  (`docs/decisions/0031-transposition.md`); the level autogain aims at
+  (`docs/decisions/0029-autogain-level.md`); the step and the automatic fade of the crossfader
+  (`docs/behavior/mixer.md`). Until then the README says nobody has listened to them.
+- **An audio device with four outputs.** The beat tick and the metronome in the headphones
+  against a real track (`docs/behavior/beatgrid.md`, `docs/behavior/sync.md`), and external
+  mixer mode feeding a hardware mixer (`docs/behavior/external-mixer.md`).
 - **An audio device at 96 kHz.** Key lock in the callback at that rate.
 - **Tracks with known tempo and key.** The measurement of tempo, beatgrid and key detection
   that the decisions of this milestone ask for, on a corpus kept outside the repository.
 - **A real music collection.** The time and the result of importing a large folder; links
   on Windows, which need a privilege to create and were checked by hand with a junction only
   (`docs/decisions/0023-folder-import.md`).
+- **A look at the real window.** Full screen and the tooltips of the keys, which the tests
+  draw without a window (`docs/behavior/interface.md`).
 - **macOS and Linux machines.** Everything above runs on Windows; the other systems only build
   and pass the tests in CI.
 
