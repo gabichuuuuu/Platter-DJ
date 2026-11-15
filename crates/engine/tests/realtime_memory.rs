@@ -19,6 +19,10 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn commands() -> Vec<Command> {
     use DeckId::{A, B};
     vec![
+        // Key lock on both decks, so what follows runs through the stretch: its jumps,
+        // loops, sync and tempo changes, from a 48 kHz and a 44.1 kHz track.
+        Command::DeckKeyLockToggle { deck: A },
+        Command::DeckKeyLockToggle { deck: B },
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },
         Command::DeckTempoSet {
@@ -293,8 +297,18 @@ fn commands() -> Vec<Command> {
         hotcue(4, false),
         Command::DeckSyncToggle { deck: B },
         Command::DeckEject { deck: B },
+        Command::DeckKeyLockToggle { deck: A },
         Command::DeckPause { deck: A },
     ]
+}
+
+/// Frequency of a sine from its rising zero crossings.
+fn frequency(samples: &[f32]) -> f64 {
+    let rising: Vec<usize> = (1..samples.len())
+        .filter(|&i| samples[i - 1] < 0.0 && samples[i] >= 0.0)
+        .collect();
+    let span = (rising[rising.len() - 1] - rising[0]) as f64;
+    (rising.len() - 1) as f64 * f64::from(RATE) / span
 }
 
 fn hotcue(number: usize, pressed: bool) -> Command {
@@ -338,6 +352,33 @@ fn process_neither_allocates_nor_frees() {
     run(&mut rig, 120);
     rig.send(Command::DeckEject { deck: DeckId::A });
     run(&mut rig, 5);
+
+    // Key lock engaged for long enough to hold, with no jump: its pitch shows that the
+    // stretch played what was counted.
+    rig.load(DeckId::A, sine_file("memory-d", 440.0, 3.0, 0.5, RATE));
+    rig.send(Command::DeckKeyLockToggle { deck: DeckId::A });
+    rig.send(Command::DeckTempoSet {
+        deck: DeckId::A,
+        ratio: 1.08,
+    });
+    rig.send(Command::DeckPlay { deck: DeckId::A });
+    let mut heard = Vec::new();
+    for _ in 0..60 {
+        let (_, counted) = count(|| rig.processor.process(&mut block, 4));
+        events += counted;
+        heard.extend(block.iter().step_by(4).copied());
+    }
+    let hz = frequency(&heard[RATE as usize / 10..]);
+    assert!(
+        (1200.0 * (hz / 440.0).log2()).abs() < 5.0,
+        "key lock did not hold: {hz:.2} Hz"
+    );
+    // The track and its stretch go back to this thread too.
+    rig.send(Command::DeckEject { deck: DeckId::A });
+    for _ in 0..5 {
+        let (_, counted) = count(|| rig.processor.process(&mut block, 4));
+        events += counted;
+    }
 
     assert_eq!(
         events, 0,

@@ -78,8 +78,11 @@ its own code, graphics and sounds.
 - The metronome of the master clock has no key in the window yet: `clock.metronome.toggle`
   switches it from the command line. It clicks on the headphones only, so a device with two
   outputs does not play it, and nobody has listened to it.
-- No key lock, no collection, no MIDI: those are milestone M3.
-  Changing the tempo changes the pitch.
+- Key lock exists in the engine only: the window has no key for it yet. It softens the
+  attack of kicks, the first milliseconds after a jump play with the pitch following the
+  speed, a track below 32 kHz plays without it, and nobody has listened to it; only
+  synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
+- No collection, no MIDI: those are milestone M3.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 

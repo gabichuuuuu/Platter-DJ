@@ -129,9 +129,9 @@ impl Processor {
 
     fn apply(&mut self, command: RtCommand) {
         match command {
-            RtCommand::Swap { deck, audio } => {
+            RtCommand::Swap { deck, track } => {
                 let channel = &mut self.channels[deck.index()];
-                channel.player.swap(audio, &mut self.retired);
+                channel.player.swap(track, &mut self.retired);
             }
             RtCommand::Play { deck } => self.player(deck).set_playing(true),
             RtCommand::Pause { deck } => self.player(deck).set_playing(false),
@@ -154,6 +154,7 @@ impl Processor {
             RtCommand::Jump { deck, by } => self.player(deck).jump(by),
             RtCommand::Cues { deck, edit } => self.player(deck).edit_cues(edit),
             RtCommand::SyncToggle { deck } => self.player(deck).toggle_sync(),
+            RtCommand::KeyLockToggle { deck } => self.player(deck).toggle_key_lock(),
             RtCommand::Master { deck } => {
                 let candidate = self.player(deck).candidate();
                 self.clock.set_master(deck, candidate);
@@ -305,6 +306,7 @@ impl Processor {
         self.shared.clock_bpm.set(pulse.bpm);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
+            shared.key_lock.set(channel.player.is_key_locked());
             shared.speed.set(f64::from(channel.player.speed()));
             let ahead = channel.player.beats_ahead(pulse);
             shared

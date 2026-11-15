@@ -25,9 +25,10 @@ use crate::command::{
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
-    self, COMMAND_CAPACITY, ControlEnds, CueEdit, GridEdit, LoopEdit, LoopPart, LoopState,
-    Processor, RtCommand, Span, TrackAudio,
+    self, COMMAND_CAPACITY, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit, LoopPart,
+    LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
 };
+use crate::stretch::TrackStretch;
 use crate::tap::TapTempo;
 
 /// Ranges of the tempo fader, as a fraction of the original speed either way.
@@ -211,6 +212,9 @@ pub struct DeckSnapshot {
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [f32; 2],
     pub sync: bool,
+    /// The deck keeps the key of its track while its tempo changes:
+    /// `docs/behavior/keylock.md`.
+    pub key_lock: bool,
     /// Speed the deck is set to, as a ratio of the original. It is `controls.tempo_ratio`
     /// until sync sets it.
     pub speed: f64,
@@ -236,6 +240,7 @@ impl Default for DeckSnapshot {
             controls: DeckControls::default(),
             levels: [0.0; 2],
             sync: false,
+            key_lock: false,
             speed: 1.0,
             phase: None,
         }
@@ -278,6 +283,8 @@ struct DeckControl {
 
 struct Loaded {
     audio: TrackAudio,
+    /// The stretch of key lock, built on the load worker since building it allocates.
+    stretch: Option<Stretcher>,
     info: TrackInfo,
     peaks: WaveformPeaks,
 }
@@ -288,7 +295,7 @@ enum LoadResult {
     Decoded {
         deck: DeckId,
         generation: u64,
-        result: Result<Loaded, DecodeError>,
+        result: Result<Box<Loaded>, DecodeError>,
     },
     Analysed {
         deck: DeckId,
@@ -315,6 +322,7 @@ pub struct Engine {
     finished_loads: Receiver<LoadResult>,
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
+    rate: SampleRate,
 }
 
 impl Engine {
@@ -343,6 +351,7 @@ impl Engine {
             finished_loads,
             load_reports,
             analyser,
+            rate,
         };
         (engine, processor)
     }
@@ -392,6 +401,10 @@ impl Engine {
             .into_iter()
             .filter(|deck| published.decks[deck.index()].sync.get());
         clock.extend(synced.map(|deck| RtCommand::SyncToggle { deck }));
+        let locked = DeckId::ALL
+            .into_iter()
+            .filter(|deck| published.decks[deck.index()].key_lock.get());
+        clock.extend(locked.map(|deck| RtCommand::KeyLockToggle { deck }));
         for command in clock {
             let _ = engine.send(command);
         }
@@ -597,6 +610,7 @@ impl Engine {
     fn dispatch_sync(&mut self, command: Command) -> Result<(), EngineError> {
         let command = match command {
             Command::DeckSyncToggle { deck } => RtCommand::SyncToggle { deck },
+            Command::DeckKeyLockToggle { deck } => RtCommand::KeyLockToggle { deck },
             Command::DeckMasterSet { deck } => RtCommand::Master { deck },
             Command::ClockModeSet { mode } => {
                 let on = mode == ClockMode::Auto;
@@ -774,13 +788,13 @@ impl Engine {
             .map_err(|_| EngineError::Busy)
     }
 
-    fn send_swap(&mut self, deck: DeckId, audio: Option<TrackAudio>) -> Result<(), EngineError> {
+    fn send_swap(&mut self, deck: DeckId, track: Option<DeckTrack>) -> Result<(), EngineError> {
         self.collect_retired();
         // The retired queue has room for this many; see `rt::channel`.
         if self.swaps_in_flight >= COMMAND_CAPACITY {
             return Err(EngineError::Busy);
         }
-        self.send(RtCommand::Swap { deck, audio })?;
+        self.send(RtCommand::Swap { deck, track })?;
         self.swaps_in_flight += 1;
         Ok(())
     }
@@ -798,10 +812,12 @@ impl Engine {
         let generation = state.generation;
         let reports = self.load_reports.clone();
         let analyser = Arc::clone(&self.analyser);
+        let rate = self.rate;
         std::thread::Builder::new()
             .name("platter-load".to_owned())
             .spawn(move || {
-                let result = decode_file(&path).map(|decoded| prepare(decoded, path));
+                let result =
+                    decode_file(&path).map(|decoded| Box::new(prepare(decoded, path, rate)));
                 let audio = result.as_ref().ok().map(|loaded| loaded.audio.clone());
                 // The engine may be gone by now; then nobody waits for the result.
                 let _ = reports.send(LoadResult::Decoded {
@@ -899,10 +915,14 @@ impl Engine {
         self.decks[deck.index()].loading = false;
         let failed = |message: String| Some(Event::LoadFailed { deck, message });
         let loaded = match result {
-            Ok(loaded) => loaded,
+            Ok(loaded) => *loaded,
             Err(error) => return failed(error.to_string()),
         };
-        if let Err(error) = self.send_swap(deck, Some(loaded.audio)) {
+        let track = DeckTrack {
+            audio: loaded.audio,
+            stretch: loaded.stretch,
+        };
+        if let Err(error) = self.send_swap(deck, Some(track)) {
             return failed(error.to_string());
         }
         let state = &mut self.decks[deck.index()];
@@ -963,6 +983,7 @@ impl Engine {
                 controls: control.controls.clone(),
                 levels: [published.levels[0].get(), published.levels[1].get()],
                 sync: published.sync.get(),
+                key_lock: published.key_lock.get(),
                 speed: published.speed.get(),
                 phase: Some(published.phase.get()).filter(|phase| phase.is_finite()),
             }
@@ -1079,7 +1100,7 @@ impl DeckControl {
     }
 }
 
-fn prepare(decoded: DecodedAudio, path: PathBuf) -> Loaded {
+fn prepare(decoded: DecodedAudio, path: PathBuf, engine_rate: SampleRate) -> Loaded {
     let info = TrackInfo {
         path,
         container: decoded.container,
@@ -1091,8 +1112,13 @@ fn prepare(decoded: DecodedAudio, path: PathBuf) -> Loaded {
     let rate = decoded.sample_rate;
     let stereo = decoded.into_stereo();
     let peaks = WaveformPeaks::compute(&stereo, rate);
+    let audio = TrackAudio::new(rate, stereo);
+    // A track the stretch does not take plays without key lock.
+    let stretch = TrackStretch::new(audio.frames(), rate, engine_rate)
+        .map(|stretch| Stretcher(Box::new(stretch)));
     Loaded {
-        audio: TrackAudio::new(rate, stereo),
+        audio,
+        stretch,
         info,
         peaks,
     }
