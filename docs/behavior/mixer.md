@@ -2,11 +2,12 @@
 
 The mixer channels, the crossfader and the headphone output. M1 delivered gain, equaliser,
 filter, fader and crossfader; M2 adds the kill buttons, pan, pre-listening and the controls of
-the interface.
+the interface; M3 adds the assignment of a channel to a side of the crossfader.
 
 ## What the public manual says
 
-Sections of the reference manual, read on 13 November 2026:
+Sections of the reference manual, read on 13 November 2026 (*Crossfade controls* again on
+15 November 2026, for the assignment):
 
 - *Overview*, section *Mixer channel*
 - *Overview*, section *Crossfade controls*
@@ -20,7 +21,9 @@ side, and a channel fader. A cue button sends the channel to the headphone cue c
 needs an audio device with more than one output pair. For the headphones, a volume knob sets
 the level and a mix knob sets the balance between the cued channels and the main mix: turned
 one way the cued channels, turned the other way the main mix. The crossfader blends the two
-sides, and a preference shapes its curve continuously from smooth to sharp. The preferences
+sides, and a preference shapes its curve continuously from smooth to sharp. Assign buttons
+put a channel on the left or the right side of the crossfader, so it is heard when the
+crossfader is on that side. The preferences
 also offer several equaliser types and filter types. The section of the manual on the mixer
 channel does not describe the one-knob filter; the behaviour below (low-pass one way,
 high-pass the other) is Platter's own definition.
@@ -43,8 +46,9 @@ pre-listened channel after its filter and before its fader.
 | `mixer.cue.toggle` | Sends the channel to the headphones, or stops sending it |
 | `mixer.cue.mix.set` | Headphone mix, 0 (pre-listened channels alone) to 1 (master alone) |
 | `mixer.cue.volume.set` | Headphone volume in decibels, silence to +12 dB |
-| `mixer.crossfader.set` | Position, 0 (deck A alone) to 1 (deck B alone) |
+| `mixer.crossfader.set` | Position, 0 (left side alone) to 1 (right side alone) |
 | `mixer.crossfader.curve.set` | `smooth` (equal power), `linear` or `sharp` |
+| `mixer.xfader_assign.set` | `side` of the crossfader the channel is on: `left`, `thru` or `right` |
 
 - Every parameter follows a 10 ms ramp; none of them steps. That includes the kill buttons
   and the pre-listen buttons.
@@ -58,6 +62,12 @@ pre-listened channel after its filter and before its fader.
   points at never gets louder.
 - The fader has a squared taper around unity at three quarters of its travel: silence at the
   bottom, no change at 0.75 and 5 dB of gain at the top. It starts at unity.
+- Deck A starts on the left side and deck B on the right one, as the crossfader has always
+  blended them. A channel on a side gets the gain the curve gives that side; a channel on
+  `thru` passes at full level wherever the crossfader is. Both channels can be on the same
+  side, and then the crossfader fades both together. The change follows the 10 ms ramp.
+- The assignment acts on the master only: pre-listening in the headphones is before the
+  fader and the crossfader.
 - The meter of a channel reads the peak of each side after the fader and the pan.
 - The headphones are the third and the fourth output of the device. Their signal is the sum
   of the pre-listened channels and the master, weighted by the mix knob in a straight line,
@@ -71,6 +81,11 @@ pre-listened channel after its filter and before its fader.
 - The pan knob and the pre-listen button are always visible; the reference product shows them
   only in some layouts.
 - The fader adds up to 5 dB above its unity mark.
+- The reference manual names a left and a right assign button and does not say what a
+  channel assigned to neither does. Platter makes that state, `thru`, explicit: the channel
+  bypasses the crossfader. The design system draws it as a three-way control under each
+  fader; the window has no such control yet, it comes with the next change to the mixer
+  panel.
 
 ## Edge cases
 
@@ -81,6 +96,10 @@ pre-listened channel after its filter and before its fader.
 | Filter at exactly zero | The signal passes bit for bit |
 | Crossfader at an end | The far side is exactly silent, with every curve |
 | Pan at an end | The far side is exactly silent |
+| A channel on a side with the crossfader fully on the other one | The channel is exactly silent on the master |
+| A channel on `thru` | It passes bit for bit at every crossfader position and curve |
+| A `side` other than `left`, `thru` or `right` | The command is rejected |
+| A change of sample rate of the audio device | The assignment is kept |
 | Pre-listening or a headphone test tone on a device with two outputs | Nothing reaches the outputs |
 | Everything turned up in the headphones | The output stays inside full scale |
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use platter_core::{DeckId, SampleRate};
 use platter_dsp::Frame;
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::limiter::Limiter;
 use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
@@ -42,6 +42,8 @@ pub struct Processor {
     keep_beat: bool,
     crossfader_position: f32,
     crossfader_curve: CrossfaderCurve,
+    /// The side of the crossfader each channel is on.
+    crossfader_sides: [CrossfaderSide; 2],
     master_gain: Smoothed,
     limiter: Limiter,
     master_meter: PeakMeter,
@@ -75,6 +77,7 @@ impl Processor {
             keep_beat: true,
             crossfader_position: position,
             crossfader_curve: curve,
+            crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
             master_gain: parameter(1.0),
             limiter: Limiter::new(rate),
             master_meter: PeakMeter::new(rate),
@@ -218,6 +221,10 @@ impl Processor {
                 self.crossfader_curve = curve;
                 self.retarget_crossfader();
             }
+            RtCommand::CrossfaderAssign { deck, side } => {
+                self.crossfader_sides[deck.index()] = side;
+                self.retarget_crossfader();
+            }
             RtCommand::MasterGain { linear } => self.master_gain.set(linear),
             RtCommand::HeadphoneMix { position } => self.headphone_mix.set(position),
             RtCommand::HeadphoneGain { linear } => self.headphone_gain.set(linear),
@@ -235,11 +242,13 @@ impl Processor {
         &mut self.channels[deck.index()].strip
     }
 
-    /// The gains move along a ramp, so neither the crossfader nor a change of curve clicks.
+    /// The gains move along a ramp, so neither the crossfader, a change of curve nor a new
+    /// assignment clicks.
     fn retarget_crossfader(&mut self) {
-        let (left, right) = self.crossfader_curve.gains(self.crossfader_position);
-        self.channels[0].crossfade.set(left);
-        self.channels[1].crossfade.set(right);
+        let gains = self.crossfader_curve.gains(self.crossfader_position);
+        for (channel, side) in self.channels.iter_mut().zip(self.crossfader_sides) {
+            channel.crossfade.set(side.gain(gains));
+        }
     }
 
     /// The next frame of the master and of the headphones. Without headphones their frame

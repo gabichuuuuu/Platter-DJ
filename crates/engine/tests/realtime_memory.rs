@@ -8,8 +8,8 @@ mod common;
 use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{
-    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CueStep, Direction, MoveMode, Output,
-    SizeStep, SyncMode,
+    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderSide, CueStep, Direction,
+    MoveMode, Output, SizeStep, SyncMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -30,6 +30,10 @@ fn commands() -> Vec<Command> {
         Command::MixerAutogainToggle,
         Command::MixerGainRestore { deck: A },
         Command::MixerAutogainToggle,
+        Command::MixerCrossfaderAssign {
+            deck: A,
+            side: CrossfaderSide::Thru,
+        },
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },
         Command::DeckTempoSet {

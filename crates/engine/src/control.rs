@@ -15,7 +15,7 @@ use platter_core::{
     BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::{Band, band_gain};
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
@@ -138,6 +138,8 @@ impl Default for DeckControls {
 pub struct MixerControls {
     pub crossfader: f64,
     pub crossfader_curve: CrossfaderCurve,
+    /// The side of the crossfader each channel is on, deck A first.
+    pub crossfader_sides: [CrossfaderSide; 2],
     pub master_gain_db: f64,
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
@@ -152,6 +154,7 @@ impl Default for MixerControls {
         Self {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
+            crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
             master_gain_db: 0.0,
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
@@ -825,6 +828,10 @@ impl Engine {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
                 self.mixer.crossfader_curve = curve;
             }
+            Command::MixerCrossfaderAssign { deck, side } => {
+                self.send(RtCommand::CrossfaderAssign { deck, side })?;
+                self.mixer.crossfader_sides[deck.index()] = side;
+            }
             Command::MixerCueMixSet { position } => {
                 let position = ValueError::check("position", position, 0.0, 1.0)?;
                 self.send(RtCommand::HeadphoneMix {
@@ -1157,9 +1164,15 @@ impl DeckControls {
 }
 
 impl MixerControls {
-    fn as_commands(&self) -> [RtCommand; 5] {
+    fn as_commands(&self) -> [RtCommand; 7] {
         let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
+        let assign = |deck: DeckId| RtCommand::CrossfaderAssign {
+            deck,
+            side: self.crossfader_sides[deck.index()],
+        };
         [
+            assign(DeckId::A),
+            assign(DeckId::B),
             RtCommand::Crossfader {
                 position: self.crossfader as f32,
             },

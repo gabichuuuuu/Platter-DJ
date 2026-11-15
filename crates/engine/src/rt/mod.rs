@@ -29,7 +29,7 @@ use platter_core::{
     BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate,
 };
 use platter_dsp::Frame;
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::Band;
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -214,6 +214,10 @@ pub enum RtCommand {
     },
     CrossfaderCurve {
         curve: CrossfaderCurve,
+    },
+    CrossfaderAssign {
+        deck: DeckId,
+        side: CrossfaderSide,
     },
     MasterGain {
         linear: f32,

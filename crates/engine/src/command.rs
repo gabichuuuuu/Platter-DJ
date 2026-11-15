@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
-use platter_dsp::crossfade::CrossfaderCurve;
+use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::Band;
 
 pub use crate::rt::MAX_KEY_SHIFT;
@@ -255,6 +255,11 @@ pub enum Command {
     MixerCrossfaderCurveSet {
         curve: CrossfaderCurve,
     },
+    /// Puts the channel on a side of the crossfader, or past it.
+    MixerCrossfaderAssign {
+        deck: DeckId,
+        side: CrossfaderSide,
+    },
     MasterGainSet {
         db: f64,
     },
@@ -380,6 +385,7 @@ pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
 const MIN_GAIN_DB: f64 = -90.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
+const SIDES: &[&str] = &["left", "thru", "right"];
 const OUTPUTS: &[&str] = &["master", "headphones"];
 const BUTTON_ACTIONS: &[&str] = &["press", "release"];
 const BPM_SCALES: &[&str] = &["double", "half"];
@@ -862,6 +868,17 @@ pub const SPECS: &[CommandSpec] = &[
             name: "curve",
             kind: ParamKind::Choice(CURVES),
         }],
+    },
+    CommandSpec {
+        id: "mixer.xfader_assign.set",
+        label: "Assign to crossfader side",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "side",
+                kind: ParamKind::Choice(SIDES),
+            },
+        ],
     },
     CommandSpec {
         id: "master.gain.set",
@@ -1457,6 +1474,10 @@ impl Command {
             "mixer.crossfader.curve.set" => Self::MixerCrossfaderCurveSet {
                 curve: CrossfaderCurve::parse(read.text("curve")?)?,
             },
+            "mixer.xfader_assign.set" => Self::MixerCrossfaderAssign {
+                deck: read.deck()?,
+                side: CrossfaderSide::parse(read.text("side")?)?,
+            },
             "master.gain.set" => Self::MasterGainSet {
                 db: read.number("db")?,
             },
@@ -1522,6 +1543,7 @@ impl Command {
             Self::MixerFaderSet { .. } => "mixer.fader.set",
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
+            Self::MixerCrossfaderAssign { .. } => "mixer.xfader_assign.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
