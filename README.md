@@ -83,7 +83,8 @@ its own code, graphics and sounds.
   speed, a track below 32 kHz plays without it, and nobody has listened to it; only
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
 - The store of the library (collection, playlists and history) exists as a crate only: nothing
-  in the application uses it yet and nothing imports tracks into it.
+  in the application uses it yet. It can import a folder, but the application does not read
+  the tags for it nor offer the import.
 - No browser of the collection, no MIDI: those are milestone M3.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.

@@ -8,6 +8,7 @@
 //! callers run the library on a worker thread, never on the audio or the interface thread.
 
 mod error;
+mod folder;
 mod store;
 mod text;
 
@@ -16,6 +17,7 @@ use std::path::{Path, PathBuf};
 use platter_core::DeckId;
 
 pub use error::{LibraryError, StoreError};
+pub use folder::{ImportReport, MAX_DEPTH, MAX_ENTRIES, Reading, TagReader, import_folder};
 pub use store::SqliteLibrary;
 
 /// Longest tag kept, in characters; longer tags are cut.
@@ -181,6 +183,12 @@ pub trait Library: Send {
         tags: &TrackTags,
         at: Timestamp,
     ) -> Result<TrackId, LibraryError>;
+    /// Imports several tracks as [`Library::import`] does, all of them or, on an error, none.
+    fn import_all(
+        &mut self,
+        tracks: &[(PathBuf, TrackTags)],
+        at: Timestamp,
+    ) -> Result<Vec<TrackId>, LibraryError>;
     fn track(&self, id: TrackId) -> Result<Option<Track>, LibraryError>;
     fn track_at(&self, path: &Path) -> Result<Option<Track>, LibraryError>;
     /// Removes the track from the collection and from every playlist.

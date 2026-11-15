@@ -42,6 +42,8 @@ pub enum LibraryError {
     Cycle,
     /// Another track already has that path.
     PathTaken,
+    /// The folder to import does not exist, is not a folder or cannot be read.
+    NotAFolder(std::io::Error),
 }
 
 impl fmt::Display for LibraryError {
@@ -66,6 +68,7 @@ impl fmt::Display for LibraryError {
             Self::WrongKind => formatter.write_str("a playlist and a folder were mixed up"),
             Self::Cycle => formatter.write_str("a folder cannot go inside itself"),
             Self::PathTaken => formatter.write_str("another track already has that path"),
+            Self::NotAFolder(error) => write!(formatter, "the folder cannot be read: {error}"),
         }
     }
 }
@@ -74,6 +77,7 @@ impl Error for LibraryError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Store(error) => Some(error),
+            Self::NotAFolder(error) => Some(error),
             _ => None,
         }
     }
