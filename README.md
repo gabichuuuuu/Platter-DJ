@@ -1,27 +1,31 @@
 <p align="center">
-  <img src="docs/assets/platter-mark.svg" width="96" height="96" alt="The Platter mark">
+  <img src="docs/assets/platter-mark.svg" width="88" height="88" alt="The Platter mark">
 </p>
 
 <h1 align="center">Platter DJ</h1>
 
-<p align="center">An open-source DJ application written in Rust.</p>
-
 <p align="center">
-  <img src="https://img.shields.io/badge/status-M2%20done-272727?style=flat-square&labelColor=111111" alt="Status: M2 done">
-  <img src="https://img.shields.io/badge/rust-edition%202024-272727?style=flat-square&labelColor=111111" alt="Rust, edition 2024">
-  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-272727?style=flat-square&labelColor=111111" alt="Platforms: Linux, macOS and Windows">
-  <img src="https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-272727?style=flat-square&labelColor=111111" alt="Licence: MIT or Apache-2.0">
+  An open-source DJ application written in Rust,<br>
+  with its own code, graphics and sounds.
 </p>
 
 <p align="center">
   <a href="#status">Status</a> ·
+  <a href="#download">Download</a> ·
   <a href="#building">Building</a> ·
+  <a href="#what-does-not-work-yet">Limitations</a> ·
   <a href="#documentation">Documentation</a> ·
   <a href="ROADMAP.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
----
+<p align="center">
+  <a href="https://github.com/gabichuuuuu/Platter-DJ/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/gabichuuuuu/Platter-DJ/ci.yml?branch=main&style=flat-square&label=ci&labelColor=111111" alt="CI status on main"></a>
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-272727?style=flat-square&labelColor=111111" alt="Platforms: Linux, macOS and Windows">
+  <img src="https://img.shields.io/badge/licence-MIT%20OR%20Apache--2.0-272727?style=flat-square&labelColor=111111" alt="Licence: MIT or Apache-2.0">
+</p>
+
+<br>
 
 Platter is an independent, open-source DJ application written in Rust. The goal is a complete
 desktop program for DJs, with the functions expected of professional DJ software, written with
@@ -37,21 +41,50 @@ its own code, graphics and sounds.
 
 ### What exists today
 
-- The desktop application, `platter`: two decks with scrolling and overview waveforms coloured
-  by frequency, play, CUE, CUP, a tempo fader with three ranges and tempo bend; a mixer with
-  gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three
-  curves, meters and a master with a safety limiter; pre-listening on a second output pair;
-  loops of a preset size or between an in and an out point, beatjumps and the moves of a
-  loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them; SYNC,
-  MASTER and a phase meter per deck, and a master clock with Snap and Quantize; a file
-  selector; audio and general preferences; keyboard shortcuts in a file the user
-  edits; English and Spanish.
-- `platter-cli info <file>` and `platter-cli render --script <mix.toml> --out <mix.wav>`: file
-  information, and a scripted mix rendered to a WAV file without a sound card.
-- `cargo xtask ci`, the gate that runs formatting, lints, tests, the layer rules, the licence
-  and advisory checks, the clean-room check and the feature inventory check.
+| Area | Today |
+| --- | --- |
+| Decks | Two decks with scrolling and overview waveforms coloured by frequency; play, CUE and CUP; a tempo fader with three ranges and tempo bend |
+| Mixer | Gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three curves, meters and a master with a safety limiter; pre-listening on a second output pair |
+| Loops and cues | Loops of a preset size or between an in and an out point, beatjumps and the moves of a loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them |
+| Sync | SYNC, MASTER and a phase meter per deck, and a master clock with Snap and Quantize |
+| Application | A file selector; audio and general preferences; keyboard shortcuts in a file the user edits; English and Spanish |
+| Command line | `platter-cli info <file>` prints file information; `platter-cli render --script <mix.toml> --out <mix.wav>` renders a scripted mix to a WAV file without a sound card |
+| Gate | `cargo xtask ci` runs formatting, lints, tests, the layer rules, the licence and advisory checks, the clean-room check and the feature inventory check |
 
-### What does not work yet
+[`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
+
+## Download
+
+Each [release](https://github.com/gabichuuuuu/Platter-DJ/releases) has an archive per system,
+built in CI, with `platter` (the application) and `platter-cli`:
+
+| System | Archive |
+| --- | --- |
+| Windows x64 | `platter-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+| macOS on Apple silicon | `platter-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| Linux x64 | `platter-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+
+Only Windows has been used for real. macOS and Linux build and pass the tests in CI, but nobody
+has run Platter on them yet. The binaries are not signed, so Windows and macOS warn before
+opening them.
+
+## Building
+
+Requirements: Rust through `rustup` (the toolchain in `rust-toolchain.toml` is installed on first
+use) and `cargo-deny` 0.20.2. Details are in [`docs/development.md`](docs/development.md).
+
+```sh
+cargo xtask ci                      # the gate, the same locally and in CI
+cargo run --release -p platter      # the desktop application
+cargo run -p platter-cli -- --help  # the command line
+```
+
+## What does not work yet
+
+Everything known to be missing, unfinished or not yet listened to.
+
+<details>
+<summary>The full list</summary>
 
 - The manual check of M2 rests on the window, measured renders and the listening of the
   maintainer; the hour of playing with its dropout count has not been recorded. The tests measure levels, frequencies,
@@ -112,33 +145,7 @@ its own code, graphics and sounds.
   controllers yet. No real controller has been tried: the path from a MIDI input to the engine is tested
   with invented messages only.
 
-[`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
-
-## Download
-
-Each [release](https://github.com/gabichuuuuu/Platter-DJ/releases) has an archive per system,
-built in CI, with `platter` (the application) and `platter-cli`:
-
-| System | Archive |
-| --- | --- |
-| Windows x64 | `platter-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
-| macOS on Apple silicon | `platter-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
-| Linux x64 | `platter-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
-
-Only Windows has been used for real. macOS and Linux build and pass the tests in CI, but nobody
-has run Platter on them yet. The binaries are not signed, so Windows and macOS warn before
-opening them.
-
-## Building
-
-Requirements: Rust through `rustup` (the toolchain in `rust-toolchain.toml` is installed on first
-use) and `cargo-deny` 0.20.2. Details are in [`docs/development.md`](docs/development.md).
-
-```sh
-cargo xtask ci
-cargo run --release -p platter
-cargo run -p platter-cli -- --help
-```
+</details>
 
 ## Documentation
 
