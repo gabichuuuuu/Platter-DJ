@@ -158,8 +158,42 @@ choice:
   how far its beat is from the beat of the clock, from -0.5 (behind) to 0.5 (ahead) of a
   beat. A deck without a tempo has no phase.
 
-The window has no controls for any of this yet; they come with the interface part of this
-unit.
+### In the window
+
+The status header holds the master clock, between the audio readings and the master level,
+left to right:
+
+- "Tempo" and the tempo of the clock, a number field: dragging it or its arrow keys set the
+  tempo (`clock.tempo.set`).
+- Auto and Master, a segmented control for the mode of the clock (`clock.mode.set`).
+- Tap, and the keys that step the tempo down and up by 1 BPM (`clock.tempo.step`).
+- The two bend keys, which bend the clock 4 % slower or faster while held (`clock.bend`, back
+  to 0 on release).
+- Snap and Quantize, lit while on.
+
+The tempo field and the keys for the tempo are disabled while a deck is the tempo master,
+since the commands would do nothing; the field then shows the tempo the clock follows.
+
+Each deck has a row above its hotcues, from the left:
+
+- SYNC, lit in the colour of the deck while its sync is on and the deck is not the tempo
+  master (`deck.sync.toggle`). It works on an empty deck too.
+- MASTER, lit the same way while the deck is the tempo master (`deck.master.set`). While the
+  mode of the clock is `auto` the key only shows the state: it is disabled and keeps its
+  light. In the mode `master` it is disabled without a track with a tempo, as the command
+  would do nothing.
+- The phase meter: a slot with a mark at its centre and a bar in the colour of the deck that
+  grows left while the deck is behind the clock and right while it is ahead, half a beat at
+  either end. Under one pixel the bar is not drawn. A deck without a phase shows the empty
+  slot.
+- "Tempo master" beside the meter of the deck that is the tempo master.
+
+The current tempo in the header of a deck is the tempo of its grid times the speed of the deck,
+and the offset beside the base tempo is that of the speed, so a synced deck shows the tempo it
+plays at. The reading under the tempo fader stays the offset of the fader.
+
+The overview of the track in the deck is 36 pixels high, as the first complete version of the
+design draws it, which leaves room for the row.
 
 ## Differences
 
@@ -184,6 +218,13 @@ unit.
 - The reference manual describes the metronome only by its key; where it is heard, its level
   and its sound are Platter's (see *Metronome*). Headphones only keeps the click off the
   master. It has no volume of its own: the headphone volume sets it.
+- The design system asks for a tempo of the clock typed after a double click. The interface
+  has no text entry yet: the field is dragged or stepped with its keys, and typing comes with
+  the rest of the interface in M3.
+- The design system lists a metronome key in the master clock. The window does not draw it
+  yet; until it does, `clock.metronome.toggle` is sent from the command line.
+- The sync mode is a preference of the Decks page, which comes with the rest of the
+  preferences; until then `global.sync.mode.set` is sent from the command line.
 - Synchronisation to an external clock is M5.
 - Key lock is not there yet, so a synced deck changes pitch with its speed.
 
@@ -218,5 +259,7 @@ unit.
 `crates/core/src/grid.rs` for the phase of a position, its run and its nearest beat;
 `crates/engine/src/rt/clock.rs` for the choice of the tempo master;
 `crates/engine/tests/sync.rs` for the commands of sync, with the offset between two decks
-measured in frames after a render; `crates/engine/tests/snap.rs` for Snap and Quantize; `crates/engine/tests/metronome.rs` for
-the metronome, with the clicks found in a render.
+measured in frames after a render; `crates/engine/tests/snap.rs` for Snap and Quantize;
+`crates/engine/tests/metronome.rs` for the metronome, with the clicks found in a render;
+`crates/ui-egui/tests/panels.rs` for the keys, the phase meter and the master clock in the
+window.
