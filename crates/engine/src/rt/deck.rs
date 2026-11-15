@@ -11,8 +11,9 @@ use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
 use super::clock::{Candidate, Lead, Pulse};
+use super::lock::KeyLock;
 use super::looper::{Looper, Region, Track};
-use super::{CueEdit, GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
+use super::{CueEdit, DeckTrack, GridEdit, LoopEdit, LoopState, Retired, Span, TrackAudio};
 
 /// Length of the fade applied on play, pause, seek and track change.
 const TRANSPORT_FADE_MS: f32 = 5.0;
@@ -76,7 +77,7 @@ pub(super) struct DeckPlayer {
     nudge: Smoothed,
     // Changes that wait for the fade-out to finish, so they never cut the waveform. A swap
     // is applied before a seek: the seek belongs to the track that arrives.
-    pending_swap: Option<Option<TrackAudio>>,
+    pending_swap: Option<Option<DeckTrack>>,
     pending_seek: Option<SeekTarget>,
     /// Cue point set for a track that is still arriving, in its frames.
     arriving_cue: Option<f64>,
@@ -106,6 +107,7 @@ pub(super) struct DeckPlayer {
     /// The place in its beat the clock is at on this frame, when the deck keeps its beats
     /// on those of the clock.
     beat_to_keep: Option<f64>,
+    lock: KeyLock,
 }
 
 impl DeckPlayer {
@@ -136,12 +138,13 @@ impl DeckPlayer {
             snap: false,
             quantize: false,
             beat_to_keep: None,
+            lock: KeyLock::new(rate.as_f64()),
         }
     }
 
     /// Replaces the track. The new one starts paused at its beginning; a play or a seek
     /// that follows applies to it.
-    pub(super) fn swap(&mut self, audio: Option<TrackAudio>, retired: &mut Producer<Retired>) {
+    pub(super) fn swap(&mut self, track: Option<DeckTrack>, retired: &mut Producer<Retired>) {
         // A swap that never got applied still owes its item to the retired queue.
         if let Some(superseded) = self.pending_swap.take() {
             retire(superseded, retired);
@@ -155,13 +158,13 @@ impl DeckPlayer {
         self.arriving_grid = None;
         self.looper.clear();
         self.set_cues(Cues::default());
-        self.pending_swap = Some(audio);
+        self.pending_swap = Some(track);
     }
 
     /// The track the deck holds once the pending swap is applied.
     fn settled_audio(&self) -> Option<&TrackAudio> {
         match &self.pending_swap {
-            Some(arriving) => arriving.as_ref(),
+            Some(arriving) => arriving.as_ref().map(|track| &track.audio),
             None => self.audio.as_ref(),
         }
     }
@@ -623,6 +626,14 @@ impl DeckPlayer {
         self.sync
     }
 
+    pub(super) fn toggle_key_lock(&mut self) {
+        self.lock.toggle();
+    }
+
+    pub(super) fn is_key_locked(&self) -> bool {
+        self.lock.is_on()
+    }
+
     /// Speed the deck is set to, as a ratio of the original.
     pub(super) fn speed(&self) -> f32 {
         self.tempo.target()
@@ -783,6 +794,7 @@ impl DeckPlayer {
         let gain = self.fade.advance();
         if gain == 0.0 {
             self.tail = None;
+            self.lock.silence();
             // A change of speed needs no ramp while nothing sounds.
             self.tempo.advance();
             self.apply_pending(retired);
@@ -792,14 +804,33 @@ impl DeckPlayer {
         let Some(audio) = &self.audio else {
             return [0.0; 2];
         };
-        let mut frame = read(audio, self.position);
         let speed =
             f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance())) * pull;
         let step = speed * audio.rate().as_f64() / self.engine_rate;
+        let locked = self.lock.play(audio.samples(), self.position, step, speed);
+        let mut frame = match locked {
+            Some(locked) => {
+                // The stretch says where the deck is: its tempo is the one asked, its
+                // position is what is heard.
+                self.position = locked.position;
+                if locked.level >= 1.0 {
+                    locked.frame
+                } else {
+                    let plain = read(audio, self.position);
+                    [0, 1]
+                        .map(|side| plain[side] + (locked.frame[side] - plain[side]) * locked.level)
+                }
+            }
+            None => read(audio, self.position),
+        };
         if let Some(tail) = &mut self.tail {
             tail.level -= tail.decay;
             if tail.level > 0.0 {
-                let old = read(audio, tail.position);
+                // What was heard before the jump: the stretch, when it was playing.
+                let old = self
+                    .lock
+                    .tail_frame()
+                    .unwrap_or_else(|| read(audio, tail.position));
                 frame = [0, 1].map(|side| frame[side] + (old[side] - frame[side]) * tail.level);
                 tail.position += step;
             } else {
@@ -827,8 +858,17 @@ impl DeckPlayer {
 
     fn apply_pending(&mut self, retired: &mut Producer<Retired>) {
         if let Some(arriving) = self.pending_swap.take() {
-            let previous = std::mem::replace(&mut self.audio, arriving);
-            retire(previous, retired);
+            let (audio, stretch) =
+                arriving.map_or((None, None), |track| (Some(track.audio), track.stretch));
+            let previous = std::mem::replace(&mut self.audio, audio);
+            let previous_stretch = self.lock.replace(stretch);
+            retire(
+                previous.map(|audio| DeckTrack {
+                    audio,
+                    stretch: previous_stretch,
+                }),
+                retired,
+            );
             self.position = 0.0;
             self.cue = self.arriving_cue.take().unwrap_or(0.0);
             self.grid = self.arriving_grid.take().unwrap_or_default();
@@ -882,8 +922,8 @@ fn read(audio: &TrackAudio, position: f64) -> Frame {
 /// Hands audio back to the control side. The queue is sized so that it cannot be full; if
 /// it ever were, leaking the buffer is the only option that keeps the audio thread from
 /// freeing memory.
-fn retire(audio: Option<TrackAudio>, retired: &mut Producer<Retired>) {
-    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(audio)) {
+fn retire(track: Option<DeckTrack>, retired: &mut Producer<Retired>) {
+    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(track)) {
         std::mem::forget(item);
     }
 }

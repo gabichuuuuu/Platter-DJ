@@ -77,8 +77,11 @@ its own code, graphics and sounds.
   controls for them, its tempo readout does not show the speed of a synced deck, and nobody
   has listened to them. A deck syncs once its grid has a tempo, found by the analysis or
   tapped or stepped in by hand.
-- No key lock, no collection, no MIDI: those are milestone M3.
-  Changing the tempo changes the pitch.
+- Key lock exists in the engine only: the window has no key for it yet. It softens the
+  attack of kicks, the first milliseconds after a jump play with the pitch following the
+  speed, a track below 32 kHz plays without it, and nobody has listened to it; only
+  synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
+- No collection, no MIDI: those are milestone M3.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 

@@ -14,6 +14,7 @@
 
 mod clock;
 mod deck;
+mod lock;
 mod looper;
 mod processor;
 mod shared;
@@ -30,12 +31,21 @@ use platter_dsp::crossfade::CrossfaderCurve;
 use platter_dsp::eq::Band;
 use rtrb::{Consumer, Producer, RingBuffer};
 
+pub use lock::Stretcher;
 pub use processor::Processor;
 pub use shared::{DeckShared, MasterChoice, Shared};
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
 pub const COMMAND_CAPACITY: usize = 256;
+
+/// A track as a deck holds it: its audio and the stretch key lock plays it with, when one
+/// could be built for it.
+#[derive(Debug)]
+pub struct DeckTrack {
+    pub audio: TrackAudio,
+    pub stretch: Option<Stretcher>,
+}
 
 /// Stereo audio of a loaded track, shared without copying.
 #[derive(Clone, Debug)]
@@ -103,7 +113,7 @@ pub enum RtCommand {
     /// through the retired queue, exactly one item per command.
     Swap {
         deck: DeckId,
-        audio: Option<TrackAudio>,
+        track: Option<DeckTrack>,
     },
     Play {
         deck: DeckId,
@@ -214,6 +224,9 @@ pub enum RtCommand {
         output: Output,
     },
     SyncToggle {
+        deck: DeckId,
+    },
+    KeyLockToggle {
         deck: DeckId,
     },
     /// Makes a deck the tempo master, while the choice is not automatic.
@@ -357,7 +370,7 @@ pub struct LoopState {
 
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
-pub struct Retired(pub Option<TrackAudio>);
+pub struct Retired(pub Option<DeckTrack>);
 
 /// What changed in a deck that the control side keeps a copy of: each part is there when it
 /// changed since the report before.

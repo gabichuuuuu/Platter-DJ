@@ -18,6 +18,7 @@ dependency has no row or a row has no dependency.
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine | MIT OR Apache-2.0 | Tests of `platter-decode` and `platter-engine` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
 | `serde` | Deserialises the feature inventory and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A hand-written reader for the few structures involved |
+| `timestretch` | Key lock: plays a track at the tempo of the deck and the pitch of the track; brings rustfft and its helpers | MIT; its dependencies MIT OR Apache-2.0 | `platter-engine`, module `stretch`, behind the trait `Stretch` of `platter-dsp` (`docs/decisions/0021-key-lock-stretch.md`); its feature `accelerate` stays off | An own stretch in `platter-dsp` |
 | `symphonia` | Decodes MP3, AAC in M4A, WAV, AIFF, FLAC and Ogg Vorbis; reads title, artist and album | MPL-2.0 | `platter-decode`, behind its own types and a panic boundary (`docs/decisions/0008-decoder-panic-boundary.md`) | Own decoders from the public specifications |
 | `toml` | Parses `docs/parity.toml`, the render script, the design tokens, the icons, the translations, the shortcut file and the settings file | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script`; `platter-ui-egui`, modules `tokens`, `icons`, `i18n` and `keymap`; `platter`, module `config` | A reader for the TOML subset the project files use |
 
@@ -61,8 +62,8 @@ stop and ask. Each gets a row in `ATTRIBUTION.md`.
 | Use | Piece | Licence seen | Milestone | Conditions |
 | --- | --- | --- | --- | --- |
 | Tempo, beatgrid and key | stratum-dsp | MIT OR Apache-2.0 | M3 | Measured on 15 November 2026 and not adopted: Platter detects them itself (`docs/decisions/0020-own-analysis.md`) |
-| Key lock | timestretch | MIT | M3 | Pure Rust. Measured against the next one |
-| Key lock | Signalsmith Stretch, through signalsmith-stretch | MIT | M3 | C++ with FFI: needs a C++ compiler and an `unsafe` exception isolated in its crate and written in `AGENTS.md` before use |
+| Key lock | timestretch | MIT | M3 | Measured on 15 November 2026 and in use (`docs/decisions/0021-key-lock-stretch.md`) |
+| Key lock | Signalsmith Stretch, through signalsmith-stretch | MIT | M3 | Measured on 15 November 2026 and not adopted (`docs/decisions/0021-key-lock-stretch.md`). C++ with FFI: needs a C++ compiler, libclang and an `unsafe` exception isolated in its crate and written in `AGENTS.md` before use |
 | Stems | 4-stem Spleeter model exported to ONNX | See `docs/legal-notes.md` | M4 | Decided in M4; until then only the interface, without a model |
 | Effects | Airwindows algorithms, adapted to Rust | MIT | M4 | Adaptation with attribution; Platter's own names |
 | Sound kits | CC0 samples | CC0-1.0 | M5 | Each sample with its origin in `ATTRIBUTION.md` |

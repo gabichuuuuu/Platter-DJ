@@ -13,11 +13,11 @@ The table is generated from `docs/parity.toml` by `cargo xtask parity`. Do not e
 | --- | ---: | ---: | ---: | ---: |
 | M1 | 9 | 9 | 0 | 0 |
 | M2 | 30 | 30 | 0 | 0 |
-| M3 | 76 | 9 | 16 | 51 |
+| M3 | 76 | 9 | 17 | 50 |
 | M4 | 31 | 0 | 0 | 31 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 48 | 16 | 98 |
+| Total | 162 | 48 | 17 | 97 |
 
 First complete version (M0 to M3): 48 of 115 features done.
 
@@ -56,8 +56,8 @@ Decisions already taken for this milestone:
 - Tempo, beatgrid and key analysis sits behind a project trait. The community crate first named
   for it failed its measurement, so Platter detects them with its own code
   (`docs/decisions/0020-own-analysis.md`), measured against tracks with known tempo and key.
-- Key lock sits behind a project trait. Two candidate time-stretching libraries are measured and
-  the choice is recorded in an ADR before the milestone closes.
+- Key lock sits behind a project trait. Two candidate time-stretching libraries were measured
+  and timestretch was chosen (`docs/decisions/0021-key-lock-stretch.md`).
 - The library uses SQLite behind a project trait.
 - Platter writes tempo, key and cues to file tags by default, with a setting to turn it off.
   Writes are atomic (temporary file and rename) and never touch a file that could not be read

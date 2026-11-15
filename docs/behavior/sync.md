@@ -158,7 +158,8 @@ unit.
 - A deck needs a tempo in its grid to sync, and until tempo detection arrives later in M3
   that tempo is typed or tapped on the GRID page.
 - Synchronisation to an external clock is M5.
-- Key lock is not there yet, so a synced deck changes pitch with its speed.
+- A synced deck changes pitch with its speed unless its key lock is on
+  (`docs/behavior/keylock.md`).
 
 ## Edge cases
 

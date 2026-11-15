@@ -13,6 +13,7 @@ pub mod interpolate;
 pub mod limiter;
 pub mod meter;
 pub mod smooth;
+pub mod stretch;
 
 /// One stereo frame.
 pub type Frame = [f32; 2];
