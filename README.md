@@ -76,7 +76,8 @@ its own code, graphics and sounds.
   has listened to them. A deck needs a tempo tapped or stepped into its grid before it can
   sync.
 - The store of the library (collection, playlists and history) exists as a crate only: nothing
-  in the application uses it yet and nothing imports tracks into it.
+  in the application uses it yet. It can import a folder, but the application does not read
+  the tags for it nor offer the import.
 - No key lock, no browser of the collection, no MIDI: those are milestone M3.
   Changing the tempo changes the pitch.
 

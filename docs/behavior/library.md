@@ -1,10 +1,11 @@
 # Library: collection, playlists and history
 
 The library remembers the tracks a DJ has imported, the playlists made from them and what was
-played in each session. This note covers the store behind it, `platter-library`: what it keeps
-and the operations on it. Importing folders, reading tags and the browser that shows all of it
-come later in M3, on top of this store; until then nothing in the application uses it. How the
-store is kept on disk is in `docs/decisions/0022-library-store.md`.
+played in each session. This note covers the store behind it, `platter-library`: what it keeps,
+the operations on it and the import of folders. Reading the tags of each format and the browser
+that shows all of it come later in M3, on top of this store; until then nothing in the
+application uses it. How the store is kept on disk is in `docs/decisions/0022-library-store.md`,
+and how folders are imported in `docs/decisions/0023-folder-import.md`.
 
 ## What the public manual says
 
@@ -59,6 +60,27 @@ the user types.
 - Removing a track removes it from every playlist. Its history entries stay, with its title
   and artist as they were, since the history tells what was played.
 
+### Importing folders
+
+- A folder is imported with the folders inside it, down to 32 levels. Each folder gives its
+  files first, sorted by name with case ignored, then its folders in the same order; the tracks
+  get the import date of the pass and enter the collection in that order.
+- A file the collection already holds is left as it is: its tags are not read again, so a pass
+  over a large folder costs little and keeps what the user changed. Only new files are read.
+- Hidden entries, whose name starts with a dot, are not looked at. Links, junctions included,
+  are not followed, so a link back up the tree cannot make the import go round. A folder gives
+  at most its first 10 000 entries, as in the file list of the browser.
+- The reader the application gives decides what each file is: a track with its tags, a file that
+  cannot be read, or something that is not audio, which is left out without a word.
+- The pass reports how many tracks it added, how many files were already there, how many could
+  not be read and how many entries it left out: links, names that are not valid Unicode,
+  folders too deep or that cannot be read.
+- A folder is stored under one path however it was named: the path is made absolute and
+  canonical, and on Windows it keeps the form the user knows, `C:\Music`, without the prefix
+  `\\?\` of the system.
+- Tracks are written in batches of 500, each in one transaction. When the library fails half
+  way, the batches written before stay.
+
 ### Playlists and folders
 
 - Playlists and folders form one tree under the root. A folder holds playlists and folders; a
@@ -111,6 +133,11 @@ the user types.
   Platter gives the same through sorting and search; the views come with the browser.
 - The reference manual does not say what happens to the history when a track is removed.
   Platter keeps the entries, with the title and artist they were played with.
+- The reference manual imports music folders from a list in the preferences, also at start.
+  Platter's import pass works on one folder; the list and the import at start come with the
+  settings of the browser.
+- The genre is not read yet: the decoder reads title, artist, album and tempo. It comes with the
+  reader of tags.
 - Importing and exporting the playlist files of other applications is not part of M3.
   Smart playlists are M4.
 - The reference manual marks one playlist as a preparation list. That comes with the browser.
@@ -128,6 +155,9 @@ the user types.
 | Removing the repeats of a playlist without repeats | Nothing changes |
 | Deleting a folder that holds folders | Everything inside goes |
 | Relocating a track onto the path of another one | An error; nothing changes |
+| Importing a folder that does not exist, or a file | An error; nothing changes |
+| Importing a folder twice, or by another spelling of its path | The second pass adds only new files |
+| A link to a folder above, inside the folder imported | Left out; the import ends |
 | A file that is not a library | An error; the file is left as it is |
 | A library from a newer version of Platter | An error; the file is left as it is |
 
@@ -137,3 +167,7 @@ the user types.
 the records, the consistency check and relocation, playlists and folders, history, search and
 sorting, and damaged, foreign and newer files. `crates/library/tests/playlist_model.rs` checks
 the operations on a playlist against a list in memory with random sequences.
+`crates/library/tests/folders.rs` imports folders made in a temporary directory, with empty
+files and a reader that takes the extension for the format: the order, hidden entries, a second
+pass, another spelling of the path, a missing folder, the depth limit, a folder of 1 234 files
+and a batch that fails; links on Linux and macOS, and names that are not Unicode on Linux.

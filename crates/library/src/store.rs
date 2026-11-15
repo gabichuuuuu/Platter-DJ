@@ -234,21 +234,21 @@ fn sort_expression(column: Column, in_playlist: bool) -> &'static str {
     }
 }
 
-impl Library for SqliteLibrary {
-    fn import(
-        &mut self,
-        path: &Path,
-        tags: &TrackTags,
-        at: Timestamp,
-    ) -> Result<TrackId, LibraryError> {
-        let path = text_of(path)?;
-        let title = tag(tags.title.as_deref());
-        let artist = tag(tags.artist.as_deref());
-        let album = tag(tags.album.as_deref());
-        let genre = tag(tags.genre.as_deref());
-        let key = |value: &Option<String>| value.as_deref().map(fold);
-        let id = self.connection.query_row(
-            "INSERT INTO track (path, title, artist, album, genre, title_key, artist_key, \
+/// Adds the track at `path`, or updates the tags of the one already there.
+fn upsert(
+    connection: &Connection,
+    path: &Path,
+    tags: &TrackTags,
+    at: Timestamp,
+) -> Result<TrackId, LibraryError> {
+    let path = text_of(path)?;
+    let title = tag(tags.title.as_deref());
+    let artist = tag(tags.artist.as_deref());
+    let album = tag(tags.album.as_deref());
+    let genre = tag(tags.genre.as_deref());
+    let key = |value: &Option<String>| value.as_deref().map(fold);
+    let id = connection.query_row(
+        "INSERT INTO track (path, title, artist, album, genre, title_key, artist_key, \
                  album_key, genre_key, seconds, sample_rate, bpm, imported) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
              ON CONFLICT (path) DO UPDATE SET title = excluded.title, artist = excluded.artist, \
@@ -257,24 +257,48 @@ impl Library for SqliteLibrary {
                  genre_key = excluded.genre_key, seconds = excluded.seconds, \
                  sample_rate = excluded.sample_rate, bpm = excluded.bpm \
              RETURNING id",
-            params![
-                path,
-                title,
-                artist,
-                album,
-                genre,
-                key(&title),
-                key(&artist),
-                key(&album),
-                key(&genre),
-                positive(tags.seconds),
-                tags.sample_rate.filter(|rate| *rate > 0),
-                positive(tags.bpm),
-                at.0,
-            ],
-            |row| row.get(0),
-        )?;
-        Ok(TrackId(id))
+        params![
+            path,
+            title,
+            artist,
+            album,
+            genre,
+            key(&title),
+            key(&artist),
+            key(&album),
+            key(&genre),
+            positive(tags.seconds),
+            tags.sample_rate.filter(|rate| *rate > 0),
+            positive(tags.bpm),
+            at.0,
+        ],
+        |row| row.get(0),
+    )?;
+    Ok(TrackId(id))
+}
+
+impl Library for SqliteLibrary {
+    fn import(
+        &mut self,
+        path: &Path,
+        tags: &TrackTags,
+        at: Timestamp,
+    ) -> Result<TrackId, LibraryError> {
+        upsert(&self.connection, path, tags, at)
+    }
+
+    fn import_all(
+        &mut self,
+        tracks: &[(PathBuf, TrackTags)],
+        at: Timestamp,
+    ) -> Result<Vec<TrackId>, LibraryError> {
+        let transaction = self.connection.transaction()?;
+        let ids = tracks
+            .iter()
+            .map(|(path, tags)| upsert(&transaction, path, tags, at))
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit()?;
+        Ok(ids)
     }
 
     fn track(&self, id: TrackId) -> Result<Option<Track>, LibraryError> {
