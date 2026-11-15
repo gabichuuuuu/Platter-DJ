@@ -17,7 +17,9 @@ maintainer, on the free plan, and is public.
 - **Actions:** default workflow permissions read-only. `ci.yml` runs Linux, Windows and macOS on
   every run of a public repository; the condition on `github.event.repository.private` only
   limits a private copy. Workflows on pull requests from outside collaborators run only after
-  the maintainer approves them.
+  the maintainer approves them. "Allow GitHub Actions to create and approve pull requests" is
+  ticked so `release.yml` can open the release pull request; Actions never merges, and each job
+  asks only for the permissions it needs.
 - **Rule of `main`:** branch protection, applied to administrators too: changes through pull
   requests only; the `gate` checks of the three systems required; no force pushes and no
   deletion; linear history; 0 approvals while there is a single maintainer.
@@ -33,9 +35,6 @@ maintainer, on the free plan, and is public.
 1. Discussions: the categories for questions, ideas and controllers, in Discussions > Categories
    on the web.
 2. With more than one maintainer, require at least one approval in the rule of `main`.
-3. Releases: in Settings > Actions > General > Workflow permissions, tick "Allow GitHub Actions
-   to create and approve pull requests". `release.yml` needs it to open the release pull
-   request; the default permissions stay read-only and each job asks for what it needs.
 
 ## Files in this repository that GitHub reads
 
