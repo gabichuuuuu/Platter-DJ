@@ -1,8 +1,8 @@
 //! Keeps third-party material that must not enter the repository out of it (AGENTS.md,
 //! "Clean-room").
 //!
-//! The patterns are stored in pieces and the test inputs are assembled at run time, so this
-//! file passes its own check.
+//! The names and the file extensions that must stay out are stored as hashes and the test
+//! inputs are stand-ins, so this file neither contains them nor fails its own check.
 
 use std::path::Path;
 
@@ -11,11 +11,34 @@ use crate::repo;
 
 const ATTRIBUTION_PATH: &str = "ATTRIBUTION.md";
 
-/// The names of the reference product and of its vendor, which no tracked file may contain.
-/// The vendor name is two words that may be joined by a space, a hyphen, an underscore or a
-/// dot, as in a domain.
-const PRODUCT: [&str; 2] = ["trak", "tor"];
-const VENDOR: [&str; 2] = ["native", "instruments"];
+/// The names of the documented applications and of their vendors, and their mapping and
+/// collection formats, which no tracked file may contain.
+const BANNED: Banned = Banned {
+    product: Hashed {
+        len: 7,
+        hash: 0x295e_4e6a_d6f0_c3b0,
+    },
+    vendor: [
+        Hashed {
+            len: 6,
+            hash: 0x4b70_1c18_7218_deca,
+        },
+        Hashed {
+            len: 11,
+            hash: 0x2321_4655_f673_8d39,
+        },
+    ],
+    extensions: [
+        Hashed {
+            len: 3,
+            hash: 0x5706_cd19_4470_4f7b,
+        },
+        Hashed {
+            len: 3,
+            hash: 0x2154_da19_258a_3a68,
+        },
+    ],
+};
 
 /// Start of the sentence that grants a file under one of the licences below.
 const GRANT_PREFIX: &str = "terms of the gnu";
@@ -31,9 +54,38 @@ const SPDX_COPYLEFT: &str = "gpl";
 const AUDIO_EXTENSIONS: [&str; 10] = [
     "aac", "aif", "aiff", "flac", "m4a", "mp3", "oga", "ogg", "opus", "wav",
 ];
-/// Mapping and collection formats of the reference product.
-const FOREIGN_EXTENSIONS: [&str; 2] = ["tsi", "nml"];
 const FIXTURES_DIR: &str = "tests/fixtures/";
+
+/// A lowercase ASCII word known only by its length and its 64-bit FNV-1a hash.
+#[derive(Clone, Copy)]
+struct Hashed {
+    len: usize,
+    hash: u64,
+}
+
+impl Hashed {
+    fn matches(self, text: &[u8]) -> bool {
+        text.len() == self.len && fnv1a(text) == self.hash
+    }
+
+    fn starts(self, text: &[u8]) -> bool {
+        text.get(..self.len).is_some_and(|head| self.matches(head))
+    }
+}
+
+/// The vendor name is two words that may be joined by a space, a hyphen, an underscore or a
+/// dot, as in a domain.
+struct Banned {
+    product: Hashed,
+    vendor: [Hashed; 2],
+    extensions: [Hashed; 2],
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
 
 pub fn run(root: &Path) -> Result<(), Failure> {
     let attribution = repo::read_text(root, ATTRIBUTION_PATH)?;
@@ -43,18 +95,18 @@ pub fn run(root: &Path) -> Result<(), Failure> {
         let Some(bytes) = repo::read_tracked(root, path)? else {
             continue;
         };
-        findings.extend(file_findings(path, &bytes, &attribution));
+        findings.extend(file_findings(path, &bytes, &attribution, &BANNED));
     }
     Failure::from_findings("cleanroom", findings)?;
     println!("cleanroom: {} tracked file(s) checked", files.len());
     Ok(())
 }
 
-fn file_findings(path: &str, bytes: &[u8], attribution: &str) -> Vec<String> {
+fn file_findings(path: &str, bytes: &[u8], attribution: &str, banned: &Banned) -> Vec<String> {
     let mut findings = Vec::new();
-    if is_foreign_format(path) {
+    if is_foreign_format(path, banned) {
         findings.push(format!(
-            "{path}: file format of the reference product outside `{FIXTURES_DIR}`"
+            "{path}: file format of a documented application outside `{FIXTURES_DIR}`"
         ));
     }
     if is_audio(path, bytes) && !attribution.contains(&format!("`{path}`")) {
@@ -62,19 +114,19 @@ fn file_findings(path: &str, bytes: &[u8], attribution: &str) -> Vec<String> {
             "{path}: audio file without a row in {ATTRIBUTION_PATH}"
         ));
     }
-    if names_reference(path) {
+    if names_reference(path, banned) {
         findings.push(format!(
-            "{path}: path names the reference product or its vendor"
+            "{path}: path names a documented application or its vendor"
         ));
     }
     let text = String::from_utf8_lossy(bytes);
     findings.extend(
         text.lines()
             .enumerate()
-            .filter(|(_, line)| names_reference(line))
+            .filter(|(_, line)| names_reference(line, banned))
             .map(|(index, _)| {
                 format!(
-                    "{path}:{}: names the reference product or its vendor",
+                    "{path}:{}: names a documented application or its vendor",
                     index + 1
                 )
             }),
@@ -91,10 +143,15 @@ fn extension(path: &str) -> String {
         .map_or_else(String::new, |(_, extension)| extension.to_ascii_lowercase())
 }
 
-fn is_foreign_format(path: &str) -> bool {
+fn is_foreign_format(path: &str, banned: &Banned) -> bool {
     let inside_fixtures =
         path.starts_with(FIXTURES_DIR) || path.contains(&format!("/{FIXTURES_DIR}"));
-    FOREIGN_EXTENSIONS.contains(&extension(path).as_str()) && !inside_fixtures
+    let extension = extension(path);
+    banned
+        .extensions
+        .iter()
+        .any(|foreign| foreign.matches(extension.as_bytes()))
+        && !inside_fixtures
 }
 
 fn is_audio(path: &str, bytes: &[u8]) -> bool {
@@ -126,24 +183,34 @@ fn has_audio_signature(bytes: &[u8]) -> bool {
     )
 }
 
-fn names_reference(text: &str) -> bool {
+fn names_reference(text: &str, banned: &Banned) -> bool {
     let lower = text.to_lowercase();
-    lower.contains(&PRODUCT.concat()) || names_vendor(&lower)
+    let bytes = lower.as_bytes();
+    let names_product = (0..bytes.len()).any(|at| {
+        bytes
+            .get(at..)
+            .is_some_and(|rest| banned.product.starts(rest))
+    });
+    names_product || names_vendor(&lower, banned.vendor)
 }
 
 /// The first word of the vendor name must start a word, so that a longer word ending in it
 /// and followed by the second word is not a finding.
-fn names_vendor(lower: &str) -> bool {
-    let [first, second] = VENDOR;
-    lower.match_indices(first).any(|(at, _)| {
+fn names_vendor(lower: &str, [first, second]: [Hashed; 2]) -> bool {
+    let bytes = lower.as_bytes();
+    (0..bytes.len()).any(|at| {
+        let at_first = bytes.get(at..).is_some_and(|rest| first.starts(rest));
+        if !at_first {
+            return false;
+        }
         let starts_word = lower
             .get(..at)
             .and_then(|before| before.chars().next_back())
             .is_none_or(|c| !c.is_alphanumeric());
-        let rest = lower.get(at + first.len()..).unwrap_or_default();
+        let rest = lower.get(at + first.len..).unwrap_or_default();
         let rest =
             rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '-' | '_' | '.'));
-        starts_word && rest.starts_with(second)
+        starts_word && second.starts(rest.as_bytes())
     })
 }
 
@@ -168,13 +235,42 @@ fn has_copyleft_header(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PRODUCT, VENDOR, file_findings, has_copyleft_header, names_reference};
+    use super::{Banned, Hashed, file_findings, fnv1a, has_copyleft_header, names_reference};
 
     const NO_ATTRIBUTION: &str = "";
+    const PRODUCT: &str = "zorbix";
+    const VENDOR: [&str; 2] = ["kranz", "audiowerk"];
+
+    fn hashed(word: &str) -> Hashed {
+        Hashed {
+            len: word.len(),
+            hash: fnv1a(word.as_bytes()),
+        }
+    }
+
+    /// Stand-ins for the real names and formats, which this file must not contain.
+    fn banned() -> Banned {
+        let [first, second] = VENDOR;
+        Banned {
+            product: hashed(PRODUCT),
+            vendor: [hashed(first), hashed(second)],
+            extensions: [hashed("zzq"), hashed("qqz")],
+        }
+    }
+
+    fn findings(path: &str, bytes: &[u8], attribution: &str) -> Vec<String> {
+        file_findings(path, bytes, attribution, &banned())
+    }
+
+    fn names(text: &str) -> bool {
+        names_reference(text, &banned())
+    }
 
     fn product() -> String {
-        let [first, second] = PRODUCT;
-        format!("{}{second}", first.to_uppercase())
+        let mut letters = PRODUCT.chars();
+        letters.next().map_or_else(String::new, |first| {
+            format!("{}{}", first.to_ascii_uppercase(), letters.as_str())
+        })
     }
 
     fn vendor(separator: &str) -> String {
@@ -183,10 +279,18 @@ mod tests {
     }
 
     #[test]
+    fn hashes_the_published_test_vectors() {
+        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a(b"foobar"), 0x8594_4171_f739_67e8);
+    }
+
+    #[test]
     fn flags_the_product_name_in_any_case() {
-        assert!(names_reference(&format!("Notes on {}.", product())));
-        assert!(names_reference(&product().to_lowercase()));
-        assert!(names_reference(&product().to_uppercase()));
+        assert!(names(&format!("Notes on {}.", product())));
+        assert!(names(&product().to_lowercase()));
+        assert!(names(&product().to_uppercase()));
+        assert!(names(&format!("my{}pro", product())));
     }
 
     #[test]
@@ -196,30 +300,29 @@ mod tests {
                 "// Copyright 2024 {} GmbH",
                 vendor(separator).to_uppercase()
             );
-            assert!(names_reference(&line), "{line}");
+            assert!(names(&line), "{line}");
         }
         let url = format!("<https://docs.{}.com/>", vendor("-"));
-        assert!(names_reference(&url));
+        assert!(names(&url));
     }
 
     #[test]
     fn accepts_words_that_only_contain_the_vendor_name() {
         let [first, second] = VENDOR;
-        assert!(!names_reference(&format!("alter{first} {second}")));
-        assert!(!names_reference(&format!("{first} code and {second}")));
-        assert!(!names_reference("The reference product and its vendor."));
-        assert!(!names_reference("Copyright (c) The Platter contributors"));
+        assert!(!names(&format!("alter{first} {second}")));
+        assert!(!names(&format!("{first} code and {second}")));
+        assert!(!names("A documented application and its vendor."));
+        assert!(!names("Copyright (c) The Platter contributors"));
     }
 
     #[test]
     fn flags_the_names_in_paths_and_text() {
         let in_path = format!("docs/{}.md", product().to_lowercase());
-        assert_eq!(file_findings(&in_path, b"", NO_ATTRIBUTION).len(), 1);
+        assert_eq!(findings(&in_path, b"", NO_ATTRIBUTION).len(), 1);
         let text = format!("line one\nmade by {}\n", vendor(" "));
-        let findings = file_findings("docs/notes.md", text.as_bytes(), NO_ATTRIBUTION);
         assert_eq!(
-            findings,
-            vec!["docs/notes.md:2: names the reference product or its vendor"]
+            findings("docs/notes.md", text.as_bytes(), NO_ATTRIBUTION),
+            vec!["docs/notes.md:2: names a documented application or its vendor"]
         );
     }
 
@@ -252,40 +355,28 @@ mod tests {
     #[test]
     fn requires_attribution_for_audio_files() {
         let riff = b"RIFF\x24\x00\x00\x00WAVEfmt ";
+        assert_eq!(findings("assets/click.wav", riff, NO_ATTRIBUTION).len(), 1);
         assert_eq!(
-            file_findings("assets/click.wav", riff, NO_ATTRIBUTION).len(),
+            findings("assets/renamed.bin", riff, NO_ATTRIBUTION).len(),
             1
         );
-        assert_eq!(
-            file_findings("assets/renamed.bin", riff, NO_ATTRIBUTION).len(),
-            1
-        );
-        assert_eq!(
-            file_findings("assets/loop.MP3", b"", NO_ATTRIBUTION).len(),
-            1
-        );
+        assert_eq!(findings("assets/loop.MP3", b"", NO_ATTRIBUTION).len(), 1);
         let attribution = "| `assets/click.wav` | synthesised | CC0-1.0 |";
-        assert!(file_findings("assets/click.wav", riff, attribution).is_empty());
+        assert!(findings("assets/click.wav", riff, attribution).is_empty());
     }
 
     #[test]
     fn rejects_foreign_formats_outside_fixtures() {
-        assert_eq!(
-            file_findings("mappings/deck.tsi", b"", NO_ATTRIBUTION).len(),
-            1
-        );
-        assert_eq!(
-            file_findings("collection.NML", b"", NO_ATTRIBUTION).len(),
-            1
-        );
-        assert!(file_findings("tests/fixtures/empty.nml", b"", NO_ATTRIBUTION).is_empty());
-        let nested = "crates/library/tests/fixtures/empty.nml";
-        assert!(file_findings(nested, b"", NO_ATTRIBUTION).is_empty());
+        assert_eq!(findings("mappings/deck.zzq", b"", NO_ATTRIBUTION).len(), 1);
+        assert_eq!(findings("collection.QQZ", b"", NO_ATTRIBUTION).len(), 1);
+        assert!(findings("tests/fixtures/empty.qqz", b"", NO_ATTRIBUTION).is_empty());
+        let nested = "crates/library/tests/fixtures/empty.qqz";
+        assert!(findings(nested, b"", NO_ATTRIBUTION).is_empty());
     }
 
     #[test]
     fn accepts_ordinary_source_files() {
         let source = b"//! Three-band equaliser.\nfn main() {}\n";
-        assert!(file_findings("crates/dsp/src/eq.rs", source, NO_ATTRIBUTION).is_empty());
+        assert!(findings("crates/dsp/src/eq.rs", source, NO_ATTRIBUTION).is_empty());
     }
 }

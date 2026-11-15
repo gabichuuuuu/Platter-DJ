@@ -34,11 +34,13 @@ Each `xtask` step can be run alone. No test opens a real audio device: CI has no
 
 It reads every tracked file and fails on:
 
-- the name of the reference product or of its vendor, in a path or in the text,
+- the name of a documented application or of its vendor, in a path or in the text,
 - a GPL, AGPL or LGPL licence header or SPDX tag,
 - an audio file, by extension or by signature, whose path is not in `ATTRIBUTION.md`,
-- a file with a mapping or collection extension of the reference product (`.tsi`, `.nml`)
-  outside a `tests/fixtures/` directory.
+- a file with a mapping or collection extension of a documented application outside a
+  `tests/fixtures/` directory.
+
+The names and the extensions are stored as FNV-1a hashes, so the check does not spell them out.
 
 ### `cargo xtask privacy`
 
