@@ -104,8 +104,8 @@ its own code, graphics and sounds.
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
-  header. Playlists, history, search, sorting and the preview player are not in the window
-  yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
+  header, and searches it as the user types. Playlists, history, sorting and the preview
+  player are not in the window yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
 - MIDI controllers are named by hand in the settings file, each with a mapping file
   (`docs/behavior/controllers.md`); there is no controller page, no learn mode and no lights
   yet. No real controller has been tried: the path from a MIDI input to the engine is tested

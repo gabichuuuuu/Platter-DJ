@@ -211,7 +211,7 @@ features = [
   { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
   { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "in_progress" },
   { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
-  { id = "search", name = "Live search", milestone = "M3", status = "planned" },
+  { id = "search", name = "Live search", milestone = "M3", status = "in_progress" },
   { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "planned" },
   { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "planned" },
   { id = "preview-deck", name = "Preview deck", milestone = "M3", status = "planned" },

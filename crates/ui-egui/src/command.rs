@@ -179,6 +179,12 @@ pub enum AppCommand {
     BrowserNodeSelect {
         node: BrowserNode,
     },
+    /// Keeps the rows of the list whose tags hold every word of `text`.
+    BrowserSearchSet {
+        text: String,
+    },
+    /// Gives the keyboard to the search field.
+    BrowserSearchFocus,
     /// Adds the music of a folder and of the folders inside it to the collection.
     LibraryImportFolder {
         path: PathBuf,
@@ -249,6 +255,8 @@ const DECK_PAGES: &[&str] = &["move", "cue", "grid"];
 pub const MAX_OUTPUTS: u16 = 64;
 const MAX_ROWS: f64 = 1_000_000.0;
 const NODES: &[&str] = &["collection"];
+/// Longest search text, in characters; the rest of a longer one is not taken.
+pub const MAX_SEARCH_CHARS: usize = 200;
 
 /// The nodes of the browser tree that are not folders of the explorer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -373,6 +381,19 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "browser.node.select",
         label: "Show node of the tree",
         params: &[choice("node", NODES)],
+    },
+    CommandSpec {
+        id: "browser.search.set",
+        label: "Search the list",
+        params: &[ParamSpec {
+            name: "text",
+            kind: ParamKind::Text,
+        }],
+    },
+    CommandSpec {
+        id: "browser.search.focus",
+        label: "Go to the search field",
+        params: &[],
     },
     CommandSpec {
         id: "library.import_folder",
@@ -568,6 +589,10 @@ impl AppCommand {
             "browser.node.select" => Self::BrowserNodeSelect {
                 node: read.choice("node", &BrowserNode::ALL, BrowserNode::name, "collection")?,
             },
+            "browser.search.set" => Self::BrowserSearchSet {
+                text: read.text("text")?.chars().take(MAX_SEARCH_CHARS).collect(),
+            },
+            "browser.search.focus" => Self::BrowserSearchFocus,
             "library.import_folder" => Self::LibraryImportFolder {
                 path: PathBuf::from(read.text("path")?),
             },
@@ -610,6 +635,8 @@ impl AppCommand {
             Self::BrowserActivate => "browser.activate",
             Self::BrowserLoadSelected { .. } => "browser.load_selected",
             Self::BrowserNodeSelect { .. } => "browser.node.select",
+            Self::BrowserSearchSet { .. } => "browser.search.set",
+            Self::BrowserSearchFocus => "browser.search.focus",
             Self::LibraryImportFolder { .. } => "library.import_folder",
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",

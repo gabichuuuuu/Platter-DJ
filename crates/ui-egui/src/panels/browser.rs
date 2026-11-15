@@ -16,12 +16,15 @@ use crate::icons::Glyph;
 use crate::model::{BrowserView, CollectionView, FileRow, ImportOutcome, RowKind, TreeRow, View};
 use crate::paint;
 use crate::panels::waveform::deck_color;
+use crate::widgets::field;
 use crate::widgets::key::{self, Face, KeySpec, Press};
 
 pub const TREE_WIDTH: f32 = 260.0;
 const TREE_ROW: f32 = 26.0;
 const TREE_INDENT: f32 = 16.0;
 const TOOLBAR_HEIGHT: f32 = 44.0;
+const SEARCH_WIDTH: f32 = 240.0;
+const SEARCH_HEIGHT: f32 = 28.0;
 pub const ROW_HEIGHT: f32 = 27.0;
 const COLUMN_GAP: f32 = 12.0;
 
@@ -79,6 +82,8 @@ pub struct BrowserMemory {
     /// The selection the list was last scrolled to, so it follows the selection when it
     /// moves and stays put when the user scrolls away.
     seen_selection: Option<usize>,
+    /// The search field takes the keyboard in the next frame.
+    pub(crate) focus_search: bool,
 }
 
 /// Keeps a scroll offset inside what there is to scroll.
@@ -113,6 +118,7 @@ pub fn browser(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut Browse
         cx,
         Rect::from_min_size(list_rect.min, egui::vec2(list_rect.width(), TOOLBAR_HEIGHT)),
         view,
+        std::mem::take(&mut memory.focus_search),
     );
     let rows = Rect::from_min_max(
         egui::pos2(list_rect.left(), list_rect.top() + TOOLBAR_HEIGHT),
@@ -383,7 +389,7 @@ fn tree_row(
 }
 
 /// The path of the current folder, its file count and the two load keys.
-fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
+fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, focus_search: bool) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -460,6 +466,20 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
         );
     }
 
+    // The search field, left of the keys; the path is cut to the room that is left.
+    let field = Rect::from_min_size(
+        egui::pos2(right - SEARCH_WIDTH, middle - SEARCH_HEIGHT / 2.0),
+        egui::vec2(SEARCH_WIDTH, SEARCH_HEIGHT),
+    );
+    field::search(
+        cx,
+        field,
+        id("browser-search"),
+        &view.browser.search,
+        focus_search,
+        id("browser-list"),
+    );
+    right = field.left() - tokens.space.s4;
     let painter = cx.painter();
     let mut x = rect.left() + 10.0;
     let showing_collection = collection.is_some_and(|collection| collection.current);
@@ -499,9 +519,19 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
         x = drawn.right().min(right) + tokens.space.s2 + tokens.space.s1;
     }
     let mut count = match collection.filter(|collection| collection.current) {
-        Some(collection) => match collection.tracks {
-            Some(tracks) => texts.format("browser.track_count", &[("count", &tracks.to_string())]),
-            None => String::new(),
+        Some(collection) => match (collection.tracks, collection.matched) {
+            (Some(tracks), Some(matched)) if !view.browser.search.trim().is_empty() => texts
+                .format(
+                    "browser.match_count",
+                    &[
+                        ("count", &matched.to_string()),
+                        ("total", &tracks.to_string()),
+                    ],
+                ),
+            (Some(tracks), _) => {
+                texts.format("browser.track_count", &[("count", &tracks.to_string())])
+            }
+            (None, _) => String::new(),
         },
         None => texts.format(
             "browser.file_count",
@@ -747,7 +777,9 @@ fn list(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut BrowserMemory
 
 /// What an empty list says, by what it shows and why it is empty.
 fn empty_message(browser: &BrowserView) -> &'static str {
+    let searching = !browser.search.trim().is_empty();
     match &browser.collection {
+        _ if searching && !browser.reading => "browser.no_match",
         Some(collection) if collection.current => match collection.available {
             _ if browser.reading => "browser.collection_reading",
             Some(false) => "browser.library_unavailable",

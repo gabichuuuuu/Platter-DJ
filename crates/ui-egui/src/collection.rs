@@ -18,13 +18,15 @@ use crate::files::is_audio;
 use crate::model::{CollectionView, FileRow, ImportOutcome, RowKind, TrackRow};
 
 enum Request {
-    Read,
+    /// Reads the tracks that match a search text; an empty one matches all of them.
+    Read(String),
     Import(PathBuf),
 }
 
 enum Reply {
     Unavailable,
-    Page(Page),
+    /// The tracks found for a search text.
+    Page(String, Page),
     Imported(ImportOutcome),
 }
 
@@ -60,8 +62,19 @@ fn now() -> Timestamp {
 
 /// Serves the requests of the browser until it goes away.
 fn serve(library: &mut dyn Library, requests: &Receiver<Request>, replies: &Sender<Reply>) {
-    while let Ok(request) = requests.recv() {
-        if let Request::Import(folder) = request {
+    let mut text = String::new();
+    while let Ok(first) = requests.recv() {
+        // Of the searches waiting, typed while the library was busy, only the last one
+        // matters; imports all run, in order.
+        let mut imports = Vec::new();
+        for request in std::iter::once(first).chain(requests.try_iter()) {
+            match request {
+                Request::Read(newer) => text = newer,
+                Request::Import(folder) => imports.push(folder),
+            }
+        }
+        let imported = !imports.is_empty();
+        for folder in imports {
             let outcome = match import_folder(library, &folder, &mut HeaderReader, now()) {
                 Ok(report) => ImportOutcome::Done {
                     added: report.added.len(),
@@ -74,13 +87,24 @@ fn serve(library: &mut dyn Library, requests: &Receiver<Request>, replies: &Send
                 return;
             }
         }
-        // Reads that piled up behind a long import are answered once.
-        let reply = match library.search(&Query::default()) {
-            Ok(page) => Reply::Page(page),
-            Err(_) => Reply::Unavailable,
-        };
-        if replies.send(reply).is_err() {
-            return;
+        // After an import the size of the whole collection changed too, which only an
+        // empty search tells.
+        let mut texts = vec![text.clone()];
+        if imported && !text.trim().is_empty() {
+            texts.insert(0, String::new());
+        }
+        for text in texts {
+            let query = Query {
+                text: text.clone(),
+                ..Query::default()
+            };
+            let reply = match library.search(&query) {
+                Ok(page) => Reply::Page(text, page),
+                Err(_) => Reply::Unavailable,
+            };
+            if replies.send(reply).is_err() {
+                return;
+            }
         }
     }
 }
@@ -114,9 +138,14 @@ pub struct Collection {
     replies: Receiver<Reply>,
     available: Option<bool>,
     rows: Vec<FileRow>,
+    /// Tracks that matched the search, beyond the rows too.
+    matched: Option<usize>,
+    /// Tracks in the whole collection, as the last answer to an empty search said.
     total: Option<usize>,
     importing: bool,
     imported: Option<ImportOutcome>,
+    /// The search text the rows are for, or will be once its answer comes.
+    text: String,
 }
 
 impl Collection {
@@ -142,11 +171,13 @@ impl Collection {
             replies,
             available: if spawned.is_ok() { None } else { Some(false) },
             rows: Vec::new(),
+            matched: None,
             total: None,
             importing: false,
             imported: None,
+            text: String::new(),
         };
-        collection.send(Request::Read);
+        collection.send(Request::Read(String::new()));
         collection
     }
 
@@ -170,8 +201,14 @@ impl Collection {
         self.send(Request::Import(folder));
     }
 
-    pub fn can_import(&self) -> bool {
-        !self.importing && self.available == Some(true)
+    /// Asks for the tracks that match `text`; the rows change when the answer comes.
+    pub fn search(&mut self, text: &str) {
+        if self.text == text {
+            return;
+        }
+        text.clone_into(&mut self.text);
+        self.matched = None;
+        self.send(Request::Read(self.text.clone()));
     }
 
     /// Takes in the answers of the worker. Returns whether anything arrived.
@@ -184,15 +221,22 @@ impl Collection {
                     self.available = Some(false);
                     self.importing = false;
                     self.rows.clear();
+                    self.matched = None;
                     self.total = None;
                 }
-                Reply::Page(page) => {
+                Reply::Page(text, page) => {
                     // The worker reads the collection again after an import: the import is
                     // over once the list shows what it added.
                     self.importing = false;
                     self.available = Some(true);
-                    self.total = Some(page.total);
-                    self.rows = page.hits.into_iter().map(|hit| row_of(hit.track)).collect();
+                    if text.trim().is_empty() {
+                        self.total = Some(page.total);
+                    }
+                    // An answer for a text the user has since changed is of no use.
+                    if text == self.text {
+                        self.matched = Some(page.total);
+                        self.rows = page.hits.into_iter().map(|hit| row_of(hit.track)).collect();
+                    }
                 }
                 Reply::Imported(outcome) => self.imported = Some(outcome),
             }
@@ -205,15 +249,20 @@ impl Collection {
         &self.rows
     }
 
-    /// The library is opening or importing: answers are still to come.
+    /// The library is opening, importing or searching: answers are still to come.
     pub fn busy(&self) -> bool {
-        self.available.is_none() || self.importing
+        self.available.is_none() || self.importing || self.pending_search()
+    }
+
+    fn pending_search(&self) -> bool {
+        self.available == Some(true) && self.matched.is_none()
     }
 
     pub fn view(&self, current: bool) -> CollectionView {
         CollectionView {
             available: self.available,
             tracks: self.total,
+            matched: self.matched,
             current,
             importing: self.importing,
             imported: self.imported,

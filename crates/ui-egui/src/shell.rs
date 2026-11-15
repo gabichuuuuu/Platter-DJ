@@ -154,6 +154,7 @@ impl Shell {
             AppCommand::DeckPageSet { deck, page } => state.deck_page[deck.index()] = *page,
             AppCommand::DeckCueMapToggle { deck } => state.cue_map[deck.index()] ^= true,
             AppCommand::MixerClipReset { meter } => state.meters[meter.index()].reset_clip(),
+            AppCommand::BrowserSearchFocus => state.browser.focus_search = true,
             _ => {}
         }
     }

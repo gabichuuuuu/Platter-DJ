@@ -220,3 +220,7 @@ page = "audio"
 [[binding]]
 keys = "F11"
 command = "app.fullscreen.toggle"
+
+[[binding]]
+keys = "Ctrl + F"
+command = "browser.search.focus"

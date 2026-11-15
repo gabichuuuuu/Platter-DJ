@@ -188,6 +188,8 @@ pub struct CollectionView {
     pub available: Option<bool>,
     /// Tracks in the collection, once the library has counted them.
     pub tracks: Option<usize>,
+    /// Tracks that match the search text, once the library has answered it.
+    pub matched: Option<usize>,
     /// The list shows the collection.
     pub current: bool,
     pub importing: bool,
@@ -199,6 +201,8 @@ pub struct BrowserView {
     /// The collection node above the folders, when the browser has a library.
     pub collection: Option<CollectionView>,
     pub tree: Vec<TreeRow>,
+    /// The text of the search field.
+    pub search: String,
     /// The folder the list shows; `None` while it shows the collection.
     pub folder: Option<PathBuf>,
     /// Names of the folders from a root of the tree down to the current one.

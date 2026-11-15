@@ -197,3 +197,90 @@ fn a_browser_without_a_library_has_no_collection_node() {
     wait(&mut browser, |browser| !browser.view().reading);
     assert_eq!(browser.view().rows.len(), 4);
 }
+
+fn search(browser: &mut FileBrowser, text: &str) {
+    browser.apply(&AppCommand::BrowserSearchSet {
+        text: text.to_owned(),
+    });
+    wait(browser, |browser| !browser.collection_busy());
+}
+
+fn names(browser: &FileBrowser) -> Vec<String> {
+    browser
+        .view()
+        .rows
+        .iter()
+        .map(|row| row.name.clone())
+        .collect()
+}
+
+#[test]
+fn the_search_keeps_the_tracks_of_the_collection_that_match_every_word() {
+    let root = place("collection-search");
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    import(&mut browser, root.join("music"));
+    show_collection(&mut browser);
+
+    // The tracks have no title tag: the library finds nothing by the words of a file name.
+    search(&mut browser, "  ");
+    assert_eq!(names(&browser).len(), 3);
+    search(&mut browser, "nothing like it");
+    assert!(names(&browser).is_empty());
+    let view = browser.view();
+    assert_eq!(view.collection.as_ref().unwrap().matched, Some(0));
+    assert_eq!(view.collection.unwrap().tracks, Some(3));
+    assert_eq!(view.selected, None);
+    search(&mut browser, "");
+    assert_eq!(names(&browser).len(), 3);
+    assert_eq!(browser.view().selected, Some(0));
+}
+
+#[test]
+fn only_the_answer_to_the_last_text_reaches_the_list() {
+    let root = place("collection-search-order");
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    import(&mut browser, root.join("music"));
+    show_collection(&mut browser);
+    // Typed faster than the library answers: the earlier texts are skipped or dropped.
+    for text in ["n", "no", "non", "none of it", ""] {
+        browser.apply(&AppCommand::BrowserSearchSet {
+            text: text.to_owned(),
+        });
+    }
+    wait(&mut browser, |browser| !browser.collection_busy());
+    assert_eq!(names(&browser).len(), 3);
+    assert_eq!(browser.view().search, "");
+}
+
+#[test]
+fn the_search_filters_the_rows_of_a_folder_by_name_and_follows_the_list() {
+    let root = place("collection-search-folder");
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    browser.navigate(root.join("music"));
+    wait(&mut browser, |browser| {
+        let view = browser.view();
+        !view.reading && view.rows.iter().all(|row| row.kind != RowKind::Pending)
+    });
+    search(&mut browser, "SIDE wav");
+    assert_eq!(names(&browser), ["a-side.wav", "b-side.wav"]);
+    assert_eq!(browser.view().selected, Some(0));
+    // The folder is kept when its name matches.
+    search(&mut browser, "set");
+    assert_eq!(names(&browser), ["sets"]);
+    search(&mut browser, "zzz");
+    assert!(names(&browser).is_empty());
+    assert_eq!(browser.view().selected, None);
+    assert_eq!(
+        browser.apply(&AppCommand::BrowserLoadSelected { deck: DeckId::A }),
+        None
+    );
+
+    // The same text applies to the collection when it is shown.
+    import(&mut browser, root.join("music"));
+    search(&mut browser, "");
+    show_collection(&mut browser);
+    assert_eq!(names(&browser).len(), 3);
+}

@@ -71,6 +71,30 @@ fn list(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     (folders, files)
 }
 
+/// The words of a search text, folded to lower case.
+fn words(text: &str) -> Vec<String> {
+    text.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether every word is in the name, title, artist or album of a row of a folder.
+fn matches(row: &FileRow, words: &[String]) -> bool {
+    if words.is_empty() {
+        return true;
+    }
+    let mut fields = vec![row.name.to_lowercase()];
+    if let RowKind::Track(track) = &row.kind {
+        for tag in [&track.title, &track.artist, &track.album]
+            .into_iter()
+            .flatten()
+        {
+            fields.push(tag.to_lowercase());
+        }
+    }
+    words
+        .iter()
+        .all(|word| fields.iter().any(|field| field.contains(word.as_str())))
+}
+
 fn probe(path: &Path) -> RowKind {
     match probe_file(path) {
         Ok(info) => RowKind::Track(TrackRow {
@@ -129,6 +153,8 @@ pub struct FileBrowser {
     collection: Option<Collection>,
     /// The list shows the collection instead of the current folder.
     showing_collection: bool,
+    /// The text of the search field, for the collection and for the folders alike.
+    search: String,
 }
 
 impl FileBrowser {
@@ -148,6 +174,7 @@ impl FileBrowser {
             reports,
             collection: None,
             showing_collection: false,
+            search: String::new(),
         }
     }
 
@@ -170,14 +197,38 @@ impl FileBrowser {
             .collection
             .as_ref()
             .and_then(|collection| (!collection.rows().is_empty()).then_some(0));
+        // The rows are those of the last answer; the selection follows when a newer one comes.
     }
 
-    /// The rows the list shows: those of the collection or those of the current folder.
-    fn shown(&self) -> &[FileRow] {
+    /// The rows the list shows: those of the collection, which the library has already
+    /// searched, or those of the current folder that match the search.
+    fn shown(&self) -> Vec<&FileRow> {
         match &self.collection {
-            Some(collection) if self.showing_collection => collection.rows(),
-            _ => &self.rows,
+            Some(collection) if self.showing_collection => collection.rows().iter().collect(),
+            _ => {
+                let words = words(&self.search);
+                self.rows
+                    .iter()
+                    .filter(|row| matches(row, &words))
+                    .collect()
+            }
         }
+    }
+
+    /// The selection on the first row shown, or none when nothing is.
+    fn select_first(&mut self) {
+        self.selected = (!self.shown().is_empty()).then_some(0);
+    }
+
+    fn search(&mut self, text: &str) {
+        if self.search == text {
+            return;
+        }
+        text.clone_into(&mut self.search);
+        if let Some(collection) = &mut self.collection {
+            collection.search(text);
+        }
+        self.select_first();
     }
 
     /// The folder the list shows.
@@ -286,7 +337,7 @@ impl FileBrowser {
                             })
                             .collect();
                         if !self.showing_collection {
-                            self.selected = (!self.rows.is_empty()).then_some(0);
+                            self.select_first();
                         }
                     }
                     self.counts.insert(folder.clone(), files.len());
@@ -336,6 +387,7 @@ impl FileBrowser {
             AppCommand::BrowserNodeSelect {
                 node: BrowserNode::Collection,
             } => self.show_collection(),
+            AppCommand::BrowserSearchSet { text } => self.search(text),
             AppCommand::LibraryImportFolder { path } => {
                 if let Some(collection) = &mut self.collection {
                     collection.import(path.clone());
@@ -347,7 +399,7 @@ impl FileBrowser {
     }
 
     fn selected_row(&self) -> Option<&FileRow> {
-        self.shown().get(self.selected?)
+        self.shown().get(self.selected?).copied()
     }
 
     fn move_selection(&mut self, delta: i32) {
@@ -439,7 +491,8 @@ impl FileBrowser {
             } else {
                 crumbs
             },
-            rows: self.shown().to_vec(),
+            rows: self.shown().into_iter().cloned().collect(),
+            search: self.search.clone(),
             selected: self.selected,
             reading: match &self.collection {
                 Some(collection) if self.showing_collection => collection.busy(),
