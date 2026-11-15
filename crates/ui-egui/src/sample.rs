@@ -12,8 +12,8 @@ use platter_engine::{DeckSnapshot, Snapshot, TrackInfo, WaveformPeaks};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::model::{
-    AudioProblem, AudioState, AudioView, BrowserView, Clock, DeviceView, FileRow, OutputKind,
-    RowKind, SettingsView, StreamView, TrackRow, TreeRow, View,
+    AudioProblem, AudioState, AudioView, BrowserView, Clock, CollectionView, DeviceView, FileRow,
+    OutputKind, RowKind, SettingsView, StreamView, TrackRow, TreeRow, View,
 };
 
 /// Everything a [`View`] borrows, owned in one place.
@@ -247,6 +247,7 @@ fn rows() -> Vec<FileRow> {
                     seconds: Some(seconds),
                     format: container.name().to_owned(),
                     sample_rate: sample_rate.hz(),
+                    missing: false,
                 }),
             }
         })
@@ -283,7 +284,13 @@ fn settings() -> SettingsView {
 
 fn browser() -> BrowserView {
     BrowserView {
+        collection: Some(CollectionView {
+            available: Some(true),
+            tracks: Some(1284),
+            ..CollectionView::default()
+        }),
         tree: tree(),
+        folder: Some(PathBuf::from("Home/Music/Sets")),
         crumbs: vec!["Home".to_owned(), "Music".to_owned(), "Sets".to_owned()],
         rows: rows(),
         selected: Some(2),

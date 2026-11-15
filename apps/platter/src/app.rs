@@ -12,6 +12,8 @@ use platter_audio_io::{
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::{Command, Engine, EngineError, Event, Processor};
+use platter_library::{Library, LibraryError, SqliteLibrary};
+use platter_ui_egui::collection::Collection;
 use platter_ui_egui::command::{Action, AppCommand};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
@@ -22,7 +24,7 @@ use platter_ui_egui::model::{
 };
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
-use crate::config::{self, KEYMAP_FILE, LOG_FILE, SETTINGS_FILE, Settings};
+use crate::config::{self, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE, SETTINGS_FILE, Settings};
 use crate::midi;
 
 /// How often the devices are looked for again while none is playing.
@@ -118,6 +120,12 @@ impl PlatterApp {
         });
         let home_name = shell.texts().get("browser.home").to_owned();
         let mut browser = FileBrowser::new(roots(&home_name, &settings.roots));
+        let library = folder.as_ref().map(|folder| folder.join(LIBRARY_FILE));
+        browser.attach(Collection::start(move || {
+            let path = library
+                .ok_or_else(|| LibraryError::NotAFolder(std::io::ErrorKind::NotFound.into()))?;
+            Ok(Box::new(SqliteLibrary::open(&path)?) as Box<dyn Library>)
+        }));
         // The folder shown last is not looked at here: if it is gone, or on a drive that
         // does not answer, the worker that reads it finds out without holding the window.
         let start = settings.folder.clone().or_else(|| {
@@ -732,6 +740,7 @@ impl eframe::App for PlatterApp {
                 .iter()
                 .any(|level| *level > QUIET_LEVEL)
             || browser.reading
+            || self.browser.collection_busy()
             || midi_waiting;
         if busy {
             ctx.request_repaint();

@@ -6,6 +6,7 @@
 //! The interface draws it and answers with [`command::Action`]s. It holds no state of the
 //! engine: what it remembers between frames is only how things are shown.
 
+pub mod collection;
 pub mod command;
 pub mod cx;
 pub mod files;

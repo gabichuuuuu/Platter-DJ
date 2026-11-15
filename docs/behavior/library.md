@@ -2,9 +2,9 @@
 
 The library remembers the tracks a DJ has imported, the playlists made from them and what was
 played in each session. This note covers the store behind it, `platter-library`: what it keeps,
-the operations on it and the import of folders. Reading the tags of each format and the browser
-that shows all of it come later in M3, on top of this store; until then nothing in the
-application uses it. How the store is kept on disk is in `docs/decisions/0022-library-store.md`,
+the operations on it and the import of folders. The browser shows the collection and imports
+folders into it (`docs/behavior/browser.md`, *The collection*); playlists and history have no
+place in the window yet. How the store is kept on disk is in `docs/decisions/0022-library-store.md`,
 and how folders are imported in `docs/decisions/0023-folder-import.md`.
 
 ## What the public manual says

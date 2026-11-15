@@ -15,4 +15,5 @@ platter-core = { path = "../core" }
 platter-decode = { path = "../decode" }
 platter-dsp = { path = "../dsp" }
 platter-engine = { path = "../engine" }
+platter-library = { path = "../library" }
 toml.workspace = true

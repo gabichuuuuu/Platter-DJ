@@ -16,6 +16,8 @@ use platter_ui_egui::i18n::Language;
 pub const SETTINGS_FILE: &str = "settings.toml";
 pub const KEYMAP_FILE: &str = "keymap.toml";
 pub const LOG_FILE: &str = "platter.log";
+/// The library: collection, playlists and history (`docs/behavior/browser.md`).
+pub const LIBRARY_FILE: &str = "library.sqlite";
 /// Roots of the file selector a settings file may name.
 const MAX_ROOTS: usize = 32;
 /// MIDI controllers a settings file may name.

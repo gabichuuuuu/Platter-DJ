@@ -2236,6 +2236,7 @@ dependencies = [
  "platter-core",
  "platter-device-io",
  "platter-engine",
+ "platter-library",
  "platter-ui-egui",
  "toml",
 ]
@@ -2339,6 +2340,7 @@ dependencies = [
  "platter-decode",
  "platter-dsp",
  "platter-engine",
+ "platter-library",
  "toml",
 ]
 

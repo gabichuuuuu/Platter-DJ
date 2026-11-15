@@ -175,6 +175,14 @@ pub enum AppCommand {
     BrowserLoadSelected {
         deck: DeckId,
     },
+    /// Shows a fixed node of the tree, such as the collection, in the list.
+    BrowserNodeSelect {
+        node: BrowserNode,
+    },
+    /// Adds the music of a folder and of the folders inside it to the collection.
+    LibraryImportFolder {
+        path: PathBuf,
+    },
     WaveformZoomIn {
         deck: DeckId,
     },
@@ -240,6 +248,23 @@ const DECK_PAGES: &[&str] = &["move", "cue", "grid"];
 /// Outputs a device may have, as far as the routing goes.
 pub const MAX_OUTPUTS: u16 = 64;
 const MAX_ROWS: f64 = 1_000_000.0;
+const NODES: &[&str] = &["collection"];
+
+/// The nodes of the browser tree that are not folders of the explorer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserNode {
+    Collection,
+}
+
+impl BrowserNode {
+    pub const ALL: [Self; 1] = [Self::Collection];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Collection => "collection",
+        }
+    }
+}
 
 /// Every command of the application, in the order a list shows them.
 pub const APP_SPECS: &[CommandSpec] = &[
@@ -343,6 +368,16 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "browser.load_selected",
         label: "Load selected track",
         params: &[DECK],
+    },
+    CommandSpec {
+        id: "browser.node.select",
+        label: "Show node of the tree",
+        params: &[choice("node", NODES)],
+    },
+    CommandSpec {
+        id: "library.import_folder",
+        label: "Import folder into the collection",
+        params: &[PATH],
     },
     CommandSpec {
         id: "waveform.zoom.in",
@@ -530,6 +565,12 @@ impl AppCommand {
             },
             "browser.activate" => Self::BrowserActivate,
             "browser.load_selected" => Self::BrowserLoadSelected { deck: read.deck()? },
+            "browser.node.select" => Self::BrowserNodeSelect {
+                node: read.choice("node", &BrowserNode::ALL, BrowserNode::name, "collection")?,
+            },
+            "library.import_folder" => Self::LibraryImportFolder {
+                path: PathBuf::from(read.text("path")?),
+            },
             "waveform.zoom.in" => Self::WaveformZoomIn { deck: read.deck()? },
             "waveform.zoom.out" => Self::WaveformZoomOut { deck: read.deck()? },
             "deck.time_display.toggle" => Self::DeckTimeDisplayToggle { deck: read.deck()? },
@@ -568,6 +609,8 @@ impl AppCommand {
             Self::BrowserMove { .. } => "browser.move",
             Self::BrowserActivate => "browser.activate",
             Self::BrowserLoadSelected { .. } => "browser.load_selected",
+            Self::BrowserNodeSelect { .. } => "browser.node.select",
+            Self::LibraryImportFolder { .. } => "library.import_folder",
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",
             Self::DeckTimeDisplayToggle { .. } => "deck.time_display.toggle",
@@ -632,7 +675,7 @@ mod tests {
 
     use platter_engine::command::{Args, CommandError, CommandSpec, ParamKind, Value};
 
-    use super::{APP_SPECS, Action, AppCommand, PAGES, SettingsPage};
+    use super::{APP_SPECS, Action, AppCommand, BrowserNode, NODES, PAGES, SettingsPage};
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
     fn sample_args(spec: &CommandSpec) -> Args {
@@ -669,8 +712,16 @@ mod tests {
 
     #[test]
     fn the_choices_a_specification_lists_name_every_value() {
-        let pages: Vec<_> = SettingsPage::ALL.into_iter().map(SettingsPage::name).collect();
+        let pages: Vec<_> = SettingsPage::ALL
+            .into_iter()
+            .map(SettingsPage::name)
+            .collect();
         assert_eq!(pages, PAGES);
+        let nodes: Vec<_> = BrowserNode::ALL
+            .into_iter()
+            .map(BrowserNode::name)
+            .collect();
+        assert_eq!(nodes, NODES);
     }
 
     #[test]

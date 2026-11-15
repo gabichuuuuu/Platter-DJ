@@ -142,9 +142,12 @@ pub struct TrackRow {
     pub album: Option<String>,
     pub bpm: Option<f64>,
     pub seconds: Option<f64>,
-    /// Name of the container, such as `FLAC`.
+    /// Name of the container, such as `FLAC`; empty when it is not known.
     pub format: String,
+    /// Zero when it is not known.
     pub sample_rate: u32,
+    /// A track of the collection whose file was gone at the last consistency check.
+    pub missing: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,9 +169,38 @@ pub struct FileRow {
     pub kind: RowKind,
 }
 
+/// What the last import of a folder into the collection did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImportOutcome {
+    Done {
+        added: usize,
+        known: usize,
+        unreadable: usize,
+    },
+    Failed,
+}
+
+/// The collection as the browser shows it: its node in the tree and the state of the
+/// library behind it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CollectionView {
+    /// `None` while the library is being opened.
+    pub available: Option<bool>,
+    /// Tracks in the collection, once the library has counted them.
+    pub tracks: Option<usize>,
+    /// The list shows the collection.
+    pub current: bool,
+    pub importing: bool,
+    pub imported: Option<ImportOutcome>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BrowserView {
+    /// The collection node above the folders, when the browser has a library.
+    pub collection: Option<CollectionView>,
     pub tree: Vec<TreeRow>,
+    /// The folder the list shows; `None` while it shows the collection.
+    pub folder: Option<PathBuf>,
     /// Names of the folders from a root of the tree down to the current one.
     pub crumbs: Vec<String>,
     pub rows: Vec<FileRow>,
