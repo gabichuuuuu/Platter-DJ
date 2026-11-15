@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use platter_core::DeckId;
 use platter_engine::Snapshot;
 
+use crate::command::SortColumn;
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 
@@ -188,6 +189,8 @@ pub struct CollectionView {
     pub available: Option<bool>,
     /// Tracks in the collection, once the library has counted them.
     pub tracks: Option<usize>,
+    /// Tracks that match the search text, once the library has answered it.
+    pub matched: Option<usize>,
     /// The list shows the collection.
     pub current: bool,
     pub importing: bool,
@@ -199,6 +202,10 @@ pub struct BrowserView {
     /// The collection node above the folders, when the browser has a library.
     pub collection: Option<CollectionView>,
     pub tree: Vec<TreeRow>,
+    /// The text of the search field.
+    pub search: String,
+    /// The column the list is sorted by, and whether the order is turned round.
+    pub sort: Option<(SortColumn, bool)>,
     /// The folder the list shows; `None` while it shows the collection.
     pub folder: Option<PathBuf>,
     /// Names of the folders from a root of the tree down to the current one.
@@ -226,6 +233,17 @@ pub enum DeckNotice {
     LoadFailed,
 }
 
+/// The MIDI controllers of the settings, for the indicator of the status header.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MidiView {
+    /// Controllers the settings file names.
+    pub named: usize,
+    /// Those whose input opened.
+    pub open: usize,
+    /// A message came from an open controller a moment ago.
+    pub active: bool,
+}
+
 pub struct View<'a> {
     pub engine: &'a Snapshot,
     pub audio: &'a AudioView,
@@ -235,4 +253,5 @@ pub struct View<'a> {
     /// Absent when the time of day is not known.
     pub clock: Option<Clock>,
     pub notices: [Option<DeckNotice>; DeckId::COUNT],
+    pub midi: MidiView,
 }

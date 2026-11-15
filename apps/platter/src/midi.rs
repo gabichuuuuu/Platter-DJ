@@ -214,16 +214,16 @@ impl Controller {
         self.input.name()
     }
 
-    /// The actions of the messages waiting now, at most [`PER_FRAME`] messages, and whether
-    /// more may be waiting.
-    pub fn take(&mut self) -> (Vec<Action>, bool) {
+    /// The actions of the messages waiting now, at most [`PER_FRAME`] messages, how many
+    /// messages were taken, mapped or not, and whether more may be waiting.
+    pub fn take(&mut self) -> (Vec<Action>, usize, bool) {
         let mut actions = Vec::new();
         let mut taken = 0;
         for message in self.messages.take().take(PER_FRAME) {
             actions.extend(self.translator.actions(message.bytes()));
             taken += 1;
         }
-        (actions, taken == PER_FRAME)
+        (actions, taken, taken == PER_FRAME)
     }
 
     /// Whether a refusal of `command` by the engine is the first one, and so goes in the log.

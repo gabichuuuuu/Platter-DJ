@@ -110,9 +110,8 @@ the whole collection. A track is loaded into a deck from the list.
 
 ### Differences
 
-- No search field yet: it comes with the next unit, with a text field of Platter's own.
-- The columns cannot be chosen or sorted yet, and comment, key, colour and rating are not
-  kept yet; they come with the units that add them to the store.
+- The columns cannot be chosen yet, and comment, key, colour and rating are not kept yet; they
+  come with the units that add them to the store.
 - Playlists, preparation list, history, favourites and the preview player are not in the tree
   yet.
 - Import has no progress count while it runs, and cannot be stopped; a large folder keeps the
@@ -128,8 +127,106 @@ the whole collection. A track is loaded into a deck from the list.
 | An empty collection | The list says so |
 | Loading a missing track | The deck says it cannot read the file |
 
+## Search
+
+### What the public manual says
+
+Sections of the reference manual, read on 15 November 2026:
+
+- *Basic usage tutorials*, section *Performing a Text Search*
+- *Overview*, section *Browser*
+
+The search field sits in the browser. As the user types, the list keeps the tracks whose tags
+match, in the playlist selected or in the collection; Enter widens the search to the whole
+collection.
+
+### What Platter does
+
+- **The field.** Above the list, between the path and the keys. It shows the text typed, or
+  "Search" while it is empty, and a key that empties it while it holds text. A click or
+  Ctrl+F (`browser.search.focus`) gives it the keyboard. Typed characters go in at its end and
+  Backspace takes the last one away; Escape empties it and gives the keyboard to the list; the
+  up and down arrows, Enter and Tab leave it for the list too. Every change of the text sends
+  `browser.search.set` with the whole text, at most 200 characters.
+- **What it searches.** The text is split into words at spaces; a row is kept when every word
+  is found, ignoring case, in its title, artist or album, or in the genre of a track of the
+  collection. In the collection the library searches all of it and returns at most 1000
+  tracks, with how many matched in all (`docs/behavior/library.md`, *Search and sorting*). In
+  a folder of the explorer the rows already read are filtered, the file name counting as a
+  title; a folder is kept when its name matches.
+- **One text for the browser.** The text stays when the list changes from the collection to a
+  folder or back, and applies to what is shown. The selection goes to the first row kept.
+- **Order of answers.** The library answers searches in the order they were asked and skips
+  those a newer text has replaced; an answer for a text that is no longer the one in the field
+  is dropped.
+
+### Differences
+
+- Enter does not widen the search: in the collection it already covers everything, and the
+  playlists, where the difference would show, are not in the tree yet.
+- The field has no cursor to move, no selection and no clipboard: text is typed and erased at
+  its end. Input methods that compose characters are not supported.
+- In the collection a track is found by its tags only: one without tags is not found by the
+  name of its file, as it is in a folder of the explorer.
+- The reference design also searches comments, tempo and key; the library does not keep
+  comments or key yet, and tempo is not searched as text.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| A text of spaces only | Everything is shown |
+| Typing past 200 characters | The rest is not taken |
+| A search with no match | The list says nothing matches |
+| Escape with an empty field | The keyboard goes to the list |
+
+## Sorting
+
+### What the public manual says
+
+Sections of the reference manual, read on 15 November 2026:
+
+- *Overview*, section *Browser*
+- *Working with Playlists*
+
+The list can be shown sorted by a column; a playlist also keeps an order of its own, and only in
+that order can its tracks be moved by hand.
+
+### What Platter does
+
+- **Sorting by a column.** Operating the name of a column at the top of the list sorts the
+  list by it (`browser.sort`), ascending; operating the same name again turns the order round.
+  The column sorted by shows a chevron after its name, up for ascending and down for
+  descending. Title, artist, album, tempo and time can be sorted by; the last column cannot.
+- **In the collection.** The library sorts the whole collection, so the first 1000 tracks shown
+  are the first of that order (`docs/behavior/library.md`, *Search and sorting*): tracks
+  without a value in the column come last, ties keep the order of the path, and text sorts by
+  its letters with case ignored. A title that is missing sorts as missing, not by file name.
+- **In a folder.** Its folders stay first, by name; its files sort by the column the same way,
+  with a file without a title tag sorting by its file name. A file whose header has not been
+  read yet sorts as one without a value, and moves into place when it is read.
+- **One order for the browser.** The order stays when the list changes from the collection to
+  a folder and back. Without a column chosen, the collection is in the order of the path and a
+  folder in the order of the name. The selection stays on the same row when the order changes.
+
+### Differences
+
+- Columns cannot be shown, hidden, resized or reordered yet; the reference design puts that in
+  a menu of the header, which comes later.
+- The order is not kept in the settings file: the browser starts unsorted.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| Sorting an empty list | The chevron shows; nothing else changes |
+| Tracks with the same value | The order of the path, or of the name in a folder |
+| Sorting while a search is typed | The rows found keep the order chosen |
+
 ## Tests
 
 `crates/ui-egui/tests/files.rs` for listing, selection, loading and the tree, against folders
-the test writes; `crates/ui-egui/tests/collection.rs` for the collection, against a library
-and folders the test writes; `crates/ui-egui/tests/panels.rs` for the controls and the keys of the list.
+the test writes; `crates/ui-egui/tests/collection.rs` for the collection, the search and
+sorting, against a library and folders the test writes; `crates/ui-egui/tests/search_field.rs`
+and the unit tests of `crates/ui-egui/src/widgets/field.rs` for the search field;
+`crates/ui-egui/tests/panels.rs` for the controls and the keys of the list.

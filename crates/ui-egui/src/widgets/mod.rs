@@ -3,6 +3,7 @@
 //! the engine.
 
 pub mod choice;
+pub mod field;
 pub mod key;
 pub mod meter;
 pub mod tooltip;

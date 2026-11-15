@@ -9,6 +9,8 @@ en = "English"
 es = "Español"
 
 [header]
+midi = "MIDI"
+midi_value = "{open}/{named}"
 audio_built_in = "Built-in audio"
 audio_usb = "USB audio"
 audio_bluetooth = "Bluetooth audio"
@@ -211,6 +213,10 @@ collection_empty = "The collection is empty: show a folder of the tree and impor
 library_unavailable = "The library is not available"
 missing = "Missing"
 rate_value = "{rate} kHz"
+match_count = "{count} of {total} tracks"
+search = "Search"
+clear_search = "Clear search"
+no_match = "Nothing matches the search"
 
 [settings]
 title = "Preferences"
@@ -414,5 +420,8 @@ plus = "Plus"
 "browser.load_selected" = "Load selected track into deck {deck}"
 "browser.node.select" = "Show {node} in the list"
 "library.import_folder" = "Import folder into the collection"
+"browser.search.set" = "Search the list"
+"browser.search.focus" = "Go to the search field"
+"browser.sort" = "Sort by {column}"
 "waveform.zoom.in" = "Zoom in, deck {deck}"
 "waveform.zoom.out" = "Zoom out, deck {deck}"

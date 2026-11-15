@@ -16,7 +16,7 @@ id = "interface"
 title = "Interface"
 features = [
   { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the clock waits for the local time zone, see docs/behavior/interface.md" },
-  { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "planned" },
+  { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "in_progress" },
   { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
   { id = "fullscreen", name = "Full screen", milestone = "M3", status = "in_progress" },
@@ -211,8 +211,8 @@ features = [
   { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
   { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "in_progress" },
   { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
-  { id = "search", name = "Live search", milestone = "M3", status = "planned" },
-  { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "planned" },
+  { id = "search", name = "Live search", milestone = "M3", status = "in_progress" },
+  { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "in_progress" },
   { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "planned" },
   { id = "preview-deck", name = "Preview deck", milestone = "M3", status = "planned" },
 ]

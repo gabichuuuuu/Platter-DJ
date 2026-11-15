@@ -104,11 +104,12 @@ its own code, graphics and sounds.
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
-  header. Playlists, history, search, sorting and the preview player are not in the window
-  yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
+  header, searches it as the user types and sorts it by a column. Playlists, history and the
+  preview player are not in the window yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
 - MIDI controllers are named by hand in the settings file, each with a mapping file
-  (`docs/behavior/controllers.md`); there is no controller page, no learn mode and no lights
-  yet. No real controller has been tried: the path from a MIDI input to the engine is tested
+  (`docs/behavior/controllers.md`); the status header shows how many are open and lights on
+  their messages, but there is no controller page, no learn mode and no lights on the
+  controllers yet. No real controller has been tried: the path from a MIDI input to the engine is tested
   with invented messages only.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.

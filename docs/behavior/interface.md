@@ -11,6 +11,8 @@ Sections of the reference manual, read on 13 November 2026:
 - *Overview*, section *Deck header*
 - *Preferences*, section *Global Settings page*, read on 15 November 2026 for full screen
   and tooltips
+- *Overview*, section *Header*, read again on 15 November 2026 for the MIDI and connection
+  indicators
 
 The header at the top of the window holds status indicators: one for the audio device, which
 changes colour when no device is connected or when the built-in sound card is in use; a load
@@ -22,7 +24,9 @@ tempo fader as a percentage and the base tempo of the track. The application can
 whole screen: the global settings choose the zoom of the full-screen view and whether the
 application starts in it. The manual names no key for it. The same page switches tooltips,
 short descriptions of the interface that the manual recommends while learning it; it does
-not say whether they are on to begin with.
+not say whether they are on to begin with. Two more indicators concern controllers: one
+lights while MIDI signals come in, whatever device sends them; another says whether the
+controllers listed in the preferences are connected, all of them, some or none.
 
 ## What Platter does
 
@@ -69,13 +73,25 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   do. Tooltips are on to begin with; `app.tooltips.toggle` turns them off and on, from the
   General page of the preferences, which keeps the choice in the settings file. Nothing
   behind an open dialog shows one.
+- **MIDI.** When the settings file names at least one MIDI controller
+  (`docs/behavior/controllers.md`), the status header shows a MIDI indicator after the dropout
+  count: a dot, the label "MIDI" and how many of the controllers named are open, as "1/2".
+  The dot is green when all of them are open, amber when some are and red when none is; its
+  colour never stands alone, the count says the same. The label lights for 150 ms after each
+  message any open controller sends, mapped or not, so a control that is moved can be seen
+  to reach Platter. Without a controller in the settings the indicator is not drawn.
 - **Window size.** The layout is designed 1440 points wide. A wider window gives the extra
   width to the waveform lanes and the file list; a taller or shorter one gains or loses rows
   of the file list. A narrower window shows the whole interface smaller.
 
 ## Differences
 
-- No indicators for MIDI, controllers, battery or recording; the first two arrive in M3.
+- No indicators for battery or recording; recording arrives in M4.
+- The reference product has two indicators for controllers, one for signals and one for
+  connections. Platter draws one, with both: the count of open controllers and the light of
+  the messages. A controller is counted as open when its input opened at start; one that is
+  unplugged later is still counted, since the system does not tell the input it is gone
+  (`docs/decisions/0025-midi-ports.md`).
 - The clock is not shown yet. The standard library gives the time in UTC only; the time of
   day needs the offset of the local time zone, which needs either a dependency outside the
   approved list or a call into the system. It is drawn when the application is given a time,
@@ -110,4 +126,5 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
 `crates/ui-egui/tests/panels.rs`: every control emits its command, no text is written in the
 code, every command can be reached with the keyboard, no colour comes from outside the design
 tokens, and readouts keep their width while their digits change.
-`crates/ui-egui/tests/tooltips.rs` for the tooltips.
+`crates/ui-egui/tests/tooltips.rs` for the tooltips. `crates/ui-egui/tests/midi_indicator.rs`
+for the MIDI indicator; no real controller has lit it yet.

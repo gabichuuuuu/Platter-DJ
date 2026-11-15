@@ -179,6 +179,16 @@ pub enum AppCommand {
     BrowserNodeSelect {
         node: BrowserNode,
     },
+    /// Keeps the rows of the list whose tags hold every word of `text`.
+    BrowserSearchSet {
+        text: String,
+    },
+    /// Gives the keyboard to the search field.
+    BrowserSearchFocus,
+    /// Sorts the list by a column, or turns the order round when it is sorted by it already.
+    BrowserSort {
+        column: SortColumn,
+    },
     /// Adds the music of a folder and of the folders inside it to the collection.
     LibraryImportFolder {
         path: PathBuf,
@@ -249,6 +259,40 @@ const DECK_PAGES: &[&str] = &["move", "cue", "grid"];
 pub const MAX_OUTPUTS: u16 = 64;
 const MAX_ROWS: f64 = 1_000_000.0;
 const NODES: &[&str] = &["collection"];
+/// Longest search text, in characters; the rest of a longer one is not taken.
+pub const MAX_SEARCH_CHARS: usize = 200;
+
+const SORT_COLUMNS: &[&str] = &["title", "artist", "album", "bpm", "time"];
+
+/// The columns of the browser list that can be sorted by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SortColumn {
+    Title,
+    Artist,
+    Album,
+    Bpm,
+    Time,
+}
+
+impl SortColumn {
+    pub const ALL: [Self; 5] = [
+        Self::Title,
+        Self::Artist,
+        Self::Album,
+        Self::Bpm,
+        Self::Time,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Title => "title",
+            Self::Artist => "artist",
+            Self::Album => "album",
+            Self::Bpm => "bpm",
+            Self::Time => "time",
+        }
+    }
+}
 
 /// The nodes of the browser tree that are not folders of the explorer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -373,6 +417,24 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "browser.node.select",
         label: "Show node of the tree",
         params: &[choice("node", NODES)],
+    },
+    CommandSpec {
+        id: "browser.search.set",
+        label: "Search the list",
+        params: &[ParamSpec {
+            name: "text",
+            kind: ParamKind::Text,
+        }],
+    },
+    CommandSpec {
+        id: "browser.search.focus",
+        label: "Go to the search field",
+        params: &[],
+    },
+    CommandSpec {
+        id: "browser.sort",
+        label: "Sort the list by a column",
+        params: &[choice("column", SORT_COLUMNS)],
     },
     CommandSpec {
         id: "library.import_folder",
@@ -568,6 +630,18 @@ impl AppCommand {
             "browser.node.select" => Self::BrowserNodeSelect {
                 node: read.choice("node", &BrowserNode::ALL, BrowserNode::name, "collection")?,
             },
+            "browser.search.set" => Self::BrowserSearchSet {
+                text: read.text("text")?.chars().take(MAX_SEARCH_CHARS).collect(),
+            },
+            "browser.search.focus" => Self::BrowserSearchFocus,
+            "browser.sort" => Self::BrowserSort {
+                column: read.choice(
+                    "column",
+                    &SortColumn::ALL,
+                    SortColumn::name,
+                    "title, artist, album, bpm, time",
+                )?,
+            },
             "library.import_folder" => Self::LibraryImportFolder {
                 path: PathBuf::from(read.text("path")?),
             },
@@ -610,6 +684,9 @@ impl AppCommand {
             Self::BrowserActivate => "browser.activate",
             Self::BrowserLoadSelected { .. } => "browser.load_selected",
             Self::BrowserNodeSelect { .. } => "browser.node.select",
+            Self::BrowserSearchSet { .. } => "browser.search.set",
+            Self::BrowserSearchFocus => "browser.search.focus",
+            Self::BrowserSort { .. } => "browser.sort",
             Self::LibraryImportFolder { .. } => "library.import_folder",
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",
@@ -675,7 +752,10 @@ mod tests {
 
     use platter_engine::command::{Args, CommandError, CommandSpec, ParamKind, Value};
 
-    use super::{APP_SPECS, Action, AppCommand, BrowserNode, NODES, PAGES, SettingsPage};
+    use super::{
+        APP_SPECS, Action, AppCommand, BrowserNode, NODES, PAGES, SORT_COLUMNS, SettingsPage,
+        SortColumn,
+    };
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
     fn sample_args(spec: &CommandSpec) -> Args {
@@ -722,6 +802,8 @@ mod tests {
             .map(BrowserNode::name)
             .collect();
         assert_eq!(nodes, NODES);
+        let columns: Vec<_> = SortColumn::ALL.into_iter().map(SortColumn::name).collect();
+        assert_eq!(columns, SORT_COLUMNS);
     }
 
     #[test]

@@ -19,8 +19,8 @@ use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
 use platter_ui_egui::model::{
-    AudioProblem, AudioState, AudioView, DeckNotice, DeviceView, OutputKind, SettingsView,
-    StreamView, View,
+    AudioProblem, AudioState, AudioView, DeckNotice, DeviceView, MidiView, OutputKind,
+    SettingsView, StreamView, View,
 };
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
@@ -31,6 +31,8 @@ use crate::midi;
 const DEVICE_RETRY: Duration = Duration::from_secs(3);
 /// How often an idle window is drawn, for the readings that change on their own.
 const IDLE_REPAINT: Duration = Duration::from_millis(100);
+/// How long the MIDI indicator lights after a message (`docs/behavior/interface.md`).
+const MIDI_LIGHT: Duration = Duration::from_millis(150);
 /// A level below this is silence for the purpose of deciding how often to draw.
 const QUIET_LEVEL: f32 = 1e-4;
 
@@ -104,6 +106,8 @@ pub struct PlatterApp {
     fullscreen_wanted: Option<bool>,
     /// The MIDI controllers of the settings file that could be opened.
     controllers: Vec<midi::Controller>,
+    /// When the last MIDI message came, from any controller.
+    last_midi: Option<Instant>,
 }
 
 impl PlatterApp {
@@ -155,6 +159,7 @@ impl PlatterApp {
             fullscreen: false,
             fullscreen_wanted: None,
             controllers: Vec::new(),
+            last_midi: None,
         };
         app.log(
             Level::Info,
@@ -249,8 +254,11 @@ impl PlatterApp {
         let mut controllers = std::mem::take(&mut self.controllers);
         let mut more = false;
         for controller in &mut controllers {
-            let (actions, left) = controller.take();
+            let (actions, taken, left) = controller.take();
             more |= left;
+            if taken > 0 {
+                self.last_midi = Some(Instant::now());
+            }
             for action in actions {
                 match action {
                     Action::Engine(command) => {
@@ -721,7 +729,15 @@ impl eframe::App for PlatterApp {
             keymap: &self.keymap,
             clock: None,
             notices: self.notices,
+            midi: MidiView {
+                named: self.settings.midi.len(),
+                open: self.controllers.len(),
+                active: self
+                    .last_midi
+                    .is_some_and(|last| last.elapsed() < MIDI_LIGHT),
+            },
         };
+        let midi_lit = view.midi.active;
         let actions = self.shell.show(ui, &view);
         for action in actions {
             self.dispatch(action);
@@ -744,6 +760,9 @@ impl eframe::App for PlatterApp {
             || midi_waiting;
         if busy {
             ctx.request_repaint();
+        } else if midi_lit {
+            // The light of the MIDI indicator goes out without another message to wake it.
+            ctx.request_repaint_after(MIDI_LIGHT);
         } else {
             ctx.request_repaint_after(IDLE_REPAINT);
         }

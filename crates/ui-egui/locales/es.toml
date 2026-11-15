@@ -9,6 +9,8 @@ en = "English"
 es = "Español"
 
 [header]
+midi = "MIDI"
+midi_value = "{open}/{named}"
 audio_built_in = "Audio integrado"
 audio_usb = "Audio USB"
 audio_bluetooth = "Audio Bluetooth"
@@ -211,6 +213,10 @@ collection_empty = "La colección está vacía: muestra una carpeta del árbol e
 library_unavailable = "La biblioteca no está disponible"
 missing = "Falta"
 rate_value = "{rate} kHz"
+match_count = "{count} de {total} pistas"
+search = "Buscar"
+clear_search = "Borrar búsqueda"
+no_match = "Nada coincide con la búsqueda"
 
 [settings]
 title = "Preferencias"
@@ -414,5 +420,8 @@ plus = "Más"
 "browser.load_selected" = "Cargar pista seleccionada en el deck {deck}"
 "browser.node.select" = "Mostrar {node} en la lista"
 "library.import_folder" = "Importar carpeta a la colección"
+"browser.search.set" = "Buscar en la lista"
+"browser.search.focus" = "Ir al campo de búsqueda"
+"browser.sort" = "Ordenar por {column}"
 "waveform.zoom.in" = "Acercar, deck {deck}"
 "waveform.zoom.out" = "Alejar, deck {deck}"
