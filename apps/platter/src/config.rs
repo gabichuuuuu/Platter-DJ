@@ -18,6 +18,8 @@ pub const KEYMAP_FILE: &str = "keymap.toml";
 pub const LOG_FILE: &str = "platter.log";
 /// Roots of the file selector a settings file may name.
 const MAX_ROOTS: usize = 32;
+/// MIDI controllers a settings file may name.
+pub const MAX_CONTROLLERS: usize = 8;
 
 /// The folder of Platter inside the configuration folder of the user, by the convention of
 /// each system. `None` when the environment names no such folder.
@@ -50,6 +52,15 @@ pub fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// A MIDI controller the settings file names: its input and its mapping file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Controller {
+    /// Name of the MIDI input, as the system gives it.
+    pub input: String,
+    /// The mapping file; without a folder, in the folder of the settings file.
+    pub mapping: PathBuf,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub language: Language,
@@ -73,6 +84,9 @@ pub struct Settings {
     /// Folders shown as roots of the file selector beside the home folder, such as a
     /// drive with music. The user writes them in the settings file.
     pub roots: Vec<PathBuf>,
+    /// MIDI controllers, until the controller manager lets the user choose them
+    /// (`docs/behavior/controllers.md`, section *In the application*).
+    pub midi: Vec<Controller>,
 }
 
 impl Default for Settings {
@@ -92,6 +106,7 @@ impl Default for Settings {
             fade_beats: 8,
             folder: None,
             roots: Vec::new(),
+            midi: Vec::new(),
         }
     }
 }
@@ -173,6 +188,25 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            midi: root
+                .get("midi")
+                .and_then(toml::Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(toml::Value::as_table)
+                        .filter_map(|entry| {
+                            let input = text(Some(entry), "input")?;
+                            let mapping = text(Some(entry), "mapping")?;
+                            (!input.is_empty() && !mapping.is_empty()).then(|| Controller {
+                                input,
+                                mapping: PathBuf::from(mapping),
+                            })
+                        })
+                        .take(MAX_CONTROLLERS)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -236,6 +270,25 @@ impl Settings {
         if !browser.is_empty() {
             root.insert("browser".to_owned(), toml::Value::Table(browser));
         }
+        let midi: Vec<toml::Value> = self
+            .midi
+            .iter()
+            .filter_map(|controller| {
+                let mut entry = toml::Table::new();
+                entry.insert(
+                    "input".to_owned(),
+                    toml::Value::String(controller.input.clone()),
+                );
+                entry.insert(
+                    "mapping".to_owned(),
+                    toml::Value::String(controller.mapping.to_str()?.to_owned()),
+                );
+                Some(toml::Value::Table(entry))
+            })
+            .collect();
+        if !midi.is_empty() {
+            root.insert("midi".to_owned(), toml::Value::Array(midi));
+        }
         root.to_string()
     }
 
@@ -269,7 +322,7 @@ mod tests {
     use platter_engine::{CrossfaderCurve, MixerMode};
     use platter_ui_egui::i18n::Language;
 
-    use super::Settings;
+    use super::{Controller, MAX_CONTROLLERS, Settings};
 
     #[test]
     fn settings_survive_a_round_trip_through_their_file() {
@@ -291,6 +344,16 @@ mod tests {
             fade_beats: 32,
             folder: Some(PathBuf::from("music").join("sets")),
             roots: vec![PathBuf::from("records"), PathBuf::from("more records")],
+            midi: vec![
+                Controller {
+                    input: "Example Controller".to_owned(),
+                    mapping: PathBuf::from("example.toml"),
+                },
+                Controller {
+                    input: "Second \"Pad\" 2".to_owned(),
+                    mapping: PathBuf::from("mappings").join("pad.toml"),
+                },
+            ],
         };
         assert_eq!(Settings::parse(&settings.to_toml()), settings);
         assert_eq!(
@@ -319,6 +382,36 @@ mod tests {
         assert_eq!(settings.autogain, defaults.autogain);
         assert!(settings.external_eq_gain);
         assert_eq!(settings.fade_beats, defaults.fade_beats);
+    }
+
+    #[test]
+    fn controllers_without_an_input_or_a_mapping_are_left_out_and_the_rest_bounded() {
+        let mut source = String::from(
+            "midi = [{ input = \"\", mapping = \"a.toml\" }, { input = \"Pad\" }, 7,              { input = \"Pad\", mapping = 3 }]
+",
+        );
+        assert!(Settings::parse(&source).midi.is_empty());
+        source = (0..MAX_CONTROLLERS + 3)
+            .map(|index| {
+                format!(
+                    "[[midi]]
+input = \"Pad {index}\"
+mapping = \"pad.toml\"
+"
+                )
+            })
+            .collect();
+        let midi = Settings::parse(&source).midi;
+        assert_eq!(midi.len(), MAX_CONTROLLERS);
+        assert_eq!(midi[0].input, "Pad 0");
+        // A file whose `midi` is not a list keeps the other settings.
+        let settings = Settings::parse(
+            "language = \"es\"
+midi = \"Pad\"
+",
+        );
+        assert_eq!(settings.language, Language::Spanish);
+        assert!(settings.midi.is_empty());
     }
 
     #[test]

@@ -106,10 +106,11 @@ its own code, graphics and sounds.
 - The store of the library (collection, playlists and history) exists as a crate only: nothing
   in the application uses it yet. It can import a folder, but the application does not read
   the tags for it nor offer the import.
-- No browser of the collection, no MIDI: those are milestone M3.
-
-The reading of MIDI mapping files and the MIDI inputs exist as crates only: the application
-does not open a MIDI port yet, and no controller has been tried.
+- No browser of the collection: that is milestone M3.
+- MIDI controllers are named by hand in the settings file, each with a mapping file
+  (`docs/behavior/controllers.md`); there is no controller page, no learn mode and no lights
+  yet. No real controller has been tried: the path from a MIDI input to the engine is tested
+  with invented messages only.
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 

@@ -37,22 +37,28 @@ pub(crate) struct Sender {
 }
 
 impl Sender {
-    /// Never waits: a message that does not fit is counted and lost.
-    pub(crate) fn deliver(&self, bytes: &[u8]) {
+    /// Never waits: a message that does not fit is counted and lost. Returns whether the
+    /// message is in the queue.
+    pub(crate) fn deliver(&self, bytes: &[u8]) -> bool {
         if bytes.is_empty() {
-            return;
+            return false;
         }
         if bytes.len() > MAX_MESSAGE_BYTES {
             self.counts.oversized.fetch_add(1, Ordering::Relaxed);
-            return;
+            return false;
         }
         let mut message = RawMessage {
             bytes: [0; MAX_MESSAGE_BYTES],
             len: bytes.len() as u8,
         };
         message.bytes[..bytes.len()].copy_from_slice(bytes);
-        if let Err(TrySendError::Full(_)) = self.queue.try_send(message) {
-            self.counts.dropped.fetch_add(1, Ordering::Relaxed);
+        match self.queue.try_send(message) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                self.counts.dropped.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => false,
         }
     }
 }
@@ -124,9 +130,11 @@ mod tests {
     #[test]
     fn a_full_queue_counts_what_it_loses_and_never_waits() {
         let (sender, messages) = queue(2);
-        for note in 0..5 {
-            sender.deliver(&[0x90, note, 1]);
-        }
+        let queued: Vec<bool> = (0..5)
+            .map(|note| sender.deliver(&[0x90, note, 1]))
+            .collect();
+        // Only the messages that entered the queue wake whoever reads it.
+        assert_eq!(queued, [true, true, false, false, false]);
         assert_eq!(messages.dropped(), 3);
         assert_eq!(taken(&messages), [vec![0x90, 0, 1], vec![0x90, 1, 1]]);
         sender.deliver(&[0x80, 9, 0]);
@@ -136,8 +144,8 @@ mod tests {
     #[test]
     fn long_and_empty_messages_are_left_out() {
         let (sender, messages) = queue(4);
-        sender.deliver(&[0xF0, 1, 2, 3, 0xF7]);
-        sender.deliver(&[]);
+        assert!(!sender.deliver(&[0xF0, 1, 2, 3, 0xF7]));
+        assert!(!sender.deliver(&[]));
         assert!(taken(&messages).is_empty());
         assert_eq!((messages.oversized(), messages.dropped()), (1, 0));
     }
@@ -146,6 +154,6 @@ mod tests {
     fn a_closed_queue_is_not_an_error_for_the_port() {
         let (sender, messages) = queue(0);
         drop(messages);
-        sender.deliver(&[0x90, 1, 1]);
+        assert!(!sender.deliver(&[0x90, 1, 1]));
     }
 }

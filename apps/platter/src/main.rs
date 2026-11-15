@@ -9,6 +9,7 @@
 mod app;
 mod capture;
 mod config;
+mod midi;
 mod png;
 
 use std::path::PathBuf;
@@ -47,7 +48,12 @@ fn run() -> Result<(), String> {
         options,
         Box::new(move |creation| {
             shell.install(&creation.egui_ctx);
-            Ok(Box::new(PlatterApp::new(shell, settings, folder)))
+            Ok(Box::new(PlatterApp::new(
+                shell,
+                settings,
+                folder,
+                creation.egui_ctx.clone(),
+            )))
         }),
     )
     .map_err(|error| error.to_string())

@@ -2,11 +2,12 @@
 
 A MIDI controller sends a message when a button, fader, knob or encoder moves. A mapping says
 which command each message triggers. This note covers the mapping file and how messages become
-commands, in `platter-control`, and the MIDI inputs that receive them, in `platter-device-io`.
-Connecting them to the engine, the controller manager of the preferences, learn mode and the
-lights of the controller come later in M3, on top of them; until then nothing in the
-application uses them. The choices behind them are in `docs/decisions/0024-midi-mappings.md`
-and `docs/decisions/0025-midi-ports.md`.
+commands, in `platter-control`, the MIDI inputs that receive them, in `platter-device-io`, and
+how the application joins the two, named in its settings file. The controller manager of the
+preferences, learn mode and the lights of the controller come later in M3, on top of them. The
+choices behind them are in `docs/decisions/0024-midi-mappings.md`,
+`docs/decisions/0025-midi-ports.md` and `docs/decisions/0026-midi-in-the-application.md`. No
+real controller has been tried yet (`ROADMAP.md`, checks waiting for equipment).
 
 ## What the public manual says
 
@@ -142,11 +143,42 @@ when = ["1 = 1"]
 - An input that does not exist, or that another program holds, is an error naming it. An
   input closes when Platter lets it go.
 
+### In the application
+
+Until the controller manager exists, the settings file names the controllers, each with its
+input and its mapping:
+
+```toml
+[[midi]]
+input = "Example Controller"
+mapping = "example-controller.toml"
+```
+
+- A mapping named without a folder is looked for in the folder of the settings file. At most
+  8 controllers are read; an entry without an input or a mapping is left out. Saving the
+  settings keeps them.
+- When the application starts it reads each mapping and checks every command it may send, as
+  `Mapping::commands` lists them: the command exists, takes every parameter the binding gives
+  it, and every number is inside the range of its parameter, at both ends of a fader. A
+  mapping with a mistake is not used, and the log names the mistake; the other controllers
+  still open.
+- A file larger than a mapping may be is refused before it is read whole.
+- Then the input is opened. An input that is not there, or that another program holds, is
+  written in the log; the controller stays off until the application starts again.
+- A message wakes the window, which takes the messages of each input in the order they
+  arrived, at most 64 per input and frame, and carries out the commands of each one in the
+  order of the mapping, through the same path as the keyboard and the interface. What is left
+  waits for the next frame, which comes at once.
+- A command the engine refuses is written in the log the first time only, for each controller
+  and command, so a fader moved on an empty deck does not fill the log. Messages lost because
+  the queue of an input was full, or left out because they were too long, are written in the
+  log at most once every 10 seconds, with their count.
+
 ## Differences
 
 - Relative faders, soft takeover, the sensitivity and acceleration of encoders, and the
-  outputs to the lights of the device need the current value of what they drive, which comes
-  with the connection to the engine. They are not there yet.
+  outputs to the lights of the device need the current value of what they drive, read back
+  from the engine. They come in a later unit of M3.
 - The reference manual does not give the values a modifier takes, nor how the two encodings of
   an encoder count steps. Platter takes 0 to 7 for the values and the counting above. Taking a
   note-on with velocity 0 as a release is Platter's choice too, as controllers send it.
@@ -159,7 +191,13 @@ when = ["1 = 1"]
 - Mappings are TOML files of Platter. Mapping files of other applications are not read.
 - Output ports, the choice of all ports for a mapping, virtual ports and noticing a device
   plugged in or out come with the controller manager. An input whose device is unplugged
-  stops sending; it is not reported yet.
+  stops sending; it is not reported yet, and a device plugged in after the start is not
+  opened until the application starts again.
+- Choosing the controllers in the settings file by hand is a stand-in for the controller
+  manager, as the folders of the file selector are.
+- The messages are carried out by the frames of the window. Whether a minimised window still
+  runs frames on each system, and the delay from a message to its command, have not been
+  measured: they need a controller.
 
 ## Edge cases
 
@@ -174,6 +212,9 @@ when = ["1 = 1"]
 | A modifier condition with modifier 9 or value 8 | The binding is refused |
 | `cc 1 120` | The binding is refused |
 | A key that is a parameter of the command, `mode` or `type` | Passed to the command |
+| A mapping that names a command that does not exist, or a parameter the command does not take | The mapping is not used; the log says why |
+| A fader whose range goes past the range of its parameter | The mapping is not used |
+| A controller whose input is not there at the start | Written in the log; the other controllers work |
 
 ## Tests
 
@@ -181,6 +222,8 @@ when = ["1 = 1"]
 press and on hold, modifiers and conditions, faders, encoders in both encodings, and messages
 that are ignored. `crates/control/tests/untrusted.rs` feeds random bytes and random files and
 checks that nothing panics. The unit tests of `crates/device-io/src/queue.rs` check the queue
-of a port: order, a full queue, long and empty messages. Opening a real port needs a device
-and is checked by hand. The MIDI messages follow the summary of MIDI 1.0 messages of the MIDI
+of a port: order, a full queue, long and empty messages. The unit tests of
+`apps/platter/src/midi.rs` check a mapping against the commands and turn invented messages
+into actions of the engine and of the application; those of `apps/platter/src/config.rs` keep
+the controllers of the settings file. Opening a real port needs a device and waits for one. The MIDI messages follow the summary of MIDI 1.0 messages of the MIDI
 Association, <https://midi.org/summary-of-midi-1-0-messages>.

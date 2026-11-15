@@ -2232,7 +2232,9 @@ version = "0.2.0"
 dependencies = [
  "eframe",
  "platter-audio-io",
+ "platter-control",
  "platter-core",
+ "platter-device-io",
  "platter-engine",
  "platter-ui-egui",
  "toml",

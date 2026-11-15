@@ -70,8 +70,14 @@ impl fmt::Debug for Input {
 }
 
 /// Opens the first input called `name`. Its messages go to a queue of `capacity` messages;
-/// those that arrive while it is full are counted and lost.
-pub fn open(name: &str, capacity: usize) -> Result<(Input, Messages), PortError> {
+/// those that arrive while it is full are counted and lost. `wake` is called, on the thread of
+/// the port, after each message that enters the queue, so whoever reads it need not ask
+/// again and again; it must return at once.
+pub fn open(
+    name: &str,
+    capacity: usize,
+    wake: impl Fn() + Send + 'static,
+) -> Result<(Input, Messages), PortError> {
     let input = client()?;
     let port = input
         .ports()
@@ -80,7 +86,16 @@ pub fn open(name: &str, capacity: usize) -> Result<(Input, Messages), PortError>
         .ok_or_else(|| PortError::NoSuchPort(name.to_owned()))?;
     let (sender, messages) = queue(capacity);
     let connection = input
-        .connect(&port, CLIENT, move |_, bytes, _| sender.deliver(bytes), ())
+        .connect(
+            &port,
+            CLIENT,
+            move |_, bytes, _| {
+                if sender.deliver(bytes) {
+                    wake();
+                }
+            },
+            (),
+        )
         .map_err(|error| match error.kind() {
             ConnectErrorKind::InvalidPort => PortError::NoSuchPort(name.to_owned()),
             ConnectErrorKind::Other(_) => PortError::Busy(name.to_owned()),

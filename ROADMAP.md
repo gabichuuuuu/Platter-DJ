@@ -75,8 +75,10 @@ until it is done and its result is written in the note or the decision it names:
 
 - **A MIDI controller.** Open a real input, receive its messages and drive the engine through
   a mapping, on Windows first, then on macOS and Linux, whose MIDI backends are only compiled
-  in CI. Also: two devices with the same name, and a device unplugged while open
-  (`docs/decisions/0025-midi-ports.md`, `docs/decisions/0024-midi-mappings.md`).
+  in CI. Also: two devices with the same name, a device unplugged while open, the delay from
+  a message to its command, and whether a minimised window still carries out the messages
+  (`docs/decisions/0024-midi-mappings.md`, `docs/decisions/0025-midi-ports.md`,
+  `docs/decisions/0026-midi-in-the-application.md`).
 - **Listening with real tracks.** Key lock, including the attack of kicks and the start of
   each pass of a short loop (`docs/decisions/0021-key-lock-stretch.md`); sync and the master
   clock; loops, beatjump and hotcues. Until then the README says nobody has listened to them.
