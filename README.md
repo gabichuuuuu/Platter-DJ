@@ -91,11 +91,22 @@ The reading of MIDI mapping files exists as a crate only: nothing opens a MIDI p
 
 [`ROADMAP.md`](ROADMAP.md) lists what each milestone delivers and how far the inventory is.
 
-## Building
+## Download
 
-No version has been released yet. Releases, with binaries for Windows, macOS and Linux built in
-CI, will appear in the GitHub releases of this repository; until then Platter is built from
-source.
+Each [release](https://github.com/gabichuuuuu/Platter-DJ/releases) has an archive per system,
+built in CI, with `platter` (the application) and `platter-cli`:
+
+| System | Archive |
+| --- | --- |
+| Windows x64 | `platter-vX.Y.Z-x86_64-pc-windows-msvc.zip` |
+| macOS on Apple silicon | `platter-vX.Y.Z-aarch64-apple-darwin.tar.gz` |
+| Linux x64 | `platter-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz` |
+
+Only Windows has been used for real. macOS and Linux build and pass the tests in CI, but nobody
+has run Platter on them yet. The binaries are not signed, so Windows and macOS warn before
+opening them.
+
+## Building
 
 Requirements: Rust through `rustup` (the toolchain in `rust-toolchain.toml` is installed on first
 use) and `cargo-deny` 0.20.2. Details are in [`docs/development.md`](docs/development.md).
