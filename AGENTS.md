@@ -156,8 +156,8 @@ interface thread.
   hand; nobody edits the version or `CHANGELOG.md` outside the release pull request.
 - A technical decision the rules leave open is recorded as a short ADR in `docs/decisions/`:
   context, options, choice, how it was measured.
-- A function changes status in `docs/parity.toml` in the commit that delivers it; then run
-  `cargo xtask parity`.
+- A function changes status in `docs/parity.toml` in the commit that delivers it. Leave the
+  table of `ROADMAP.md` as it is: the release pull request refreshes it.
 - Stop and ask when a dependency outside the approved list is needed, when something requires
   installing software or touching anything outside the repository, when a closed decision
   proves unworkable, or when a gate does not pass after reasonable attempts.

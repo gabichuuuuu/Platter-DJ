@@ -144,17 +144,14 @@ pub fn write(root: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Validates the inventory and fails when the summary in the roadmap is out of date.
+/// Validates the inventory and the place of the summary in the roadmap.
+///
+/// It does not ask the summary to be up to date: the release pull request refreshes it, so the
+/// pull requests that change a status do not all rewrite the same lines and conflict.
 pub fn check(root: &Path) -> Result<(), Failure> {
-    let (roadmap, updated) = load(root)?;
-    if roadmap == updated {
-        println!("parity: inventory valid, {ROADMAP_PATH} is up to date");
-        Ok(())
-    } else {
-        Err(Failure::message(format!(
-            "the parity summary in {ROADMAP_PATH} is out of date; run `cargo xtask parity`"
-        )))
-    }
+    load(root)?;
+    println!("parity: inventory valid; the summary in {ROADMAP_PATH} is refreshed at each release");
+    Ok(())
 }
 
 /// Reads the inventory and fails when it breaks its rules.

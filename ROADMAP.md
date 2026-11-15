@@ -5,7 +5,9 @@ includes `cargo xtask ci`. Versions stay at 0.x until M4 closes.
 
 ## Progress
 
-The table is generated from `docs/parity.toml` by `cargo xtask parity`. Do not edit it by hand.
+The table is generated from `docs/parity.toml` by `cargo xtask parity` in each release pull
+request, so it shows the last release. The progress page, https://gabichuuuuu.github.io/Platter-DJ/,
+has the count of `main`. Do not edit the table by hand.
 
 <!-- parity:start -->
 
