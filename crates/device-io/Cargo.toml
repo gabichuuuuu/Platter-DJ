@@ -1,0 +1,13 @@
+[package]
+name = "platter-device-io"
+description = "MIDI ports of Platter: lists the inputs of the system and receives their messages"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+midir.workspace = true

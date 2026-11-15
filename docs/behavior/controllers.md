@@ -1,11 +1,12 @@
-# MIDI controllers: mappings
+# MIDI controllers: mappings and ports
 
 A MIDI controller sends a message when a button, fader, knob or encoder moves. A mapping says
 which command each message triggers. This note covers the mapping file and how messages become
-commands, in `platter-control`. Opening the MIDI ports, the controller manager of the
-preferences, learn mode and the lights of the controller come later in M3, on top of it; until
-then nothing in the application uses it. The choices behind it are in
-`docs/decisions/0024-midi-mappings.md`.
+commands, in `platter-control`, and the MIDI inputs that receive them, in `platter-device-io`.
+Connecting them to the engine, the controller manager of the preferences, learn mode and the
+lights of the controller come later in M3, on top of them; until then nothing in the
+application uses them. The choices behind them are in `docs/decisions/0024-midi-mappings.md`
+and `docs/decisions/0025-midi-ports.md`.
 
 ## What the public manual says
 
@@ -28,6 +29,10 @@ hardware to reach the value. Encoders send relative steps in one of two encoding
 sensitivity and an acceleration. A mapping has eight modifiers, values set by controls of the
 same mapping; an assignment can require up to two of them to have given values, and modifiers
 of one mapping are not seen by another. Outputs drive the lights of the device.
+
+Each mapping has an input port and an output port, both set to all ports at first; the manual
+advises choosing the port of the device. Virtual ports pass MIDI between two programs on the
+same computer.
 
 ## What Platter does
 
@@ -125,6 +130,18 @@ when = ["1 = 1"]
 - Several bindings may listen to the same control; each one whose conditions hold acts, in the
   order of the file.
 
+### Ports
+
+- Platter lists the MIDI inputs of the system by the names the system gives them, and opens an
+  input by its name. When two inputs have the same name, the first is opened.
+- System exclusive, clock and active sensing messages are left out at the port. A message
+  longer than three bytes, which a channel message never is, is left out and counted.
+- The messages of an open input wait in a queue of their own, in the order they arrived. The
+  port never waits for whoever reads them: when the queue is full, a message is counted and
+  lost.
+- An input that does not exist, or that another program holds, is an error naming it. An
+  input closes when Platter lets it go.
+
 ## Differences
 
 - Relative faders, soft takeover, the sensitivity and acceleration of encoders, and the
@@ -140,6 +157,9 @@ when = ["1 = 1"]
   down or up.
 - The focus deck as a target comes with the controller manager.
 - Mappings are TOML files of Platter. Mapping files of other applications are not read.
+- Output ports, the choice of all ports for a mapping, virtual ports and noticing a device
+  plugged in or out come with the controller manager. An input whose device is unplugged
+  stops sending; it is not reported yet.
 
 ## Edge cases
 
@@ -157,8 +177,10 @@ when = ["1 = 1"]
 
 ## Tests
 
-`crates/control/tests/mapping.rs` on invented mappings: the file and its mistakes, buttons in
-on press and on hold, modifiers and conditions, faders, encoders in both encodings, and messages that are
-ignored. `crates/control/tests/untrusted.rs` feeds random bytes and random files and checks
-that nothing panics. The MIDI messages follow the summary of MIDI 1.0 messages of the MIDI
+`crates/control/tests/mapping.rs` on invented mappings: the file and its mistakes, buttons on
+press and on hold, modifiers and conditions, faders, encoders in both encodings, and messages
+that are ignored. `crates/control/tests/untrusted.rs` feeds random bytes and random files and
+checks that nothing panics. The unit tests of `crates/device-io/src/queue.rs` check the queue
+of a port: order, a full queue, long and empty messages. Opening a real port needs a device
+and is checked by hand. The MIDI messages follow the summary of MIDI 1.0 messages of the MIDI
 Association, <https://midi.org/summary-of-midi-1-0-messages>.
