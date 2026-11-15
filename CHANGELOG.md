@@ -11,5 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(control)* turn the messages of MIDI controllers into commands ([#22](https://github.com/gabichuuuuu/Platter-DJ/pull/22))
+- *(library)* import a folder and the folders inside it ([#23](https://github.com/gabichuuuuu/Platter-DJ/pull/23))
+- *(library)* keep the collection, playlists and history in one SQLite file ([#21](https://github.com/gabichuuuuu/Platter-DJ/pull/21))
+- *(engine)* keep the key of a deck while its tempo changes ([#20](https://github.com/gabichuuuuu/Platter-DJ/pull/20))
+- *(engine)* analyse each loaded track and reset the grid to what it found ([#19](https://github.com/gabichuuuuu/Platter-DJ/pull/19))
+- *(analysis)* detect tempo, first beat and key with Platter's own code ([#18](https://github.com/gabichuuuuu/Platter-DJ/pull/18))
+- *(engine)* add the metronome of the master clock ([#17](https://github.com/gabichuuuuu/Platter-DJ/pull/17))
+- *(ui-egui)* add SYNC, MASTER, the phase meter and the master clock ([#16](https://github.com/gabichuuuuu/Platter-DJ/pull/16))
+- *(engine)* add Snap and Quantize ([#12](https://github.com/gabichuuuuu/Platter-DJ/pull/12))
 - *(platter)* call the product Platter DJ where its users see the name ([#11](https://github.com/gabichuuuuu/Platter-DJ/pull/11))
-- *(platter)* add the desktop application
+- *(engine)* add sync, the tempo master and the master clock ([#10](https://github.com/gabichuuuuu/Platter-DJ/pull/10))
+- *(ui-egui)* add the hotcue pads, the CUE page and the cues in the waveforms ([#9](https://github.com/gabichuuuuu/Platter-DJ/pull/9))
+- *(engine)* add stored cues and the eight hotcues ([#8](https://github.com/gabichuuuuu/Platter-DJ/pull/8))
+- *(ui-egui)* add the loop controls, the MOVE page and the loop in the waveforms ([#7](https://github.com/gabichuuuuu/Platter-DJ/pull/7))
+- *(engine)* add loops, beatjumps and the moves of a loop ([#5](https://github.com/gabichuuuuu/Platter-DJ/pull/5))
+- *(ui-egui)* add the GRID page and the beat lines of the waveform ([#4](https://github.com/gabichuuuuu/Platter-DJ/pull/4))
+- *(engine)* add the beatgrid with tempo, tap, markers and lock ([#3](https://github.com/gabichuuuuu/Platter-DJ/pull/3))
+- *(platter)* add the desktop application: two decks, the mixer, audio settings, a file selector, editable shortcuts, English and Spanish
+- *(audio-io)* add the output stream, with a deviceless backend for tests
+- *(engine)* add decks, mixer, commands, the processor and the deviceless render
+- *(decode)* decode MP3, M4A (AAC), WAV, AIFF, FLAC and Ogg Vorbis; read the tempo tag
+- *(dsp)* add interpolation, equaliser, filter, smoothing, meter, balance law and limiter
+- *(cli)* add platter-cli with info and render
+
+### Fixed
+
+- *(audio-io)* let the silent output catch up when its timer wakes late ([#14](https://github.com/gabichuuuuu/Platter-DJ/pull/14))
