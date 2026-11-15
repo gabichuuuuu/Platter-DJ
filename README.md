@@ -84,7 +84,7 @@ its own code, graphics and sounds.
   synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
   Transposition by semitones, locking the current key and the resulting key exist in the
   engine only too: the bridge after a jump plays 32 ms at the untransposed pitch, and nobody
-  has listened to a transposed deck (`docs/decisions/0028-transposition.md`).
+  has listened to a transposed deck (`docs/decisions/0031-transposition.md`).
 - The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
   the headphones, so a device with two channels does not play it, and nobody has listened to
   it against a real track (`docs/behavior/beatgrid.md`).

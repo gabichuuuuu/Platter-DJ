@@ -4,7 +4,7 @@ Key lock keeps the key of a track while its tempo changes, so a deck can be sped
 without its pitch going up with it. This note covers the key lock of a deck and, on top of
 it, transposition by semitones, locking the key of the current speed and the resulting key.
 The choice of the stretch behind it is in `docs/decisions/0021-key-lock-stretch.md`; the
-choices of transposition in `docs/decisions/0028-transposition.md`.
+choices of transposition in `docs/decisions/0031-transposition.md`.
 
 ## What the public manual says
 
@@ -71,7 +71,7 @@ the range of the knob nor the size of a step of the buttons.
   +12 semitones, within 1 % of the new pitch in about 300 ms. It does not click. The position
   of the deck stays that of what is heard; during the glide it may be off by up to the
   distance the stretch reports for the whole change, 2.6 ms of the track for a semitone at a
-  tempo of 1.08 (`docs/decisions/0028-transposition.md`).
+  tempo of 1.08 (`docs/decisions/0031-transposition.md`).
 - After a jump, a play from pause or a pass of a loop the stretch starts at the shift at
   once, after the 32 ms bridge.
 - The shift stays for the next track and when the engine is built again for another sample

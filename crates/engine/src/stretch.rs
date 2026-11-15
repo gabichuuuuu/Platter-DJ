@@ -27,7 +27,7 @@ const MAX_PITCH_OVER_TEMPO: f64 = 32.0;
 /// of pitch while it plays leaves the position it reports this many frames times
 /// tempo * (1 / new pitch - 1 / old pitch) beyond the frame it plays, until the next seek:
 /// measured from -12 to +12 semitones at tempos 0.94 to 1.08, to within 25 frames
-/// (`docs/decisions/0028-transposition.md`).
+/// (`docs/decisions/0031-transposition.md`).
 const SOURCE_CHUNK_FRAMES: f64 = 2048.0;
 
 /// A timestretch session for one track, at the rate of the engine.

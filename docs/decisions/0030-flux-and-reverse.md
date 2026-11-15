@@ -1,4 +1,4 @@
-# 0027. Flux and reverse: one timeline per deck, kept by its detours
+# 0030. Flux and reverse: one timeline per deck, kept by its detours
 
 Status: accepted (M3).
 

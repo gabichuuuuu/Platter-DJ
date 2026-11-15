@@ -99,7 +99,7 @@ a loop of one beat at 128 BPM the bridge and its crossfade are about 8 % of each
 The tempo is scheduled once the stretch is ready, not with the seek: scheduled together, the
 first frames came out off the position the session reports. The first 500 frames or so after a
 jump therefore play at the tempo the stretch had before; the position stays the one heard.
-Since transposition (`docs/decisions/0028-transposition.md`) the stretch applies the tempo and
+Since transposition (`docs/decisions/0031-transposition.md`) the stretch applies the tempo and
 the pitch of the deck before the seek is done, in one step without work and a second seek, so
 those frames play at the tempo of the deck; the tests of key lock pass unchanged.
 

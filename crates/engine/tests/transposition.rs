@@ -1,6 +1,6 @@
 //! Transposition by semitones and the resulting key, with the stretch the engine ships.
 //! Behaviour note: `docs/behavior/keylock.md`, sections Transposition and The resulting key;
-//! the choices: `docs/decisions/0028-transposition.md`.
+//! the choices: `docs/decisions/0031-transposition.md`.
 //!
 //! The stretch is checked against tolerances, never sample by sample: its FFT may take a
 //! different path on each processor.

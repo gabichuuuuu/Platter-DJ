@@ -1,4 +1,4 @@
-# 0028. Transposition: one key lock per deck with a shift in semitones
+# 0031. Transposition: one key lock per deck with a shift in semitones
 
 Status: accepted (M3).
 

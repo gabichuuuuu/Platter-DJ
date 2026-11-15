@@ -4,7 +4,7 @@ Flux keeps the place of a deck in the track while a loop, a hotcue or reverse ta
 elsewhere: when they end, the deck goes on from where it would have been had it played on.
 Reverse plays the track backwards while its button is held. Both live in the engine,
 `crates/engine/src/rt/deck.rs`; the choices behind them are in
-`docs/decisions/0027-flux-and-reverse.md`.
+`docs/decisions/0030-flux-and-reverse.md`.
 
 ## What the public manual says
 
