@@ -10,23 +10,55 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use platter_decode::probe_file;
 use platter_library::{
-    Library, LibraryError, Page, Query, Reading, TagReader, Timestamp, Track, TrackTags,
+    Column, Library, LibraryError, Page, Query, Reading, TagReader, Timestamp, Track, TrackTags,
     import_folder,
 };
 
+use crate::command::SortColumn;
 use crate::files::is_audio;
 use crate::model::{CollectionView, FileRow, ImportOutcome, RowKind, TrackRow};
 
+/// What the list asks of the collection: a search text, where an empty one matches every
+/// track, and the column it is sorted by with whether the order is turned round.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Lookup {
+    text: String,
+    sort: Option<(SortColumn, bool)>,
+}
+
+impl Lookup {
+    fn query(&self) -> Query {
+        let (column, descending) = match self.sort {
+            Some((column, descending)) => (
+                match column {
+                    SortColumn::Title => Column::Title,
+                    SortColumn::Artist => Column::Artist,
+                    SortColumn::Album => Column::Album,
+                    SortColumn::Bpm => Column::Tempo,
+                    SortColumn::Time => Column::Duration,
+                },
+                descending,
+            ),
+            None => (Column::Order, false),
+        };
+        Query {
+            text: self.text.clone(),
+            column,
+            descending,
+            ..Query::default()
+        }
+    }
+}
+
 enum Request {
-    /// Reads the tracks that match a search text; an empty one matches all of them.
-    Read(String),
+    Read(Lookup),
     Import(PathBuf),
 }
 
 enum Reply {
     Unavailable,
-    /// The tracks found for a search text.
-    Page(String, Page),
+    /// The tracks found for a lookup.
+    Page(Lookup, Page),
     Imported(ImportOutcome),
 }
 
@@ -62,14 +94,14 @@ fn now() -> Timestamp {
 
 /// Serves the requests of the browser until it goes away.
 fn serve(library: &mut dyn Library, requests: &Receiver<Request>, replies: &Sender<Reply>) {
-    let mut text = String::new();
+    let mut lookup = Lookup::default();
     while let Ok(first) = requests.recv() {
         // Of the searches waiting, typed while the library was busy, only the last one
         // matters; imports all run, in order.
         let mut imports = Vec::new();
         for request in std::iter::once(first).chain(requests.try_iter()) {
             match request {
-                Request::Read(newer) => text = newer,
+                Request::Read(newer) => lookup = newer,
                 Request::Import(folder) => imports.push(folder),
             }
         }
@@ -89,17 +121,17 @@ fn serve(library: &mut dyn Library, requests: &Receiver<Request>, replies: &Send
         }
         // After an import the size of the whole collection changed too, which only an
         // empty search tells.
-        let mut texts = vec![text.clone()];
-        if imported && !text.trim().is_empty() {
-            texts.insert(0, String::new());
-        }
-        for text in texts {
-            let query = Query {
-                text: text.clone(),
-                ..Query::default()
+        let mut lookups = vec![lookup.clone()];
+        if imported && !lookup.text.trim().is_empty() {
+            let everything = Lookup {
+                text: String::new(),
+                ..lookup.clone()
             };
-            let reply = match library.search(&query) {
-                Ok(page) => Reply::Page(text, page),
+            lookups.insert(0, everything);
+        }
+        for lookup in lookups {
+            let reply = match library.search(&lookup.query()) {
+                Ok(page) => Reply::Page(lookup, page),
                 Err(_) => Reply::Unavailable,
             };
             if replies.send(reply).is_err() {
@@ -144,8 +176,8 @@ pub struct Collection {
     total: Option<usize>,
     importing: bool,
     imported: Option<ImportOutcome>,
-    /// The search text the rows are for, or will be once its answer comes.
-    text: String,
+    /// What the rows are for, or will be once its answer comes.
+    lookup: Lookup,
 }
 
 impl Collection {
@@ -175,9 +207,9 @@ impl Collection {
             total: None,
             importing: false,
             imported: None,
-            text: String::new(),
+            lookup: Lookup::default(),
         };
-        collection.send(Request::Read(String::new()));
+        collection.send(Request::Read(Lookup::default()));
         collection
     }
 
@@ -203,12 +235,29 @@ impl Collection {
 
     /// Asks for the tracks that match `text`; the rows change when the answer comes.
     pub fn search(&mut self, text: &str) {
-        if self.text == text {
+        let lookup = Lookup {
+            text: text.to_owned(),
+            ..self.lookup.clone()
+        };
+        self.ask(lookup);
+    }
+
+    /// Asks for the tracks in another order; the rows change when the answer comes.
+    pub fn sort(&mut self, sort: Option<(SortColumn, bool)>) {
+        let lookup = Lookup {
+            sort,
+            ..self.lookup.clone()
+        };
+        self.ask(lookup);
+    }
+
+    fn ask(&mut self, lookup: Lookup) {
+        if self.lookup == lookup {
             return;
         }
-        text.clone_into(&mut self.text);
+        self.lookup = lookup;
         self.matched = None;
-        self.send(Request::Read(self.text.clone()));
+        self.send(Request::Read(self.lookup.clone()));
     }
 
     /// Takes in the answers of the worker. Returns whether anything arrived.
@@ -224,16 +273,16 @@ impl Collection {
                     self.matched = None;
                     self.total = None;
                 }
-                Reply::Page(text, page) => {
+                Reply::Page(lookup, page) => {
                     // The worker reads the collection again after an import: the import is
                     // over once the list shows what it added.
                     self.importing = false;
                     self.available = Some(true);
-                    if text.trim().is_empty() {
+                    if lookup.text.trim().is_empty() {
                         self.total = Some(page.total);
                     }
-                    // An answer for a text the user has since changed is of no use.
-                    if text == self.text {
+                    // An answer to a lookup the user has since changed is of no use.
+                    if lookup == self.lookup {
                         self.matched = Some(page.total);
                         self.rows = page.hits.into_iter().map(|hit| row_of(hit.track)).collect();
                     }

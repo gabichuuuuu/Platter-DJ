@@ -17,7 +17,7 @@ use platter_decode::probe_file;
 use platter_engine::Command;
 
 use crate::collection::Collection;
-use crate::command::{Action, AppCommand, BrowserNode};
+use crate::command::{Action, AppCommand, BrowserNode, SortColumn};
 use crate::model::{BrowserView, FileRow, RowKind, TrackRow, TreeRow};
 
 /// Extensions of the formats Platter plays. The content decides whether a file really is
@@ -95,6 +95,49 @@ fn matches(row: &FileRow, words: &[String]) -> bool {
         .all(|word| fields.iter().any(|field| field.contains(word.as_str())))
 }
 
+/// The value of a row in a column, for sorting. Rows without one sort last whatever the
+/// direction; a file without a title sorts by its name.
+enum Key {
+    Text(String),
+    Number(f64),
+}
+
+fn key(row: &FileRow, column: SortColumn) -> Option<Key> {
+    let RowKind::Track(track) = &row.kind else {
+        return None;
+    };
+    let text = |value: &Option<String>| value.as_ref().map(|text| Key::Text(text.to_lowercase()));
+    match column {
+        SortColumn::Title => Some(Key::Text(
+            track.title.as_ref().unwrap_or(&row.name).to_lowercase(),
+        )),
+        SortColumn::Artist => text(&track.artist),
+        SortColumn::Album => text(&track.album),
+        SortColumn::Bpm => track.bpm.filter(|bpm| bpm.is_finite()).map(Key::Number),
+        SortColumn::Time => track
+            .seconds
+            .filter(|seconds| seconds.is_finite())
+            .map(Key::Number),
+    }
+}
+
+fn compare(a: &FileRow, b: &FileRow, column: SortColumn, descending: bool) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (key(a, column), key(b, column)) {
+        (Some(a), Some(b)) => {
+            let order = match (a, b) {
+                (Key::Text(a), Key::Text(b)) => a.cmp(&b),
+                (Key::Number(a), Key::Number(b)) => a.total_cmp(&b),
+                _ => Ordering::Equal,
+            };
+            if descending { order.reverse() } else { order }
+        }
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
 fn probe(path: &Path) -> RowKind {
     match probe_file(path) {
         Ok(info) => RowKind::Track(TrackRow {
@@ -155,6 +198,8 @@ pub struct FileBrowser {
     showing_collection: bool,
     /// The text of the search field, for the collection and for the folders alike.
     search: String,
+    /// The column the list is sorted by, and whether the order is turned round.
+    sort: Option<(SortColumn, bool)>,
 }
 
 impl FileBrowser {
@@ -175,6 +220,7 @@ impl FileBrowser {
             collection: None,
             showing_collection: false,
             search: String::new(),
+            sort: None,
         }
     }
 
@@ -207,10 +253,21 @@ impl FileBrowser {
             Some(collection) if self.showing_collection => collection.rows().iter().collect(),
             _ => {
                 let words = words(&self.search);
-                self.rows
+                let mut rows: Vec<&FileRow> = self
+                    .rows
                     .iter()
                     .filter(|row| matches(row, &words))
-                    .collect()
+                    .collect();
+                if let Some((column, descending)) = self.sort {
+                    // Folders stay first; the sort is stable, so ties keep the order of the name.
+                    rows.sort_by(|a, b| {
+                        let folder = |row: &FileRow| !matches!(row.kind, RowKind::Folder);
+                        folder(a)
+                            .cmp(&folder(b))
+                            .then_with(|| compare(a, b, column, descending))
+                    });
+                }
+                rows
             }
         }
     }
@@ -218,6 +275,24 @@ impl FileBrowser {
     /// The selection on the first row shown, or none when nothing is.
     fn select_first(&mut self) {
         self.selected = (!self.shown().is_empty()).then_some(0);
+    }
+
+    fn sort(&mut self, column: SortColumn) {
+        let path = self.selected_row().map(|row| row.path.clone());
+        self.sort = match self.sort {
+            Some((sorted, descending)) if sorted == column => Some((column, !descending)),
+            _ => Some((column, false)),
+        };
+        if let Some(collection) = &mut self.collection {
+            collection.sort(self.sort);
+        }
+        // The same row stays selected in the folder; the collection answers later and keeps
+        // the place of the selection.
+        if !self.showing_collection {
+            self.selected = path
+                .and_then(|path| self.shown().iter().position(|row| row.path == path))
+                .or(self.selected);
+        }
     }
 
     fn search(&mut self, text: &str) {
@@ -388,6 +463,7 @@ impl FileBrowser {
                 node: BrowserNode::Collection,
             } => self.show_collection(),
             AppCommand::BrowserSearchSet { text } => self.search(text),
+            AppCommand::BrowserSort { column } => self.sort(*column),
             AppCommand::LibraryImportFolder { path } => {
                 if let Some(collection) = &mut self.collection {
                     collection.import(path.clone());
@@ -493,6 +569,7 @@ impl FileBrowser {
             },
             rows: self.shown().into_iter().cloned().collect(),
             search: self.search.clone(),
+            sort: self.sort,
             selected: self.selected,
             reading: match &self.collection {
                 Some(collection) if self.showing_collection => collection.busy(),

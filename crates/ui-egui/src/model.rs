@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use platter_core::DeckId;
 use platter_engine::Snapshot;
 
+use crate::command::SortColumn;
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 
@@ -203,6 +204,8 @@ pub struct BrowserView {
     pub tree: Vec<TreeRow>,
     /// The text of the search field.
     pub search: String,
+    /// The column the list is sorted by, and whether the order is turned round.
+    pub sort: Option<(SortColumn, bool)>,
     /// The folder the list shows; `None` while it shows the collection.
     pub folder: Option<PathBuf>,
     /// Names of the folders from a root of the tree down to the current one.

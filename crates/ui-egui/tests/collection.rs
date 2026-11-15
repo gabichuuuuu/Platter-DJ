@@ -11,7 +11,7 @@ use platter_core::DeckId;
 use platter_engine::Command;
 use platter_library::{Library, SqliteLibrary};
 use platter_ui_egui::collection::Collection;
-use platter_ui_egui::command::{Action, AppCommand, BrowserNode};
+use platter_ui_egui::command::{Action, AppCommand, BrowserNode, SortColumn};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::model::{CollectionView, ImportOutcome, RowKind};
 
@@ -283,4 +283,76 @@ fn the_search_filters_the_rows_of_a_folder_by_name_and_follows_the_list() {
     search(&mut browser, "");
     show_collection(&mut browser);
     assert_eq!(names(&browser).len(), 3);
+}
+
+#[test]
+fn a_column_name_sorts_a_folder_and_again_turns_the_order_round() {
+    let root = place("collection-sort-folder");
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    browser.navigate(root.join("music"));
+    wait(&mut browser, |browser| {
+        let view = browser.view();
+        !view.reading && view.rows.iter().all(|row| row.kind != RowKind::Pending)
+    });
+    browser.apply(&AppCommand::BrowserMove { delta: 1 });
+    assert_eq!(names(&browser)[1], "a-side.wav");
+
+    let sort = AppCommand::BrowserSort {
+        column: SortColumn::Title,
+    };
+    browser.apply(&sort);
+    // The folder first; files without a title by their name; the damaged one has no value.
+    assert_eq!(
+        names(&browser),
+        ["sets", "a-side.wav", "b-side.wav", "broken.flac"]
+    );
+    browser.apply(&sort);
+    assert_eq!(browser.view().sort, Some((SortColumn::Title, true)));
+    assert_eq!(
+        names(&browser),
+        ["sets", "b-side.wav", "a-side.wav", "broken.flac"]
+    );
+    // The selection stayed on its row.
+    assert_eq!(browser.view().selected, Some(2));
+}
+
+#[test]
+fn the_library_sorts_the_whole_collection_by_the_column_chosen() {
+    let root = place("collection-sort");
+    let library = root.join("library.sqlite");
+    {
+        let mut store = SqliteLibrary::open(&library).unwrap();
+        let music = std::fs::canonicalize(root.join("music")).unwrap();
+        for (file, title, seconds) in [
+            ("a-side.wav", Some("Zebra"), 200.0),
+            ("b-side.wav", None, 100.0),
+            ("sets/opener.wav", Some("apple"), 300.0),
+        ] {
+            let tags = platter_library::TrackTags {
+                title: title.map(str::to_owned),
+                seconds: Some(seconds),
+                ..platter_library::TrackTags::default()
+            };
+            store
+                .import(&music.join(file), &tags, platter_library::Timestamp(0))
+                .unwrap();
+        }
+    }
+    let mut browser = browser(&root, library);
+    wait(&mut browser, |browser| !browser.collection_busy());
+    show_collection(&mut browser);
+    assert_eq!(names(&browser), ["a-side.wav", "b-side.wav", "opener.wav"]);
+
+    let by = |column| AppCommand::BrowserSort { column };
+    browser.apply(&by(SortColumn::Title));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    // Case is ignored, and the track without a title comes last.
+    assert_eq!(names(&browser), ["opener.wav", "a-side.wav", "b-side.wav"]);
+    browser.apply(&by(SortColumn::Time));
+    browser.apply(&by(SortColumn::Time));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    assert_eq!(names(&browser), ["opener.wav", "a-side.wav", "b-side.wav"]);
+    // The order stays with a search typed.
+    search(&mut browser, "e");
+    assert_eq!(names(&browser), ["opener.wav", "a-side.wav"]);
 }

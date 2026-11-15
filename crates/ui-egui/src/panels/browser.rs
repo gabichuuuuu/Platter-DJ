@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use egui::{Align2, CornerRadius, EventFilter, Key, Rect, Role, Sense, WidgetInfo};
 use platter_core::DeckId;
 
-use crate::command::{AppCommand, BrowserNode};
+use crate::command::{AppCommand, BrowserNode, SortColumn};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
@@ -604,23 +604,28 @@ fn list(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut BrowserMemory
     let header = Rect::from_min_size(rect.min, egui::vec2(rect.width(), ROW_HEIGHT));
     let columns = Columns::of(header);
     let headings = [
-        (columns.title, "browser.title"),
-        (columns.artist, "browser.artist"),
-        (columns.album, "browser.album"),
-        (columns.bpm, "browser.bpm"),
-        (columns.time, "browser.time"),
-        (columns.file, "browser.file"),
+        (columns.title, "browser.title", Some(SortColumn::Title)),
+        (columns.artist, "browser.artist", Some(SortColumn::Artist)),
+        (columns.album, "browser.album", Some(SortColumn::Album)),
+        (columns.bpm, "browser.bpm", Some(SortColumn::Bpm)),
+        (columns.time, "browser.time", Some(SortColumn::Time)),
+        (columns.file, "browser.file", None),
     ];
-    for (column, name) in headings {
-        paint::text(
-            painter,
-            theme,
-            column,
-            Align2::LEFT_CENTER,
-            texts.get(name),
-            tokens.text.label,
-            color.text_secondary,
-        );
+    for (column, name, sort) in headings {
+        match sort {
+            Some(sort) => heading(cx, column, texts.get(name), sort, browser.sort),
+            None => {
+                paint::text(
+                    painter,
+                    theme,
+                    column,
+                    Align2::LEFT_CENTER,
+                    texts.get(name),
+                    tokens.text.label,
+                    color.text_secondary,
+                );
+            }
+        }
     }
     painter.hline(
         header.x_range(),
@@ -773,6 +778,72 @@ fn list(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut BrowserMemory
         }
     }
     scroll_thumb(cx, area, memory.list_scroll, content);
+}
+
+/// The name of a column that sorts the list when operated, with a chevron for the order
+/// when the list is sorted by it.
+fn heading(
+    cx: &mut Cx<'_>,
+    column: Rect,
+    name: &str,
+    sort: SortColumn,
+    sorted: Option<(SortColumn, bool)>,
+) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let painter = cx.painter();
+    let width = paint::text_width(painter, theme, name, tokens.text.label);
+    let order = sorted.and_then(|(by, descending)| (by == sort).then_some(descending));
+    let reach = width + if order.is_some() { 18.0 } else { 0.0 };
+    let rect = Rect::from_min_max(
+        egui::pos2(column.left() - 4.0, column.top() + 3.0),
+        egui::pos2(
+            (column.left() + reach + 4.0).min(column.right()),
+            column.bottom() - 3.0,
+        ),
+    );
+    let command = AppCommand::BrowserSort { column: sort };
+    cx.record(command.id(), rect, ControlKind::Button, true);
+    let response = cx.ui.interact(
+        rect,
+        id(("browser-sort", sort.name())),
+        cx.sense(true, Sense::click()),
+    );
+    response.widget_info(|| WidgetInfo::labeled(Role::ColumnHeader, true, name));
+    if response.clicked() {
+        cx.out.emit(command);
+    }
+    let ink = if order.is_some() || (response.hovered() && cx.interactive) {
+        color.text_primary
+    } else {
+        color.text_secondary
+    };
+    let painter = cx.painter();
+    paint::text(
+        painter,
+        theme,
+        column,
+        Align2::LEFT_CENTER,
+        name,
+        tokens.text.label,
+        ink,
+    );
+    if let Some(descending) = order {
+        let chevron = Rect::from_center_size(
+            egui::pos2(column.left() + width + 10.0, column.center().y),
+            egui::vec2(12.0, 12.0),
+        );
+        let glyph = if descending {
+            Glyph::ChevronDown
+        } else {
+            Glyph::ChevronUp
+        };
+        theme.icons.paint(painter, glyph, chevron, ink);
+    }
+    if response.has_focus() {
+        paint::focus_ring(painter, theme, rect, tokens.radius.sm);
+    }
 }
 
 /// What an empty list says, by what it shows and why it is empty.

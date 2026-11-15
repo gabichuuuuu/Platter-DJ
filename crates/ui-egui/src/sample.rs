@@ -291,6 +291,7 @@ fn browser() -> BrowserView {
         }),
         tree: tree(),
         search: String::new(),
+        sort: None,
         folder: Some(PathBuf::from("Home/Music/Sets")),
         crumbs: vec!["Home".to_owned(), "Music".to_owned(), "Sets".to_owned()],
         rows: rows(),

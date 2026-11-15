@@ -48,10 +48,11 @@ pub enum Glyph {
     Fullscreen,
     Search,
     Close,
+    ChevronUp,
 }
 
 impl Glyph {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Play,
         Self::Pause,
         Self::Settings,
@@ -72,6 +73,7 @@ impl Glyph {
         Self::Fullscreen,
         Self::Search,
         Self::Close,
+        Self::ChevronUp,
     ];
 
     pub fn key(self) -> &'static str {
@@ -96,6 +98,7 @@ impl Glyph {
             Self::Fullscreen => "fullscreen",
             Self::Search => "search",
             Self::Close => "close",
+            Self::ChevronUp => "chevron-up",
         }
     }
 }

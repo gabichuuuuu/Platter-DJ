@@ -110,8 +110,8 @@ the whole collection. A track is loaded into a deck from the list.
 
 ### Differences
 
-- The columns cannot be chosen or sorted yet, and comment, key, colour and rating are not
-  kept yet; they come with the units that add them to the store.
+- The columns cannot be chosen yet, and comment, key, colour and rating are not kept yet; they
+  come with the units that add them to the store.
 - Playlists, preparation list, history, favourites and the preview player are not in the tree
   yet.
 - Import has no progress count while it runs, and cannot be stopped; a large folder keeps the
@@ -180,10 +180,53 @@ collection.
 | A search with no match | The list says nothing matches |
 | Escape with an empty field | The keyboard goes to the list |
 
+## Sorting
+
+### What the public manual says
+
+Sections of the reference manual, read on 15 November 2026:
+
+- *Overview*, section *Browser*
+- *Working with Playlists*
+
+The list can be shown sorted by a column; a playlist also keeps an order of its own, and only in
+that order can its tracks be moved by hand.
+
+### What Platter does
+
+- **Sorting by a column.** Operating the name of a column at the top of the list sorts the
+  list by it (`browser.sort`), ascending; operating the same name again turns the order round.
+  The column sorted by shows a chevron after its name, up for ascending and down for
+  descending. Title, artist, album, tempo and time can be sorted by; the last column cannot.
+- **In the collection.** The library sorts the whole collection, so the first 1000 tracks shown
+  are the first of that order (`docs/behavior/library.md`, *Search and sorting*): tracks
+  without a value in the column come last, ties keep the order of the path, and text sorts by
+  its letters with case ignored. A title that is missing sorts as missing, not by file name.
+- **In a folder.** Its folders stay first, by name; its files sort by the column the same way,
+  with a file without a title tag sorting by its file name. A file whose header has not been
+  read yet sorts as one without a value, and moves into place when it is read.
+- **One order for the browser.** The order stays when the list changes from the collection to
+  a folder and back. Without a column chosen, the collection is in the order of the path and a
+  folder in the order of the name. The selection stays on the same row when the order changes.
+
+### Differences
+
+- Columns cannot be shown, hidden, resized or reordered yet; the reference design puts that in
+  a menu of the header, which comes later.
+- The order is not kept in the settings file: the browser starts unsorted.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| Sorting an empty list | The chevron shows; nothing else changes |
+| Tracks with the same value | The order of the path, or of the name in a folder |
+| Sorting while a search is typed | The rows found keep the order chosen |
+
 ## Tests
 
 `crates/ui-egui/tests/files.rs` for listing, selection, loading and the tree, against folders
-the test writes; `crates/ui-egui/tests/collection.rs` for the collection and the search, against
-a library and folders the test writes; `crates/ui-egui/tests/search_field.rs` and the unit tests
-of `crates/ui-egui/src/widgets/field.rs` for the search field; `crates/ui-egui/tests/panels.rs`
-for the controls and the keys of the list.
+the test writes; `crates/ui-egui/tests/collection.rs` for the collection, the search and
+sorting, against a library and folders the test writes; `crates/ui-egui/tests/search_field.rs`
+and the unit tests of `crates/ui-egui/src/widgets/field.rs` for the search field;
+`crates/ui-egui/tests/panels.rs` for the controls and the keys of the list.
