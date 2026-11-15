@@ -79,6 +79,7 @@ pub struct DeckShared {
     /// Post-fader peak level of the left and the right side, linear.
     pub levels: [AtomicF32; 2],
     pub sync: Flag,
+    pub key_lock: Flag,
     /// Speed the deck is set to, as a ratio of the original.
     pub speed: AtomicF64,
     /// How far the beat of the deck is from that of the clock, in beats: negative behind,
@@ -97,6 +98,7 @@ impl Default for DeckShared {
             cue: AtomicF64::default(),
             levels: Default::default(),
             sync: Flag::default(),
+            key_lock: Flag::default(),
             speed: AtomicF64::new(1.0),
             phase,
         }

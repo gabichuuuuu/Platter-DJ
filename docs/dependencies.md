@@ -17,7 +17,9 @@ dependency has no row or a row has no dependency.
 | `egui` | The interface: layout, input, text and painting | MIT OR Apache-2.0 | `platter-ui-egui`; the widgets and panels use its painter and input, nothing of its stock widgets (`docs/decisions/0013-interface.md`) | Another immediate-mode layer, or an own renderer |
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine, untrusted mappings | MIT OR Apache-2.0 | Tests of `platter-decode`, `platter-engine` and `platter-control` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
+| `rusqlite` | The library file: collection, playlists and history, with the SQLite it compiles (`bundled`) | MIT; libsqlite3-sys MIT, the rest MIT, Apache-2.0 or Zlib | `platter-library`, module `store` (`docs/decisions/0022-library-store.md`) | Another store behind the trait `Library` |
 | `serde` | Deserialises the feature inventory and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A hand-written reader for the few structures involved |
+| `timestretch` | Key lock: plays a track at the tempo of the deck and the pitch of the track; brings rustfft and its helpers | MIT; its dependencies MIT OR Apache-2.0 | `platter-engine`, module `stretch`, behind the trait `Stretch` of `platter-dsp` (`docs/decisions/0021-key-lock-stretch.md`); its feature `accelerate` stays off | An own stretch in `platter-dsp` |
 | `symphonia` | Decodes MP3, AAC in M4A, WAV, AIFF, FLAC and Ogg Vorbis; reads title, artist and album | MPL-2.0 | `platter-decode`, behind its own types and a panic boundary (`docs/decisions/0008-decoder-panic-boundary.md`) | Own decoders from the public specifications |
 | `toml` | Parses `docs/parity.toml`, the render script, the design tokens, the icons, the translations, the shortcut file, the MIDI mappings and the settings file | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script`; `platter-ui-egui`, modules `tokens`, `icons`, `i18n` and `keymap`; `platter-control`, module `file`; `platter`, module `config` | A reader for the TOML subset the project files use |
 
@@ -60,9 +62,9 @@ stop and ask. Each gets a row in `ATTRIBUTION.md`.
 
 | Use | Piece | Licence seen | Milestone | Conditions |
 | --- | --- | --- | --- | --- |
-| Tempo, beatgrid and key | stratum-dsp | MIT OR Apache-2.0 | M3 | Pure Rust. Measured against the corpus before adoption |
-| Key lock | timestretch | MIT | M3 | Pure Rust. Measured against the next one |
-| Key lock | Signalsmith Stretch, through signalsmith-stretch | MIT | M3 | C++ with FFI: needs a C++ compiler and an `unsafe` exception isolated in its crate and written in `AGENTS.md` before use |
+| Tempo, beatgrid and key | stratum-dsp | MIT OR Apache-2.0 | M3 | Measured on 15 November 2026 and not adopted: Platter detects them itself (`docs/decisions/0020-own-analysis.md`) |
+| Key lock | timestretch | MIT | M3 | Measured on 15 November 2026 and in use (`docs/decisions/0021-key-lock-stretch.md`) |
+| Key lock | Signalsmith Stretch, through signalsmith-stretch | MIT | M3 | Measured on 15 November 2026 and not adopted (`docs/decisions/0021-key-lock-stretch.md`). C++ with FFI: needs a C++ compiler, libclang and an `unsafe` exception isolated in its crate and written in `AGENTS.md` before use |
 | Stems | 4-stem Spleeter model exported to ONNX | See `docs/legal-notes.md` | M4 | Decided in M4; until then only the interface, without a model |
 | Effects | Airwindows algorithms, adapted to Rust | MIT | M4 | Adaptation with attribution; Platter's own names |
 | Sound kits | CC0 samples | CC0-1.0 | M5 | Each sample with its origin in `ATTRIBUTION.md` |
@@ -86,7 +88,7 @@ No external crate for these:
 | Jog wheels, faders, crossfader, meters and waveforms | `platter-ui-egui` | M2 |
 | Drawing the icons of `docs/design/icons/icons.toml` with the egui painter, without an SVG dependency | `platter-ui-egui` or `xtask` | M2 |
 | PNG writer for the visual comparison captures | `apps/platter` | M2 |
-| Tempo, beatgrid and key analysis, if the temporary piece is replaced | `platter-analysis` | M3 or later |
+| Tempo, beatgrid and key analysis, with its FFT | `platter-analysis` | M3 |
 | Key lock, if the temporary piece is replaced | `platter-dsp` | M3 or later |
 | Decoders from the public specifications, if symphonia is replaced | `platter-decode` | After M3 |
 | Own DVS timecode and its decoder | `platter-dsp` | M5 |

@@ -68,7 +68,9 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
 - **Sample rate.** The engine runs at the rate of the device. A track is read at the ratio
   `tempo * (track_rate / engine_rate)` with interpolation; it is not resampled on load. The
   interpolation is chosen by measurement (distortion and aliasing of a sine) and recorded in an
-  ADR. There is no key lock until M3: pitch follows tempo.
+  ADR. With key lock on, a stretch behind the trait `Stretch` of `platter-dsp` plays the
+  track instead, at the tempo of the deck and the pitch of the track
+  (`docs/decisions/0021-key-lock-stretch.md`).
 - **Beatgrid.** `BeatGrid` in `platter-core`: a tempo, up to 128 markers and a lock, in a
   fixed-size value. In M3 the markers share the one tempo; M4 gives each marker its own (a
   flexible grid). The processor holds the grid of each deck and reports it to the control side
