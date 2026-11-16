@@ -245,6 +245,17 @@ fn be(values: &[u32]) -> Vec<u8> {
 /// The `moov` box of one AAC track whose single sample sits at `offset` in the file, with
 /// the user data of [`mp4_udta`] when `udta`.
 fn mp4_moov(offset: u32, sample_len: u32, udta: bool) -> Vec<u8> {
+    mp4_moov_with(u64::from(offset), sample_len, udta, false, &[])
+}
+
+/// Like [`mp4_moov`], with 64-bit chunk offsets (`co64`) when `wide` and `extra` boxes at
+/// the end of `moov`.
+fn mp4_moov_with(offset: u64, sample_len: u32, udta: bool, wide: bool, extra: &[u8]) -> Vec<u8> {
+    let offsets = if wide {
+        full_box(b"co64", &[be(&[1]), offset.to_be_bytes().to_vec()].concat())
+    } else {
+        full_box(b"stco", &be(&[1, offset as u32]))
+    };
     let mvhd = full_box(
         b"mvhd",
         &[
@@ -309,7 +320,7 @@ fn mp4_moov(offset: u32, sample_len: u32, udta: bool) -> Vec<u8> {
             full_box(b"stts", &be(&[1, 1, 1_024])),
             full_box(b"stsc", &be(&[1, 1, 1, 1])),
             full_box(b"stsz", &be(&[0, 1, sample_len])),
-            full_box(b"stco", &be(&[1, offset])),
+            offsets,
         ]
         .concat(),
     );
@@ -328,7 +339,7 @@ fn mp4_moov(offset: u32, sample_len: u32, udta: bool) -> Vec<u8> {
     let mdia = mp4_box(b"mdia", &[mdhd, hdlr, minf].concat());
     let trak = mp4_box(b"trak", &[tkhd, mdia].concat());
     let udta = if udta { mp4_udta() } else { Vec::new() };
-    mp4_box(b"moov", &[mvhd, trak, udta].concat())
+    mp4_box(b"moov", &[mvhd, trak, udta, extra.to_vec()].concat())
 }
 
 fn mp4_freeform(mean: &str, name: &str, value: &str) -> Vec<u8> {
@@ -2055,6 +2066,214 @@ fn the_container_stays_the_one_platter_reads() {
     let info = probe_file(&path).unwrap();
     assert_eq!(info.container, Container::Flac);
     assert_eq!(info.tags.title.as_deref(), Some("Night Drive"));
+}
+
+// ---------------------------------------------------------------------------------------
+// Sizes and layouts checked by hand
+
+#[test]
+fn id3v2_sizes_over_127_bytes_are_coded_as_each_version_says() {
+    // A user text frame of 200 bytes: encoding, `PLATTER`, its terminator and 191 bytes.
+    let data = "x".repeat(191);
+    let edit = TagEdit {
+        platter: Some(Some(data.clone())),
+        ..TagEdit::default()
+    };
+    let folder = folder("id3-sizes");
+
+    // ID3v2.4: synchsafe sizes. 200 = 1 * 128 + 0x48; 210 + 1024 of padding = 1234 =
+    // 9 * 128 + 0x52.
+    let path = file(&folder, "v24.mp3", &silent_mp3(4));
+    write_tags(&path, &edit).unwrap();
+    let written = fs::read(&path).unwrap();
+    let expected = [
+        b"ID3\x04\x00\x00\x00\x00\x09\x52".as_slice(),
+        b"TXXX\x00\x00\x01\x48\x00\x00\x03PLATTER\x00",
+        data.as_bytes(),
+    ]
+    .concat();
+    assert_eq!(&written[..expected.len()], expected.as_slice());
+    assert_eq!(written.len(), 10 + 1234 + silent_mp3(4).len());
+
+    // ID3v2.3: the frame size is a plain number, 200 = 0xC8; the tag size stays synchsafe,
+    // 14 + 210 + 1024 = 1248 = 9 * 128 + 0x60.
+    let frame = b"TIT2\x00\x00\x00\x04\x00\x00\x00Old".as_slice();
+    let tag = [b"ID3\x03\x00\x00\x00\x00\x00\x0E".as_slice(), frame].concat();
+    let path = file(&folder, "v23.mp3", &[tag, silent_mp3(4)].concat());
+    write_tags(&path, &edit).unwrap();
+    let written = fs::read(&path).unwrap();
+    let expected = [
+        b"ID3\x03\x00\x00\x00\x00\x09\x60".as_slice(),
+        frame,
+        b"TXXX\x00\x00\x00\xC8\x00\x00\x00PLATTER\x00",
+        data.as_bytes(),
+    ]
+    .concat();
+    assert_eq!(&written[..expected.len()], expected.as_slice());
+    assert_eq!(written.len(), 10 + 1248 + silent_mp3(4).len());
+}
+
+/// The size field of the first box of `kind` in `bytes`.
+fn box_size(bytes: &[u8], kind: &[u8; 4]) -> usize {
+    let at = find(bytes, kind).unwrap() - 4;
+    u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize
+}
+
+#[test]
+fn m4a_parent_boxes_take_the_size_of_what_they_hold() {
+    let folder = folder("m4a-sizes");
+    // Without user data, the whole path is created: ilst 8 + 35, hdlr 8 + 25, meta 8 + 4 +
+    // 33 + 43 = 88, udta 8 + 88 = 96.
+    let bytes = m4a_with(false, 0);
+    let path = file(&folder, "bare.m4a", &bytes);
+    write_tags(&path, &title("Night Drive")).unwrap();
+    let written = fs::read(&path).unwrap();
+    let udta = [
+        b"\x00\x00\x00\x60udta".as_slice(),
+        b"\x00\x00\x00\x58meta\x00\x00\x00\x00",
+        b"\x00\x00\x00\x21hdlr\x00\x00\x00\x00\x00\x00\x00\x00mdirappl",
+        &[0; 9],
+        b"\x00\x00\x00\x2Bilst",
+        b"\x00\x00\x00\x23\xA9nam\x00\x00\x00\x1Bdata\x00\x00\x00\x01\x00\x00\x00\x00Night Drive",
+    ]
+    .concat();
+    assert!(find(&written, &udta).is_some());
+    assert_eq!(box_size(&written, b"moov"), box_size(&bytes, b"moov") + 96);
+    assert_eq!(chunk_offset(&written), chunk_offset(&bytes) + 96);
+
+    // With user data, each box on the path grows by the 35 bytes of the new item.
+    let bytes = m4a();
+    let path = file(&folder, "tagged.m4a", &bytes);
+    write_tags(&path, &title("Night Drive")).unwrap();
+    let written = fs::read(&path).unwrap();
+    for kind in [b"moov", b"udta", b"meta", b"ilst"] {
+        assert_eq!(box_size(&written, kind), box_size(&bytes, kind) + 35);
+    }
+    assert_eq!(&written[chunk_offset(&written)..][..16], MDAT_MARK);
+}
+
+/// An M4A file: `co64` offsets when `wide`, `extra` boxes in `moov`, and `moov` after `mdat`
+/// when `moov_last`.
+fn m4a_layout(wide: bool, extra: &[u8], moov_last: bool) -> Vec<u8> {
+    let ftyp = mp4_box(b"ftyp", b"M4A \0\0\0\0M4A mp42isom");
+    let mdat = mp4_box(b"mdat", MDAT_MARK);
+    if moov_last {
+        let offset = (ftyp.len() + 8) as u64;
+        let moov = mp4_moov_with(offset, 16, true, wide, extra);
+        return [ftyp, mdat, moov].concat();
+    }
+    let moov_len = mp4_moov_with(0, 16, true, wide, extra).len();
+    let offset = (ftyp.len() + moov_len + 8) as u64;
+    [ftyp, mp4_moov_with(offset, 16, true, wide, extra), mdat].concat()
+}
+
+#[test]
+fn co64_offsets_follow_a_larger_moov() {
+    let bytes = m4a_layout(true, &[], false);
+    let offset_of = |bytes: &[u8]| {
+        let at = find(bytes, b"co64").unwrap();
+        u64::from_be_bytes(bytes[at + 12..at + 20].try_into().unwrap()) as usize
+    };
+    assert_eq!(&bytes[offset_of(&bytes)..][..16], MDAT_MARK);
+    let folder = folder("m4a-co64");
+    let path = file(&folder, "a.m4a", &bytes);
+    write_tags(&path, &full_edit()).unwrap();
+    let written = fs::read(&path).unwrap();
+    let grown = written.len() - bytes.len();
+    assert!(grown > 0);
+    assert_eq!(offset_of(&written), offset_of(&bytes) + grown);
+    assert_eq!(&written[offset_of(&written)..][..16], MDAT_MARK);
+    assert_eq!(
+        probe_file(&path).unwrap().tags.title.as_deref(),
+        Some("Night Drive")
+    );
+}
+
+#[test]
+fn a_moov_after_the_media_moves_no_offset() {
+    let bytes = m4a_layout(false, &[], true);
+    let offset = chunk_offset(&bytes);
+    let folder = folder("m4a-moov-last");
+    let path = file(&folder, "a.m4a", &bytes);
+    write_tags(&path, &full_edit()).unwrap();
+    let written = fs::read(&path).unwrap();
+    assert!(written.len() > bytes.len());
+    assert_eq!(chunk_offset(&written), offset);
+    assert_eq!(&written[offset..][..16], MDAT_MARK);
+    assert_eq!(&written[..offset + 16], &bytes[..offset + 16]);
+    assert_eq!(
+        m4a_field(&written, F::Title).as_deref(),
+        Some("Night Drive")
+    );
+}
+
+#[test]
+fn a_fragmented_m4a_file_is_refused_when_moov_must_grow() {
+    // `mvex` announces movie fragments, whose offsets the writer does not move.
+    let mvex = mp4_box(b"mvex", &full_box(b"trex", &be(&[1, 1, 0, 0, 0])));
+    let bytes = m4a_layout(false, &mvex, false);
+    assert_refused("fragmented.m4a", &bytes, |error| {
+        matches!(error, TagWriteError::Unsupported(_))
+    });
+}
+
+#[test]
+fn bytes_after_the_last_chunk_do_not_shift_the_new_chunks() {
+    // Four stray bytes after the audio, counted by the size of the container: they are not a
+    // chunk and are dropped, so the chunks added after the audio start on a chunk boundary.
+    let cases = [
+        ("a.wav", wav_pcm16(RATE, 2, &sine_pcm()), false),
+        ("a.aiff", aiff_pcm16(RATE, 2, &sine_pcm()), true),
+    ];
+    let folder = folder("riff-stray");
+    for (name, plain, big_endian) in cases {
+        let bytes = with_chunks(plain.clone(), &[1, 2, 3, 4], big_endian);
+        let path = file(&folder, name, &bytes);
+        write_tags(&path, &full_edit()).unwrap();
+        let written = fs::read(&path).unwrap();
+        let chunks = riff_chunks(&written, big_endian);
+        let walked: usize = 12
+            + chunks
+                .iter()
+                .map(|(_, body)| 8 + body.len() + body.len() % 2)
+                .sum::<usize>();
+        assert_eq!(walked, written.len(), "{name}");
+        let ids: Vec<&[u8]> = chunks.iter().map(|(id, _)| id.as_slice()).collect();
+        let expected: &[&[u8]] = if big_endian {
+            &[b"COMM", b"SSND", b"NAME", b"AUTH", b"ANNO", b"ID3 "]
+        } else {
+            &[b"fmt ", b"data", b"LIST", b"id3 "]
+        };
+        assert_eq!(ids, expected, "{name}");
+        assert_eq!(&written[12..plain.len()], &plain[12..], "{name}");
+        assert_eq!(decode_file(&path).unwrap().channels, 2);
+    }
+}
+
+#[test]
+fn ogg_pages_that_must_be_renumbered_are_never_left_with_a_gap() {
+    let filler = "x".repeat(64_725);
+    let comment = vorbis_comment_packet(&[("PLATTER_BIG", &filler)]);
+    let junk = b"these bytes are not an Ogg page";
+    let bytes = [
+        ogg_page(0x02, 0, 0, &[vorbis_ident()]),
+        ogg_page(0x00, 0, 1, &[comment, vorbis_setup()]),
+        junk.to_vec(),
+        ogg_page(0x04, 1_024, 2, &[OGG_AUDIO.to_vec()]),
+    ]
+    .concat();
+    // The comment grows past its page: the audio page after the junk could not be renumbered.
+    assert_refused("junk.ogg", &bytes, |error| {
+        matches!(error, TagWriteError::Corrupt(_))
+    });
+
+    // When the pages keep their number, the bytes after the headers are copied as they are.
+    let bytes = [ogg_vorbis(&[("TITLE", "Old")]), junk.to_vec()].concat();
+    let folder = folder("ogg-junk");
+    let path = file(&folder, "a.ogg", &bytes);
+    write_tags(&path, &title("New")).unwrap();
+    let written = fs::read(&path).unwrap();
+    assert!(written.ends_with(junk));
 }
 
 fn fixtures() -> Vec<(&'static str, Vec<u8>)> {

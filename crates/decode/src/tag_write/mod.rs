@@ -171,7 +171,8 @@ pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), TagWriteError> {
     if metadata.permissions().readonly() {
         return Err(TagWriteError::ReadOnly);
     }
-    let container = probe_file(path)?.container;
+    let before = probe_file(path)?;
+    let container = before.container;
 
     let mut source = Source::open(path)?;
     let (copy, file) = Copy::create(path)?;
@@ -195,8 +196,16 @@ pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), TagWriteError> {
     fs::set_permissions(&copy.path, metadata.permissions()).map_err(TagWriteError::Io)?;
     // The copy must still be the track Platter read; a write that broke it never replaces
     // the original.
-    if probe_file(&copy.path)?.container != container {
+    let after = probe_file(&copy.path)?;
+    if after.container != container {
         return Err(corrupt("the written file reads as another format"));
+    }
+    if (after.sample_rate, after.channels, after.seconds)
+        != (before.sample_rate, before.channels, before.seconds)
+    {
+        return Err(corrupt(
+            "the written file declares another rate, channel count or length",
+        ));
     }
     copy.replace(path)
 }

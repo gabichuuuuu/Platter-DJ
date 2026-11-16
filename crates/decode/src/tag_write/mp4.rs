@@ -6,7 +6,7 @@
 //! `co64`) that point there move with it. A fragmented file, whose fragments hold offsets of
 //! their own, is refused in that case.
 
-use std::io::Write;
+use std::io::{Read, Write};
 
 use super::{
     Changes, Field, Source, TagWriteError, be_u32, corrupt, put, slice, to_usize, unsupported,
@@ -437,8 +437,26 @@ pub(super) fn write(
     source.copy(0, moov.start, out)?;
     put(out, &new)?;
     if free > 0 {
-        let body = vec![0; to_usize(free - 8)?];
-        put(out, &make_box(b"free", &body))?;
+        write_free(out, u64::try_from(free).map_err(|_| corrupt("free box"))?)?;
     }
     source.copy(rest, source.len, out)
+}
+
+/// A `free` box of `len` bytes in all. Its zeros are streamed, never allocated: the length
+/// comes from the file and may be large.
+fn write_free(out: &mut impl Write, len: u64) -> Result<(), TagWriteError> {
+    let header = match u32::try_from(len) {
+        Ok(size) => [&size.to_be_bytes()[..], b"free"].concat(),
+        Err(_) => [&1u32.to_be_bytes()[..], b"free", &len.to_be_bytes()].concat(),
+    };
+    let zeros = len
+        .checked_sub(header.len() as u64)
+        .ok_or_else(|| corrupt("free box"))?;
+    put(out, &header)?;
+    let written =
+        std::io::copy(&mut std::io::repeat(0).take(zeros), out).map_err(TagWriteError::Io)?;
+    if written != zeros {
+        return Err(corrupt("free box"));
+    }
+    Ok(())
 }

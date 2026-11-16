@@ -138,15 +138,9 @@ fn layout(source: &mut Source, big_endian: bool) -> Result<Layout, TagWriteError
         });
         at = chunk_end;
     }
-    // Fewer than eight bytes left inside the container are kept with the last chunk.
-    if at < end
-        && let Some(Chunk {
-            piece: Piece::Copy { end: last, .. },
-            ..
-        }) = chunks.last_mut()
-    {
-        *last = end;
-    }
+    // Fewer than eight bytes left inside the container after the last chunk cannot be a
+    // chunk. They are dropped: kept, they would put every chunk written after them off a
+    // chunk boundary.
     Ok(Layout {
         big_endian,
         chunks,

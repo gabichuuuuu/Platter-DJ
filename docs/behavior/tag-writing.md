@@ -157,7 +157,9 @@ tag in a chunk (below).
   `.platter-tags-`, created only if no file has that name): the new metadata where the old
   was, every other byte copied from the original. It flushes it to the disk, reads it again
   with Platter's own reader and, when it is still the same format, renames it over the
-  original. Until the rename the original is untouched; on any error the new file is deleted.
+  original. The new file must read as the same format with the same sample rate, channel
+  count and declared length. Until the rename the original is untouched; on any error the
+  new file is deleted.
   The rename replaces the file in one step on the same volume. The new file gets the
   permissions of the original before the rename.
 - **Links.** A path that is a symbolic link is followed: the track it points to is written,
@@ -220,10 +222,12 @@ tag in a chunk (below).
 | Unsynchronised ID3v2 tag or frame | Read, and written back plain |
 | ID3v2 extended header or footer | Not written back |
 | Ogg stream interleaved with another one in its headers, or audio on the page of the setup header | Error; the file is unchanged |
+| Bytes that are not Ogg pages after the headers, when the header pages change in number | Error; the file is unchanged (later pages would keep their old numbers) |
+| Fewer than eight bytes after the last chunk of WAV or AIFF, inside the container | Dropped, so the chunks added after them start on a chunk boundary |
 | Fragmented M4A whose `moov` changes size without a `free` box to take it up | Error; the file is unchanged |
 | Chunk offset of M4A that would pass 32 bits | Error; the file is unchanged |
 | RF64 WAV, or a file the change would push past 4 GiB | Error; the file is unchanged |
-| The written copy no longer reads as the same format | Error; the copy is deleted |
+| The written copy no longer reads as the same format, rate, channel count or length | Error; the copy is deleted |
 | Read-only file | Error "the file is read-only"; the file is unchanged |
 | Missing file, or a folder | Error from the system |
 | The folder does not let a file be created | Error from the system; the file is unchanged |
@@ -254,9 +258,8 @@ build directory:
   change both ways, a missing `udta` is created; FLAC padding takes up a growing comment; an
   Ogg comment that grows past a page renumbers the later pages with valid CRCs, and shrinking
   it again gives back the original bytes; an ID3v2.3 tag stays 2.3 with UTF-16 text, and an
-  ID3v2.2 tag stays 2.2 with its comment language; an ID3v2
-  tag in front of a FLAC stream keeps its bytes; an ID3 chunk created in AIFF carries the
-  title of its `NAME` chunk.
+  ID3v2.2 tag stays 2.2 with its comment language; an ID3v2 tag in front of a FLAC stream
+  keeps its bytes; an ID3 chunk created in AIFF carries the title of its `NAME` chunk.
 - An unsynchronised tag is written plain, frame by frame in 2.4 and whole in 2.3; an ID3v1
   tag, a RIFF INFO chunk and an AIFF `NAME` chunk already in the file are edited too; a file
   without a tag gets none from an edit that sets nothing; on Unix the file keeps its
@@ -269,5 +272,12 @@ build directory:
   it either refuses the file and leaves it as it was, or writes it and the result reads as the
   same format.
 
-What no test covers: a failure in the middle of the rename, encrypted ID3v2 frames, a 2.4 extended header or footer, `co64` tables, chained Ogg streams, APE tags, and
-files from real encoders, which the repository does not hold.
+- Sizes checked by hand: ID3v2 frames and tags over 127 bytes in 2.4 (synchsafe) and 2.3
+  (plain frame size), and the sizes of `moov`, `udta`, `meta` and `ilst`. Also a `co64` file,
+  a `moov` after the media (no offset moves), a fragmented file refused when `moov` must
+  grow, stray bytes after the last WAV or AIFF chunk, and bytes that are not pages between
+  Ogg pages that must be renumbered.
+
+What no test covers: a failure in the middle of the rename, encrypted ID3v2 frames, a 2.4
+extended header or footer, chained Ogg streams, a `free` box over 4 GiB, APE tags, and files
+from real encoders, which the repository does not hold.

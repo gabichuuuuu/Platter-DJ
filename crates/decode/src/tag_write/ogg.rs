@@ -263,7 +263,8 @@ fn new_page(serial: u32, sequence: u32, kind: u8) -> Page {
 }
 
 /// Copies the pages from `at` on, moving the sequence number of each page of the stream by
-/// `shift`. What is not a whole page, at the end, is copied as it is.
+/// `shift`. A chained stream after it is copied as it is. Bytes that are not a whole page are
+/// refused: pages of the stream after them would keep their old numbers and leave a gap.
 fn renumber(
     source: &mut Source,
     out: &mut impl Write,
@@ -271,7 +272,12 @@ fn renumber(
     serial: u32,
     shift: i64,
 ) -> Result<(), TagWriteError> {
-    while let Some(mut page) = read_page(source, at)? {
+    while at < source.len {
+        let Some(mut page) = read_page(source, at)? else {
+            return Err(corrupt(
+                "bytes that are not Ogg pages follow the headers, whose pages had to be renumbered",
+            ));
+        };
         // A new first page with the same serial starts a chained stream, numbered on its own.
         if page.serial == serial && page.kind & FIRST_PAGE != 0 {
             break;
