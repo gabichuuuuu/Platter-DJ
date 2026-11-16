@@ -6,9 +6,13 @@
 //!
 //! A file is untrusted input. Whatever it contains, decoding returns audio or an error; the
 //! sizes it declares are bounded before memory is reserved for them.
+//!
+//! The tags of a track are written back into its file by the module `tag_write`, Platter's
+//! own code, which uses no external library.
 
 mod cover;
 mod mp4_edit;
+mod tag_write;
 
 use std::fmt;
 use std::fs::File;
@@ -19,6 +23,7 @@ pub use cover::{
     COVER_SIDE, Cover, CoverError, MAX_PICTURE_BYTES, MAX_PICTURE_SIDE, cover_bytes, cover_file,
 };
 use mp4_edit::{Edit, read_edit};
+pub use tag_write::{MAX_PLATTER_BYTES, MAX_TAG_CHARS, TagEdit, TagWriteError, write_tags};
 
 use platter_core::SampleRate;
 use symphonia::core::codecs::audio::AudioDecoderOptions;

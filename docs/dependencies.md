@@ -48,7 +48,7 @@ licence again and read the documentation of the version obtained.
 | Property tests | proptest | 1.12.0 | MIT OR Apache-2.0 | M1 | Tests only; not distributed |
 | Cargo metadata | cargo_metadata | 0.23.1 | MIT | M0 | `xtask` only; not distributed |
 | MIDI | midir | 0.11.1 | MIT | M3 | Access to the MIDI ports of the system |
-| Tags | lofty | 0.25.5 | MIT OR Apache-2.0 | M3 | Temporary, behind a project trait |
+| Tags | none | - | - | M3 | Not external: tags are written by the project's own code (`platter-decode`, module `tag_write`). lofty 0.25.5 was tried and is not used: it brings `paste`, which `cargo deny check` reports as unmaintained |
 | Library | rusqlite | 0.42.0 | MIT | M3 | Temporary, behind a project trait |
 | Stems | ort | 2.0.0-rc.15 | MIT OR Apache-2.0 | M4 | ONNX runtime |
 | HID | hidapi | 2.6.7 | MIT | M5 | Access to the HID devices of the system |
