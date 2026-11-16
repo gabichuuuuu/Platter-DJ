@@ -8,7 +8,8 @@
 //! track.
 //!
 //! Specifications, one module each:
-//! - `id3`: ID3v2.2 (<https://id3.org/id3v2-00>), ID3v2.3 (<https://id3.org/id3v2.3.0>),
+//! - `id3`: ID3v2.2 (the draft with version bytes 2.0, <https://id3.org/id3v2-00>), ID3v2.3
+//!   (<https://id3.org/id3v2.3.0>),
 //!   ID3v2.4 (<https://id3.org/id3v2.4.0-structure>, <https://id3.org/id3v2.4.0-frames>) and
 //!   ID3v1 (<https://id3.org/ID3v1>).
 //! - `vorbis` and `flac`: RFC 9639 (<https://www.rfc-editor.org/rfc/rfc9639>), sections 8.1
@@ -17,8 +18,8 @@
 //!   specification (<https://xiph.org/vorbis/doc/Vorbis_I_spec.html>), section 5.2 and
 //!   appendix A.2.
 //! - `mp4`: ISO/IEC 14496-12 (<https://standards.iso.org/ittf/PubliclyAvailableStandards/>),
-//!   sections 4.2, 8.1.2, 8.7.5, 8.10.1 and 8.11.1, and the metadata item list of the QuickTime
-//!   file format (<https://developer.apple.com/documentation/quicktime-file-format/data_atom>,
+//!   for the box structure and the boxes `free`, `stco`, `co64`, `udta` and `meta`, and the
+//!   metadata item list of the QuickTime file format (<https://developer.apple.com/documentation/quicktime-file-format/data_atom>,
 //!   <https://developer.apple.com/documentation/quicktime-file-format/well-known_types>).
 //! - `riff`: the RIFF WAVE and INFO list of the Multimedia Programming Interface and Data
 //!   Specifications 1.0
@@ -189,6 +190,9 @@ pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), TagWriteError> {
     file.sync_all().map_err(TagWriteError::Io)?;
     drop(file);
     drop(source);
+    // The copy is a new file: without this the track would come back with the default
+    // permissions of the folder instead of its own.
+    fs::set_permissions(&copy.path, metadata.permissions()).map_err(TagWriteError::Io)?;
     // The copy must still be the track Platter read; a write that broke it never replaces
     // the original.
     if probe_file(&copy.path)?.container != container {
@@ -289,6 +293,12 @@ impl Changes {
     /// Whether the edit sets a value of `field` (not only removes it).
     fn sets(&self, field: Field) -> bool {
         matches!(self.field(field), Some(Some(_)))
+    }
+
+    /// Whether the edit sets a value of any field, the tempo included: only then is a tag
+    /// created in a file that has none.
+    fn sets_any(&self) -> bool {
+        Field::ALL.into_iter().any(|field| self.sets(field)) || matches!(self.bpm, Some(Some(_)))
     }
 }
 

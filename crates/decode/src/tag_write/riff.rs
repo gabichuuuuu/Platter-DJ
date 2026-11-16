@@ -17,7 +17,7 @@ use super::{Changes, Field, Source, TagWriteError, corrupt, put, slice, to_usize
 const MAX_CHUNKS: usize = 4096;
 
 /// Fields of the WAV `INFO` list (Multimedia Programming Interface and Data Specifications
-/// 1.0, section 2-14): title, artist, product (the album), genre and comment.
+/// 1.0): title, artist, product (the album), genre and comment.
 const INFO_FIELDS: [(Field, &[u8; 4]); 5] = [
     (Field::Title, b"INAM"),
     (Field::Artist, b"IART"),
@@ -25,7 +25,7 @@ const INFO_FIELDS: [(Field, &[u8; 4]); 5] = [
     (Field::Genre, b"IGNR"),
     (Field::Comment, b"ICMT"),
 ];
-/// Text chunks of AIFF 1.3, section 13.
+/// Text chunks of AIFF 1.3.
 const TEXT_FIELDS: [(Field, &[u8; 4]); 3] = [
     (Field::Title, b"NAME"),
     (Field::Artist, b"AUTH"),
@@ -106,7 +106,8 @@ fn new_chunk(id: &[u8; 4], body: &[u8], big_endian: bool) -> Result<Chunk, TagWr
 fn layout(source: &mut Source, big_endian: bool) -> Result<Layout, TagWriteError> {
     let head = source.read(0, 12)?;
     let declared_end = read_size(&head, big_endian)?.saturating_add(8);
-    let end = declared_end.min(source.len);
+    // A declared size too small to hold the form type still leaves the header in place.
+    let end = declared_end.min(source.len).max(12);
     let mut chunks = Vec::new();
     let mut at = 12u64;
     while end.saturating_sub(at) >= 8 {

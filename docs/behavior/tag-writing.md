@@ -100,7 +100,8 @@ tag in a chunk (below).
   footer, which forbids padding. When the new tag fits the space of the old one, the rest is
   zero padding and the audio does not move; otherwise the tag is followed by 1024 bytes of
   padding.
-- **FLAC.** The `VORBIS_COMMENT` block is edited, or created after `STREAMINFO`; the other
+- **FLAC.** The `VORBIS_COMMENT` block is edited, or created after `STREAMINFO` when the edit
+  sets a field; the other
   blocks (pictures, seek table, application data) stay as they are. The padding blocks are
   merged into one that keeps the metadata at its old size when the rest fits, so the audio
   frames do not move; when the metadata grows past it, it is followed by 1024 bytes of
@@ -126,8 +127,9 @@ tag in a chunk (below).
   items with a `mean` and a `name`. When `moov` changes size, a `free` box right after it
   takes up the change when what remains is empty or a whole box, and the file keeps its
   length; otherwise everything after `moov` moves and every chunk offset (`stco`, `co64`) at or
-  past the old end of `moov` moves with it. Sources: ISO/IEC 14496-12, sections 4.2, 8.1.2,
-  8.7.5, 8.10.1 and 8.11.1 (<https://standards.iso.org/ittf/PubliclyAvailableStandards/>); the
+  past the old end of `moov` moves with it. Sources: ISO/IEC 14496-12, the box structure and
+  the boxes `free`, `stco`, `co64`, `udta` and `meta`
+  (<https://standards.iso.org/ittf/PubliclyAvailableStandards/>); the
   QuickTime data atom and its well-known types
   (<https://developer.apple.com/documentation/quicktime-file-format/data_atom>,
   <https://developer.apple.com/documentation/quicktime-file-format/well-known_types>).
@@ -156,7 +158,8 @@ tag in a chunk (below).
   was, every other byte copied from the original. It flushes it to the disk, reads it again
   with Platter's own reader and, when it is still the same format, renames it over the
   original. Until the rename the original is untouched; on any error the new file is deleted.
-  The rename replaces the file in one step on the same volume.
+  The rename replaces the file in one step on the same volume. The new file gets the
+  permissions of the original before the rename.
 - **Links.** A path that is a symbolic link is followed: the track it points to is written,
   and the link stays a link.
 - **Read-only files.** A file marked read-only is refused, on every system: a rename would
@@ -185,6 +188,10 @@ tag in a chunk (below).
   freeform tempo item (`com.apple.iTunes` / `BPM`), which some software writes with decimals,
   is removed when the edit names the tempo, so no reader finds the old value there.
 - `TKEY` holds at most three characters by its specification; Platter writes the key as given.
+- ID3v2.2 and 2.3 define their Unicode encoding as UCS-2; Platter writes UTF-16, which is the
+  same for every character but those beyond the Basic Multilingual Plane.
+- A NUL in Platter's data would end the value of its ID3v2 user text frame for a reader that
+  takes only the first value; the callers write text without one.
 - An APE tag in an MP3 file is not edited: it stays as it is and keeps its old values.
 - ID3v2 text and AIFF text chunks follow the specifications in their encodings, except that
   AIFF text, ASCII by its specification, and RIFF `INFO` text, whose character set the
@@ -246,11 +253,14 @@ build directory:
 - Layout: the M4A media offset follows a larger `moov`, a `free` box after `moov` takes up the
   change both ways, a missing `udta` is created; FLAC padding takes up a growing comment; an
   Ogg comment that grows past a page renumbers the later pages with valid CRCs, and shrinking
-  it again gives back the original bytes; an ID3v2.3 tag stays 2.3 with UTF-16 text; an ID3v2
+  it again gives back the original bytes; an ID3v2.3 tag stays 2.3 with UTF-16 text, and an
+  ID3v2.2 tag stays 2.2 with its comment language; an ID3v2
   tag in front of a FLAC stream keeps its bytes; an ID3 chunk created in AIFF carries the
   title of its `NAME` chunk.
-- An unsynchronised tag is written plain; an ID3v1 tag, a RIFF INFO chunk and an AIFF `NAME`
-  chunk already in the file are edited too.
+- An unsynchronised tag is written plain, frame by frame in 2.4 and whole in 2.3; an ID3v1
+  tag, a RIFF INFO chunk and an AIFF `NAME` chunk already in the file are edited too; a file
+  without a tag gets none from an edit that sets nothing; on Unix the file keeps its
+  permissions (not run on Windows, where the development happens).
 - Bounds of text, tempo and Platter's data, a non-audio file, damaged files, a read-only file,
   a missing file and a folder: each returns an error and leaves the bytes of the file and the
   folder as they were. A symbolic link stays a link (on Windows the test checks nothing when
@@ -259,6 +269,5 @@ build directory:
   it either refuses the file and leaves it as it was, or writes it and the result reads as the
   same format.
 
-What no test covers: a failure in the middle of the rename, ID3v2.2 tags, encrypted ID3v2
-frames, a 2.4 extended header or footer, `co64` tables, chained Ogg streams, APE tags, and
+What no test covers: a failure in the middle of the rename, encrypted ID3v2 frames, a 2.4 extended header or footer, `co64` tables, chained Ogg streams, APE tags, and
 files from real encoders, which the repository does not hold.

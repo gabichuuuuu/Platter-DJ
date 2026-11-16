@@ -1,6 +1,7 @@
-//! FLAC: the `VORBIS_COMMENT` metadata block is edited or created; every other block stays
-//! as it is. The padding blocks absorb the change when they can, so the audio frames stay
-//! where they were. An ID3v2 tag in front of the stream is kept byte for byte.
+//! FLAC: the `VORBIS_COMMENT` metadata block is edited, or created when the edit sets a
+//! field; every other block stays as it is. The padding blocks absorb the change when they
+//! can, so the audio frames stay where they were. An ID3v2 tag in front of the stream is kept
+//! byte for byte.
 
 use std::io::Write;
 
@@ -73,7 +74,7 @@ pub(super) fn write(
             _ => kept.push((kind, body)),
         }
     }
-    if !comment_seen {
+    if !comment_seen && changes.sets_any() {
         let mut comments = Comments::new();
         comments.apply(changes);
         // After STREAMINFO, which is always first.

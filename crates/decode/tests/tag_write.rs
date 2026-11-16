@@ -1780,10 +1780,95 @@ fn an_empty_edit_keeps_the_tags() {
         probe_file(&path).unwrap().tags.title.as_deref(),
         Some("Kept")
     );
-    // An MP3 without a tag gets none from an empty edit.
+    // A file without a tag gets none from an edit that sets nothing.
+    let removal = TagEdit {
+        title: Some(String::new()),
+        bpm: Some(None),
+        ..TagEdit::default()
+    };
     let mp3 = file(&folder, "a.mp3", &silent_mp3(20));
-    write_tags(&mp3, &TagEdit::default()).unwrap();
-    assert_eq!(fs::read(&mp3).unwrap(), silent_mp3(20));
+    let flac = flac_pcm16(RATE, 2, &sine_pcm());
+    let untagged = file(&folder, "untagged.flac", &flac);
+    for edit in [TagEdit::default(), removal] {
+        write_tags(&mp3, &edit).unwrap();
+        assert_eq!(fs::read(&mp3).unwrap(), silent_mp3(20));
+        write_tags(&untagged, &edit).unwrap();
+        assert_eq!(fs::read(&untagged).unwrap(), flac);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_file_keeps_its_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = folder("permissions");
+    let path = file(&folder, "a.flac", &flac_pcm16(RATE, 2, &sine_pcm()));
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+    write_tags(&path, &title("New title")).unwrap();
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+}
+
+#[test]
+fn an_id3v22_tag_is_edited_in_its_own_version() {
+    // ID3v2.2: three-character identifiers, three-byte sizes, no frame flags.
+    let tag = [
+        b"ID3\x02\x00\x00\x00\x00\x00\x2A".as_slice(),
+        b"TT2\x00\x00\x04\x00Old",
+        b"COM\x00\x00\x06\x00eng\x00c",
+        &[0; 20],
+    ]
+    .concat();
+    let folder = folder("id3v22");
+    let path = file(&folder, "a.mp3", &[tag, silent_mp3(4)].concat());
+    write_tags(
+        &path,
+        &TagEdit {
+            title: Some("Night".to_owned()),
+            comment: Some("Peak".to_owned()),
+            ..TagEdit::default()
+        },
+    )
+    .unwrap();
+    let written = fs::read(&path).unwrap();
+    let expected = [
+        b"ID3\x02\x00\x00\x00\x00\x00\x2A".as_slice(),
+        b"TT2\x00\x00\x06\x00Night",
+        // The comment keeps its language.
+        b"COM\x00\x00\x09\x00eng\x00Peak",
+        // 42 - 12 - 15 bytes of padding.
+        &[0; 15],
+    ]
+    .concat();
+    assert_eq!(&written[..expected.len()], expected.as_slice());
+    assert_eq!(&written[expected.len()..], silent_mp3(4).as_slice());
+}
+
+#[test]
+fn an_unsynchronised_id3v23_tag_is_written_plain() {
+    // In ID3v2.3 unsynchronisation covers the whole tag after its header.
+    let old_title = b"TIT2\x00\x00\x00\x04\x00\x00\x00Old".as_slice();
+    let private = b"PRIV\x00\x00\x00\x08\x00\x00x\x00\xFF\xE0\xFF\x00\x01\x02".as_slice();
+    let body = unsynchronised(&[old_title, private].concat());
+    assert_eq!(body.len(), 34);
+    let tag = [b"ID3\x03\x00\x80\x00\x00\x00\x22".as_slice(), &body].concat();
+    let folder = folder("id3v23-unsynchronised");
+    let path = file(&folder, "a.mp3", &[tag, silent_mp3(4)].concat());
+    write_tags(&path, &title("New")).unwrap();
+    let written = fs::read(&path).unwrap();
+    let expected = [
+        // Same version and size, the unsynchronisation flag cleared.
+        b"ID3\x03\x00\x00\x00\x00\x00\x22".as_slice(),
+        b"TIT2\x00\x00\x00\x04\x00\x00\x00New",
+        private,
+        // The two bytes unsynchronisation had added are now padding.
+        &[0; 2],
+    ]
+    .concat();
+    assert_eq!(&written[..expected.len()], expected.as_slice());
+    assert_eq!(&written[expected.len()..], silent_mp3(4).as_slice());
 }
 
 // ---------------------------------------------------------------------------------------
@@ -2032,12 +2117,19 @@ proptest! {
         at in any::<prop::sample::Index>(),
         value in any::<u8>(),
         truncate in any::<bool>(),
+        head in any::<bool>(),
     ) {
         let (name, mut bytes) = fixtures().swap_remove(which);
         if truncate {
             bytes.truncate(cut.index(bytes.len() + 1));
         } else if !bytes.is_empty() {
-            let at = at.index(bytes.len());
+            // The metadata sits in the first kilobyte (ID3v2, FLAC blocks, Ogg headers, moov)
+            // or the last half (ID3v1, the chunks added to WAV and AIFF).
+            let at = if head {
+                at.index(bytes.len().min(1024))
+            } else {
+                bytes.len() - 1 - at.index(bytes.len().min(512))
+            };
             bytes[at] = value;
         }
         let folder = folder(&format!("fuzz-{name}"));
