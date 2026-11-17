@@ -15,13 +15,13 @@ has the count of `main`. Do not edit the table by hand.
 | --- | ---: | ---: | ---: | ---: |
 | M1 | 9 | 9 | 0 | 0 |
 | M2 | 30 | 30 | 0 | 0 |
-| M3 | 76 | 14 | 16 | 46 |
-| M4 | 31 | 0 | 0 | 31 |
+| M3 | 76 | 73 | 3 | 0 |
+| M4 | 31 | 0 | 1 | 30 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 53 | 16 | 93 |
+| Total | 162 | 112 | 4 | 46 |
 
-First complete version (M0 to M3): 53 of 115 features done.
+First complete version (M0 to M3): 112 of 115 features done.
 
 <!-- parity:end -->
 
