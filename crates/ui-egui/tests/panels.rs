@@ -445,34 +445,47 @@ fn operate(stage: &mut Stage, control: &Control) -> Vec<Action> {
 
 #[test]
 fn every_control_emits_its_command() {
-    let mut operated = 0;
-    for state in states() {
-        let controls = Stage::new(&state).controls();
+    let states = states();
+    let mut jobs = Vec::new();
+    for state in &states {
+        let controls = Stage::new(state).controls();
         assert!(
             controls.len() >= state.min_controls,
             "{}: {} controls",
             state.name,
             controls.len()
         );
-        for control in controls {
-            if !control.enabled || control.kind == ControlKind::Keys {
-                continue;
-            }
-            // A fresh stage for each control, so none sees what another one left behind.
-            let mut stage = Stage::new(&state);
-            let actions = operate(&mut stage, &control);
-            assert!(
-                ids(&actions).contains(&control.command),
-                "{}: the control at {:?} should emit {} and emitted {:?}",
-                state.name,
-                control.rect,
-                control.command,
-                ids(&actions),
-            );
-            operated += 1;
-        }
+        jobs.extend(
+            controls
+                .into_iter()
+                .filter(|control| control.enabled && control.kind != ControlKind::Keys)
+                .map(|control| (state, control)),
+        );
     }
-    assert!(operated > 150, "{operated} controls operated");
+    // A fresh stage for each control, so none sees what another one left behind. Each stage
+    // builds its own window and fonts, so the controls are shared out among the cores; the
+    // checks are the same as one after another.
+    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    std::thread::scope(|scope| {
+        for worker in 0..workers {
+            let jobs = &jobs;
+            scope.spawn(move || {
+                for (state, control) in jobs.iter().skip(worker).step_by(workers) {
+                    let mut stage = Stage::new(state);
+                    let actions = operate(&mut stage, control);
+                    assert!(
+                        ids(&actions).contains(&control.command),
+                        "{}: the control at {:?} should emit {} and emitted {:?}",
+                        state.name,
+                        control.rect,
+                        control.command,
+                        ids(&actions),
+                    );
+                }
+            });
+        }
+    });
+    assert!(jobs.len() > 150, "{} controls operated", jobs.len());
 }
 
 #[test]
