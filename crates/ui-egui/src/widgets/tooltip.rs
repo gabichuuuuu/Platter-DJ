@@ -1,4 +1,4 @@
-//! The tooltip: short help beside a key, on hover or on keyboard focus.
+//! The tooltip: short help beside a control, on hover or on keyboard focus.
 //!
 //! Component: `Tooltip` in `docs/design/DESIGN.md`. Behaviour note:
 //! `docs/behavior/interface.md`, Tooltips.
@@ -32,9 +32,10 @@ struct Hover {
 }
 
 /// Shows the tooltip of a control when it is due: `name` and the shortcut of `action`, if
-/// the keymap has one. Nothing shows while tooltips are off or the control lies behind a
+/// the keymap has one. A control that sets a value passes no action: its shortcuts each send
+/// a value of their own. Nothing shows while tooltips are off or the control lies behind a
 /// dialog.
-pub fn tooltip(cx: &Cx<'_>, response: &Response, name: &str, action: &Action) {
+pub fn tooltip(cx: &Cx<'_>, response: &Response, name: &str, action: Option<&Action>) {
     let Some(keymap) = cx.help else {
         return;
     };
@@ -74,7 +75,9 @@ pub fn tooltip(cx: &Cx<'_>, response: &Response, name: &str, action: &Action) {
     }
     ctx.data_mut(|data| data.insert_temp(memory, state));
     if shown {
-        let shortcut = shortcut(keymap, action).map(|chord| chord_text(cx.texts, chord));
+        let shortcut = action
+            .and_then(|action| shortcut(keymap, action))
+            .map(|chord| chord_text(cx.texts, chord));
         draw(cx, response.rect, name, shortcut.as_deref());
     }
 }

@@ -224,3 +224,11 @@ command = "app.fullscreen.toggle"
 [[binding]]
 keys = "Ctrl + F"
 command = "browser.search.focus"
+
+[[binding]]
+keys = "Ctrl + A"
+command = "browser.select.all"
+
+[[binding]]
+keys = "Delete"
+command = "browser.playlist.remove"

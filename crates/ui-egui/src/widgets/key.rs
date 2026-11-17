@@ -94,7 +94,7 @@ pub fn key(cx: &mut Cx<'_>, rect: Rect, id: Id, spec: KeySpec<'_>, press: Press)
         Press::Click(action) | Press::Hold { down: action, .. } => action,
     };
     if spec.enabled {
-        tooltip::tooltip(cx, &response, spec.name, action);
+        tooltip::tooltip(cx, &response, spec.name, Some(action));
     }
     let focused = response.has_focus();
     if focused {

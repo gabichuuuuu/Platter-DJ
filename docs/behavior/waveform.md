@@ -32,11 +32,17 @@ waveform in and out. Both views share one colour mode out of four.
   lane.
 - The overview shows the whole track with the part already played dimmed. A click on it
   sends `deck.seek` to the position clicked.
+- **Parallel lanes.** The scrolling lanes of the two decks are stacked under the status
+  header, each centred on the play position of its deck. At the same zoom they share the time
+  scale, so the beats of two synced decks line up vertically (`docs/design/DESIGN.md`,
+  *Waveform*, parallel layout).
 
 ## Differences
 
 - One colour mode; the other three are M4.
 - No key resets the zoom; five steps make it two presses away at most.
+- Each lane keeps its own zoom: the time scales are the same only while both lanes are at the
+  same step. The design system's parallel layout gives them one scale.
 - Dragging the scrolling waveform does nothing in M2. The drag modes of the documented
   application arrive with the beatgrid in M3.
 

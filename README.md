@@ -137,8 +137,20 @@ Everything known to be missing, unfinished or not yet listened to.
   them yet, they are reached through the shortcut file, and nobody has listened to them
   (`docs/behavior/flux.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
-  header, searches it as the user types and sorts it by a column. Playlists, history and the
-  preview player are not in the window yet, and nobody has imported a real music collection (`docs/behavior/browser.md`).
+  header and the cover each track carries, with a colour tag and a rating the menu of a track
+  sets and a dialog that edits title, artist, album, genre, comment and rating in the library, searches it as the user types and sorts it by a column. It lists the playlists of the
+  library and shows their tracks; their menus create, rename, empty and delete them, make
+  folders, remove repeated tracks, take a track out and export or import playlists as M3U files
+  in the folder the explorer shows, and a track dragged onto a playlist is added to it. One playlist can be the preparation list, which the menu of a track appends
+  to or fills as next, and whose tracks are marked in the list; favourites above the tree reach
+  the collection, the preparation list, the history and five playlists. A track a deck has
+  played for the minimum play time of the Library page of the preferences, 30 seconds by
+  default, is marked as played and enters the history of the session, which the
+  tree shows with the histories of earlier sessions, dated in UTC. A track can be deleted from
+  the collection after a question, and the Library page of the preferences opens the
+  maintenance of the collection, which checks for missing files, relocates them by name in a
+  folder and removes them. The preview player is not in the window yet, and nobody has imported
+  a real music collection (`docs/behavior/browser.md`).
 - MIDI controllers are named by hand in the settings file, each with a mapping file
   (`docs/behavior/controllers.md`); the status header shows how many are open and lights on
   their messages, but there is no controller page, no learn mode and no lights on the

@@ -17,6 +17,7 @@ mod deck;
 mod lock;
 mod looper;
 mod metronome;
+mod preview;
 mod processor;
 mod shared;
 mod strip;
@@ -26,7 +27,7 @@ mod tone;
 use std::sync::Arc;
 
 use platter_core::{
-    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate,
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate, TrackMemory,
 };
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
@@ -50,6 +51,13 @@ pub const MAX_KEY_SHIFT: f64 = 12.0;
 pub struct DeckTrack {
     pub audio: TrackAudio,
     pub stretch: Option<Stretcher>,
+    /// The grid and the cues kept for the track, which the deck starts with. Boxed so the
+    /// commands stay small; the box goes back with the retired items, to be freed off the
+    /// audio thread.
+    pub memory: Option<Box<TrackMemory>>,
+    /// Where the deck starts, in seconds of track time, when not at the beginning: the load
+    /// marker. The cue point starts there too.
+    pub start: Option<f64>,
 }
 
 /// Stereo audio of a loaded track, shared without copying.
@@ -114,6 +122,17 @@ impl Output {
 /// the processor applies them as they are.
 #[derive(Debug)]
 pub enum RtCommand {
+    /// Replaces the track of the preview player, playing it from its start when `play`. The
+    /// previous audio comes back through the retired queue, exactly one item per command.
+    PreviewSwap {
+        track: Option<DeckTrack>,
+        play: bool,
+    },
+    PreviewToggle,
+    /// Moves the play position of the preview player, in seconds of track time.
+    PreviewSeek {
+        seconds: f64,
+    },
     /// Replaces the track of a deck; `None` empties it. The previous audio comes back
     /// through the retired queue, exactly one item per command.
     Swap {
@@ -419,7 +438,7 @@ pub struct LoopState {
 
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
-pub struct Retired(pub Option<DeckTrack>);
+pub struct Retired(pub Option<DeckTrack>, pub Option<Box<TrackMemory>>);
 
 /// What changed in a deck that the control side keeps a copy of: each part is there when it
 /// changed since the report before.

@@ -5,14 +5,15 @@
 //! processor it feeds may not.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Instant;
 
 use platter_analysis::Transposed;
 use platter_core::{
-    BeatGrid, Bpm, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, ValueError,
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, TrackMemory,
+    ValueError,
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
@@ -57,8 +58,18 @@ pub struct TrackInfo {
 /// Something that happened in the background since the last poll.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    Loaded { deck: DeckId, info: TrackInfo },
-    LoadFailed { deck: DeckId, message: String },
+    Loaded {
+        deck: DeckId,
+        info: TrackInfo,
+    },
+    LoadFailed {
+        deck: DeckId,
+        message: String,
+    },
+    /// The file sent to the preview player could not be read.
+    PreviewFailed {
+        message: String,
+    },
 }
 
 #[derive(Debug)]
@@ -295,6 +306,9 @@ impl Default for DeckSnapshot {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub decks: [DeckSnapshot; 2],
+    /// A track with a cue of the type load starts at it: `docs/behavior/cues.md`.
+    pub load_marker: bool,
+    pub preview: PreviewSnapshot,
     pub mixer: MixerControls,
     pub clock: ClockSnapshot,
     /// Peak level of the left and the right side of the master output, linear.
@@ -329,6 +343,8 @@ struct DeckControl {
 
 struct Loaded {
     audio: TrackAudio,
+    /// What the collection kept of the track.
+    memory: TrackMemory,
     /// The stretch of key lock, built on the load worker since building it allocates.
     stretch: Option<Stretcher>,
     info: TrackInfo,
@@ -338,6 +354,10 @@ struct Loaded {
 /// What a load worker sends back: the decoded track and then, once it is analysed, the
 /// analysis. A worker whose decode fails sends only the first.
 enum LoadResult {
+    Preview {
+        generation: u64,
+        result: Result<Box<PreviewLoaded>, DecodeError>,
+    },
     Decoded {
         deck: DeckId,
         generation: u64,
@@ -350,9 +370,37 @@ enum LoadResult {
     },
 }
 
+/// The track of the preview player, as the control side keeps it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PreviewSnapshot {
+    pub track: Option<TrackInfo>,
+    pub peaks: Option<Arc<WaveformPeaks>>,
+    /// A file is being decoded for the player.
+    pub loading: bool,
+    pub playing: bool,
+    pub position_seconds: f64,
+}
+
+/// What a worker decoded for the preview player.
+struct PreviewLoaded {
+    audio: TrackAudio,
+    info: TrackInfo,
+    peaks: WaveformPeaks,
+}
+
+#[derive(Default)]
+struct PreviewControl {
+    track: Option<TrackInfo>,
+    peaks: Option<Arc<WaveformPeaks>>,
+    loading: bool,
+    /// Counts loads, so a decode that finishes late is recognised as stale.
+    generation: u64,
+}
+
 pub struct Engine {
     ends: ControlEnds,
     decks: [DeckControl; 2],
+    preview: PreviewControl,
     mixer: MixerControls,
     /// The tempo master is chosen automatically.
     clock_auto: bool,
@@ -360,6 +408,8 @@ pub struct Engine {
     snap: bool,
     quantize: bool,
     metronome: bool,
+    /// A track with a cue of the type load starts at it.
+    load_marker: bool,
     clock_tap: TapTempo,
     /// An automatic fade was started and nothing has set the crossfader since: the
     /// processor knows where it is.
@@ -371,14 +421,24 @@ pub struct Engine {
     finished_loads: Receiver<LoadResult>,
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
+    recall: Option<Recall>,
     rate: SampleRate,
 }
+
+/// Gives the grid and the cues kept for the file at a path. It runs on the worker that
+/// loads the track, so it may read a file.
+pub type Recall = Arc<dyn Fn(&Path) -> Option<TrackMemory> + Send + Sync>;
 
 impl Engine {
     /// Builds an engine that runs at `rate` and the processor that produces its audio. The
     /// processor goes to whoever drives the audio: the device callback or the render.
     pub fn new(rate: SampleRate) -> (Self, Processor) {
         Self::with_analyser(rate, Arc::new(PlatterAnalyser::default()))
+    }
+
+    /// Sets where each load finds the grid and the cues kept for its track.
+    pub fn set_recall(&mut self, recall: Recall) {
+        self.recall = Some(recall);
     }
 
     /// As [`Self::new`], with another analysis of the loaded tracks.
@@ -388,12 +448,14 @@ impl Engine {
         let engine = Self {
             ends,
             decks: Default::default(),
+            preview: PreviewControl::default(),
             mixer: MixerControls::default(),
             clock_auto: true,
             sync_mode: SyncMode::default(),
             snap: false,
             quantize: false,
             metronome: false,
+            load_marker: true,
             clock_tap: TapTempo::default(),
             crossfading: false,
             swaps_in_flight: 0,
@@ -401,6 +463,7 @@ impl Engine {
             finished_loads,
             load_reports,
             analyser,
+            recall: None,
             rate,
         };
         (engine, processor)
@@ -413,6 +476,7 @@ impl Engine {
     /// tempo master is chosen again.
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
         let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
+        engine.recall = previous.recall.clone();
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();
@@ -482,6 +546,7 @@ impl Engine {
         engine.snap = previous.snap;
         engine.quantize = previous.quantize;
         engine.metronome = previous.metronome;
+        engine.load_marker = previous.load_marker;
         (engine, processor)
     }
 
@@ -489,6 +554,24 @@ impl Engine {
     pub fn dispatch(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
             Command::DeckLoad { deck, path } => self.start_load(deck, path),
+            Command::GlobalLoadMarkerToggle => {
+                self.load_marker = !self.load_marker;
+                Ok(())
+            }
+            Command::PreviewLoad { path } => self.start_preview(path),
+            Command::PreviewPlayPause => match self.preview.track {
+                Some(_) => self.send(RtCommand::PreviewToggle),
+                None => Ok(()),
+            },
+            Command::PreviewSeek { position } => {
+                let position = ValueError::check("position", position, 0.0, 1.0)?;
+                match self.preview.track.as_ref().map(|track| track.seconds) {
+                    Some(seconds) => self.send(RtCommand::PreviewSeek {
+                        seconds: position * seconds,
+                    }),
+                    None => Ok(()),
+                }
+            }
             Command::DeckEject { deck } => self.eject(deck),
             Command::DeckPlay { deck } => self.send(RtCommand::Play { deck }),
             Command::DeckPause { deck } => self.send(RtCommand::Pause { deck }),
@@ -510,6 +593,16 @@ impl Engine {
                 self.send(RtCommand::Nudge { deck, amount })
             }
             Command::DeckTempoRangeCycle { deck } => self.cycle_tempo_range(deck),
+            Command::DeckTempoRangeSet { deck, percent } => {
+                let range = TEMPO_RANGES
+                    .into_iter()
+                    .find(|range| (range * 100.0).round() as u32 == percent)
+                    .ok_or(ValueError::UnknownChoice {
+                        name: "percent",
+                        expected: "8, 16, 50",
+                    })?;
+                self.set_tempo_range(deck, range)
+            }
             other => self.dispatch_cues(other),
         }
     }
@@ -769,6 +862,13 @@ impl Engine {
             .position(|range| *range == controls.tempo_range)
             .unwrap_or(0);
         let range = TEMPO_RANGES[(current + 1) % TEMPO_RANGES.len()];
+        self.set_tempo_range(deck, range)
+    }
+
+    /// Gives the fader `range`. A tempo the range cannot reach moves to its edge, so the fader
+    /// and the speed never disagree.
+    fn set_tempo_range(&mut self, deck: DeckId, range: f64) -> Result<(), EngineError> {
+        let controls = &self.decks[deck.index()].controls;
         let reachable = controls.tempo_ratio.clamp(1.0 - range, 1.0 + range);
         if reachable != controls.tempo_ratio {
             self.set_tempo(deck, reachable)?;
@@ -983,12 +1083,18 @@ impl Engine {
         let generation = state.generation;
         let reports = self.load_reports.clone();
         let analyser = Arc::clone(&self.analyser);
+        let recall = self.recall.clone();
         let rate = self.rate;
         std::thread::Builder::new()
             .name("platter-load".to_owned())
             .spawn(move || {
-                let result =
-                    decode_file(&path).map(|decoded| Box::new(prepare(decoded, path, rate)));
+                let result = decode_file(&path).map(|decoded| {
+                    let memory = recall
+                        .as_ref()
+                        .and_then(|recall| recall(&path))
+                        .unwrap_or_default();
+                    Box::new(prepare(decoded, path, rate, memory))
+                });
                 let audio = result.as_ref().ok().map(|loaded| loaded.audio.clone());
                 // The engine may be gone by now; then nobody waits for the result.
                 let _ = reports.send(LoadResult::Decoded {
@@ -1009,6 +1115,86 @@ impl Engine {
         self.decks[deck.index()].loading = true;
         self.loads_running += 1;
         Ok(())
+    }
+
+    /// Decodes `path` for the preview player on a worker thread of its own.
+    fn start_preview(&mut self, path: PathBuf) -> Result<(), EngineError> {
+        self.preview.generation += 1;
+        let generation = self.preview.generation;
+        let reports = self.load_reports.clone();
+        std::thread::Builder::new()
+            .name("platter-preview".to_owned())
+            .spawn(move || {
+                let result = decode_file(&path).map(|decoded| {
+                    let info = TrackInfo {
+                        path,
+                        container: decoded.container,
+                        sample_rate: decoded.sample_rate,
+                        channels: decoded.channels,
+                        seconds: decoded.seconds(),
+                        tags: decoded.tags.clone(),
+                    };
+                    let rate = decoded.sample_rate;
+                    let stereo = decoded.into_stereo();
+                    let peaks = WaveformPeaks::compute(&stereo, rate);
+                    Box::new(PreviewLoaded {
+                        audio: TrackAudio::new(rate, stereo),
+                        info,
+                        peaks,
+                    })
+                });
+                // The engine may be gone by now; then nobody waits for the result.
+                let _ = reports.send(LoadResult::Preview { generation, result });
+            })
+            .map_err(EngineError::Worker)?;
+        self.preview.loading = true;
+        self.loads_running += 1;
+        Ok(())
+    }
+
+    fn finish_preview(
+        &mut self,
+        generation: u64,
+        result: Result<Box<PreviewLoaded>, DecodeError>,
+    ) -> Option<Event> {
+        self.loads_running = self.loads_running.saturating_sub(1);
+        if self.preview.generation != generation {
+            return None;
+        }
+        self.preview.loading = false;
+        let loaded = match result {
+            Ok(loaded) => *loaded,
+            Err(error) => {
+                return Some(Event::PreviewFailed {
+                    message: error.to_string(),
+                });
+            }
+        };
+        self.collect_retired();
+        // The retired queue has room for this many; see `rt::channel`.
+        if self.swaps_in_flight >= COMMAND_CAPACITY {
+            return Some(Event::PreviewFailed {
+                message: EngineError::Busy.to_string(),
+            });
+        }
+        let track = DeckTrack {
+            audio: loaded.audio,
+            stretch: None,
+            memory: None,
+            start: None,
+        };
+        if let Err(error) = self.send(RtCommand::PreviewSwap {
+            track: Some(track),
+            play: true,
+        }) {
+            return Some(Event::PreviewFailed {
+                message: error.to_string(),
+            });
+        }
+        self.swaps_in_flight += 1;
+        self.preview.track = Some(loaded.info);
+        self.preview.peaks = Some(Arc::new(loaded.peaks));
+        None
     }
 
     fn eject(&mut self, deck: DeckId) -> Result<(), EngineError> {
@@ -1063,6 +1249,9 @@ impl Engine {
 
     fn finish_load(&mut self, finished: LoadResult) -> Option<Event> {
         let (deck, generation, result) = match finished {
+            LoadResult::Preview { generation, result } => {
+                return self.finish_preview(generation, result);
+            }
             LoadResult::Decoded {
                 deck,
                 generation,
@@ -1089,9 +1278,23 @@ impl Engine {
             Ok(loaded) => *loaded,
             Err(error) => return failed(error.to_string()),
         };
+        // A track with a cue of the type load starts there, while the preference asks for it.
+        let start = self
+            .load_marker
+            .then(|| {
+                loaded
+                    .memory
+                    .cues
+                    .iter()
+                    .find(|(_, cue)| cue.kind() == CueKind::Load)
+                    .map(|(_, cue)| cue.position)
+            })
+            .flatten();
         let track = DeckTrack {
             audio: loaded.audio,
             stretch: loaded.stretch,
+            memory: Some(Box::new(loaded.memory)),
+            start,
         };
         if let Err(error) = self.send_swap(deck, Some(track)) {
             return failed(error.to_string());
@@ -1195,6 +1398,14 @@ impl Engine {
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
+            load_marker: self.load_marker,
+            preview: PreviewSnapshot {
+                track: self.preview.track.clone(),
+                peaks: self.preview.peaks.clone(),
+                loading: self.preview.loading,
+                playing: shared.preview_playing.get(),
+                position_seconds: shared.preview_position.get(),
+            },
         }
     }
 }
@@ -1309,7 +1520,12 @@ impl DeckControl {
     }
 }
 
-fn prepare(decoded: DecodedAudio, path: PathBuf, engine_rate: SampleRate) -> Loaded {
+fn prepare(
+    decoded: DecodedAudio,
+    path: PathBuf,
+    engine_rate: SampleRate,
+    memory: TrackMemory,
+) -> Loaded {
     let info = TrackInfo {
         path,
         container: decoded.container,
@@ -1327,6 +1543,7 @@ fn prepare(decoded: DecodedAudio, path: PathBuf, engine_rate: SampleRate) -> Loa
         .map(|stretch| Stretcher(Box::new(stretch)));
     Loaded {
         audio,
+        memory,
         stretch,
         info,
         peaks,

@@ -226,6 +226,16 @@ impl Controller {
         (actions, taken, taken == PER_FRAME)
     }
 
+    /// The control of the last message waiting now that names one, for learn mode: the
+    /// messages are taken without acting.
+    pub fn take_learned(&mut self) -> Option<String> {
+        self.messages
+            .take()
+            .take(PER_FRAME)
+            .filter_map(|message| crate::manager::learned(message.bytes()))
+            .last()
+    }
+
     /// Whether a refusal of `command` by the engine is the first one, and so goes in the log.
     pub fn first_refusal(&mut self, command: &'static str) -> bool {
         self.refused.insert(command)

@@ -18,6 +18,13 @@ pub fn time(seconds: f64, remaining: bool) -> String {
 }
 
 /// A duration as minutes and seconds: `06:12`.
+/// A tempo typed into a field, with a full stop or a comma, within the tempos a grid takes.
+pub fn typed_bpm(text: &str) -> Option<f64> {
+    let bpm: f64 = text.trim().replace(',', ".").parse().ok()?;
+    (bpm.is_finite() && (platter_core::Bpm::MIN..=platter_core::Bpm::MAX).contains(&bpm))
+        .then_some(bpm)
+}
+
 pub fn duration(seconds: f64) -> String {
     let whole = if seconds.is_finite() {
         seconds.max(0.0).round() as u64

@@ -71,8 +71,11 @@ Several tempos along one track are M4.
 - The GRID page of a deck is two rows above its transport keys, shown when the switch of
   the advanced panel is on GRID (`docs/behavior/loops.md`). The first: the tempo
   field, lower and raise the tempo by 0.01 BPM, halve, double, tap, move the marker earlier
-  or later by 5 ms, and the lock at its end, lit while the grid is locked. The second: the
-  previous marker, set a marker, the next marker and delete.
+  or later by 5 ms, the beat tick, lit in the colour of the deck while it ticks, and the lock
+  at its end, lit while the grid is locked. The second: the previous marker, set a marker,
+  the next marker, delete, and the two resets of `docs/behavior/analysis.md`, the grid icon for
+  the whole grid and the clock icon for the tempo alone, off until the analysis of the load
+  has finished, the second also without a tempo found.
 - The tempo field shows the tempo of the grid, or `--.--` without one. Dragging it up or down
   sets the tempo, 0.05 BPM per pixel, a tenth of that with Shift; with the focus the arrows
   step it by 0.01 BPM and Page Up and Page Down by 1 BPM. Without a tempo in the grid the
@@ -117,21 +120,16 @@ its own beats.
   The tempo buttons act on the whole track, not on the zone of the play position.
 - The step buttons of the documented application add or remove one beat in a closed zone; with a
   single tempo Platter steps the tempo by the amount the command carries.
-- The tempo field cannot be typed into yet: it is dragged or stepped. Typing comes with the
-  text field of the browser search, later in M3.
-- The reset commands are in `docs/behavior/analysis.md`; their keys on the GRID page come later
-  in M3.
-- The beat tick has its command but no key on the GRID page yet; the key comes with the next
-  change to the deck panel.
+- The tempo field is dragged or stepped, and typed after a double click or Enter: a tempo
+  with a full stop or a comma, within the range of a grid; Escape leaves it as it was.
 - The sound of the tick, its level and its length are Platter's: the manual describes none of
   them.
 - In external mixer mode the tick is on the signal of the deck, on its pair of outputs, as
   the manual says (`docs/behavior/external-mixer.md`).
 - The selected marker is the one on or before the play position, as the documented application
   selects it. Platter has no separate selection.
-- The grid lives with the loaded track and is lost when the track is loaded again, which a
-  change of sample rate of the audio device also does, until the collection stores it later
-  in M3.
+- The grid is kept in the collection with its track and comes back when it is loaded again
+  (`docs/behavior/library.md`, *Cues, grid and analysis*).
 
 ## Edge cases
 

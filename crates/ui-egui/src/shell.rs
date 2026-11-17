@@ -9,15 +9,19 @@ use egui::{CornerRadius, Key, Rect, Sense};
 use platter_core::DeckId;
 use platter_engine::Command;
 
-use crate::command::{Action, AppCommand, DeckPage, SettingsPage};
+use crate::command::{
+    Action, AppCommand, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen, SettingsPage,
+    TrackDetails,
+};
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
-use crate::model::{AudioState, View};
+use crate::model::{AudioState, CollectionView, FileRow, RowKind, View};
 use crate::panels::browser::BrowserMemory;
+use crate::panels::details::{DetailsEdit, DetailsForm};
 use crate::panels::settings::{DIALOG_SIZE, SettingsMemory};
 use crate::panels::waveform::{DEFAULT_ZOOM, ZOOM_SECONDS};
-use crate::panels::{browser, deck, header, mixer, settings, waveform};
+use crate::panels::{browser, deck, details, header, maintenance, mixer, settings, waveform};
 use crate::theme::{Theme, ThemeError};
 use crate::widgets::meter::MeterMemory;
 
@@ -29,6 +33,9 @@ const HEADER_HEIGHT: f32 = 40.0;
 const NOTICE_HEIGHT: f32 = 44.0;
 const LANES_HEIGHT: f32 = 178.0;
 const DECKS_HEIGHT: f32 = 388.0;
+/// The band of compact decks: the height the mixer needs, whose crossfader row ends 343 points
+/// down, with the padding of a panel under it.
+const COMPACT_DECKS_HEIGHT: f32 = 356.0;
 const DECK_WIDTH: f32 = 520.0;
 /// How much of the window shows through the veil behind the preferences.
 const DIALOG_VEIL: f32 = 0.55;
@@ -52,6 +59,18 @@ pub struct ViewState {
     pub meters: [MeterMemory; 3],
     pub browser: BrowserMemory,
     pub settings: SettingsMemory,
+    /// The dialog of the maintenance of the collection is open over the preferences.
+    pub maintenance: bool,
+    /// *Remove missing* waits for its answer.
+    pub remove_asked: bool,
+    /// The dialog of the details of the selected tracks is asked for, and what it holds once it
+    /// is open.
+    pub details_wanted: bool,
+    pub details: Option<DetailsForm>,
+    /// The position the dialog shows next: 0 for all the selected tracks, 1 and up for one.
+    pub details_position: usize,
+    /// What the dialog saved since it opened, shown at once while the library answers.
+    pub details_edits: Vec<DetailsEdit>,
 }
 
 impl Default for ViewState {
@@ -65,7 +84,59 @@ impl Default for ViewState {
             meters: [MeterMemory::default(); 3],
             browser: BrowserMemory::default(),
             settings: SettingsMemory::default(),
+            maintenance: false,
+            remove_asked: false,
+            details_wanted: false,
+            details: None,
+            details_position: 0,
+            details_edits: Vec::new(),
         }
+    }
+}
+
+impl ViewState {
+    fn close_details(&mut self) {
+        self.details_wanted = false;
+        self.details = None;
+        self.details_edits.clear();
+    }
+
+    /// Keeps what a save of the dialog wrote, then closes the dialog or shows the position
+    /// before or after. `docs/behavior/browser.md`, *Track details*.
+    fn saved_details(
+        &mut self,
+        details: &TrackDetails,
+        fields: DetailFields,
+        position: usize,
+        then: DetailsThen,
+    ) {
+        let Some(form) = &self.details else {
+            self.close_details();
+            return;
+        };
+        let count = form.count;
+        if position > count || (count == 1 && position > 0) {
+            self.close_details();
+            return;
+        }
+        if !fields.is_empty() {
+            self.details_edits.push(DetailsEdit {
+                tracks: form.tracks_at(position),
+                details: details.clone(),
+                fields,
+            });
+        }
+        let to = match then {
+            DetailsThen::Previous if count > 1 => position.saturating_sub(1),
+            DetailsThen::Next if count > 1 => (position + 1).min(count),
+            _ => {
+                self.close_details();
+                return;
+            }
+        };
+        self.details = None;
+        self.details_wanted = true;
+        self.details_position = to;
     }
 }
 
@@ -140,7 +211,45 @@ impl Shell {
         let state = &mut self.state;
         match command {
             AppCommand::SettingsOpen { page } => state.settings_page = Some(*page),
-            AppCommand::SettingsClose => state.settings_page = None,
+            AppCommand::SettingsClose => {
+                state.settings_page = None;
+                state.maintenance = false;
+            }
+            AppCommand::LibraryMaintenanceOpen => {
+                state.maintenance = state.settings_page.is_some();
+                state.remove_asked = false;
+            }
+            AppCommand::LibraryMaintenanceClose => {
+                state.maintenance = false;
+                state.remove_asked = false;
+            }
+            AppCommand::LibraryMissingAsk => state.remove_asked = true,
+            AppCommand::BrowserTrackDetailsOpen => {
+                state.details_wanted = true;
+                state.details_position = 0;
+                state.details_edits.clear();
+            }
+            AppCommand::BrowserTrackDetailsClose => state.close_details(),
+            AppCommand::BrowserTrackDetailsSave {
+                details,
+                fields,
+                position,
+                then,
+            } => state.saved_details(details, *fields, *position, *then),
+            AppCommand::BrowserTrackDetailsRating { rating } => {
+                if let Some(form) = &mut state.details {
+                    form.details.rating = (*rating).min(5);
+                    form.ticked.insert(DetailField::Rating);
+                }
+            }
+            AppCommand::BrowserTrackDetailsTick { field } => {
+                if let Some(form) = &mut state.details {
+                    form.ticked.toggle(*field);
+                }
+            }
+            AppCommand::LibraryMissingKeep | AppCommand::LibraryMissingRemove => {
+                state.remove_asked = false;
+            }
             AppCommand::WaveformZoomIn { deck } => {
                 state.zoom[deck.index()] = state.zoom[deck.index()].saturating_sub(1);
             }
@@ -180,7 +289,23 @@ impl Shell {
         let screen = ui.max_rect();
         ui.painter()
             .rect_filled(screen, CornerRadius::ZERO, self.theme.tokens.color.bg_app);
+        // The dialog of the details opens on the selected tracks of the library, and closes when
+        // the selection is no longer the one it opened on.
+        if self.state.details_wanted && self.state.details.is_none() {
+            self.state.details =
+                details_of(view, self.state.details_position, &self.state.details_edits);
+            self.state.details_wanted = self.state.details.is_some();
+        }
+        if self
+            .state
+            .details
+            .as_ref()
+            .is_some_and(|form| form.tracks != track_paths(&selected_tracks(view)))
+        {
+            self.state.close_details();
+        }
         let dialog = self.state.settings_page;
+        let details_open = self.state.details.is_some() && dialog.is_none();
         let mut state = self.state.clone();
         let zones = Zones::of(screen, view, self.theme.tokens.space.s1);
         {
@@ -189,7 +314,7 @@ impl Shell {
                 theme: &self.theme,
                 texts: &self.texts,
                 out: &mut out,
-                interactive: dialog.is_none(),
+                interactive: dialog.is_none() && !details_open,
                 help: view.settings.tooltips.then_some(view.keymap),
             };
             header::header(&mut cx, zones.header, view, &state);
@@ -206,12 +331,11 @@ impl Shell {
                 dropped_files(&mut cx, &zones, view);
             }
         }
-        if let Some(page) = dialog {
-            // Whatever lies behind the dialog is dimmed and takes no input.
+        if let Some(form) = state.details.as_mut().filter(|_| details_open) {
             let veil = self.theme.tokens.color.bg_app.gamma_multiply(DIALOG_VEIL);
             ui.painter().rect_filled(screen, CornerRadius::ZERO, veil);
-            ui.interact(screen, id("dialog-backdrop"), Sense::click_and_drag());
-            let rect = Rect::from_center_size(screen.center(), DIALOG_SIZE).round_ui();
+            ui.interact(screen, id("details-backdrop"), Sense::click_and_drag());
+            let rect = Rect::from_center_size(screen.center(), details::DETAILS_SIZE).round_ui();
             let mut cx = Cx {
                 ui,
                 theme: &self.theme,
@@ -220,10 +344,51 @@ impl Shell {
                 interactive: true,
                 help: view.settings.tooltips.then_some(view.keymap),
             };
-            settings::settings(&mut cx, rect, page, view, &mut state.settings);
+            details::details(&mut cx, rect, form);
             let escape = ui.input(|input| input.key_pressed(Key::Escape));
             if escape && !out.is_claimed(Key::Escape, &egui::Modifiers::NONE) {
-                out.emit(AppCommand::SettingsClose);
+                out.emit(AppCommand::BrowserTrackDetailsClose);
+            }
+        }
+        if let Some(page) = dialog {
+            // Whatever lies behind the dialog is dimmed and takes no input.
+            let veil = self.theme.tokens.color.bg_app.gamma_multiply(DIALOG_VEIL);
+            ui.painter().rect_filled(screen, CornerRadius::ZERO, veil);
+            ui.interact(screen, id("dialog-backdrop"), Sense::click_and_drag());
+            let rect = Rect::from_center_size(screen.center(), DIALOG_SIZE).round_ui();
+            let maintenance = state.maintenance;
+            let mut cx = Cx {
+                ui,
+                theme: &self.theme,
+                texts: &self.texts,
+                out: &mut out,
+                interactive: !maintenance,
+                help: view.settings.tooltips.then_some(view.keymap),
+            };
+            settings::settings(&mut cx, rect, page, view, &mut state.settings);
+            // The maintenance of the collection opens over the preferences, which then rest.
+            if maintenance {
+                ui.painter().rect_filled(screen, CornerRadius::ZERO, veil);
+                ui.interact(screen, id("maintenance-backdrop"), Sense::click_and_drag());
+                let rect = Rect::from_center_size(screen.center(), maintenance::MAINTENANCE_SIZE)
+                    .round_ui();
+                let mut cx = Cx {
+                    ui,
+                    theme: &self.theme,
+                    texts: &self.texts,
+                    out: &mut out,
+                    interactive: true,
+                    help: view.settings.tooltips.then_some(view.keymap),
+                };
+                maintenance::maintenance(&mut cx, rect, view, state.remove_asked);
+            }
+            let escape = ui.input(|input| input.key_pressed(Key::Escape));
+            if escape && !out.is_claimed(Key::Escape, &egui::Modifiers::NONE) {
+                out.emit(if maintenance {
+                    AppCommand::LibraryMaintenanceClose
+                } else {
+                    AppCommand::SettingsClose
+                });
             }
         }
         self.state = state;
@@ -238,14 +403,130 @@ impl Shell {
         } else {
             self.keys.release_all(view.keymap)
         };
-        // With the preferences open, the shortcuts of the decks and the mixer rest.
-        if dialog.is_some() {
+        // With a dialog open, the shortcuts of the decks and the mixer rest.
+        if dialog.is_some() || details_open {
             actions.retain(|action| matches!(action, Action::App(_)));
+        }
+        // Control and A belongs to a text field while one has the keyboard, and the list
+        // behind a dialog keeps its selection.
+        if dialog.is_some() || details_open || out.takes_text() {
+            actions.retain(|action| !matches!(action, Action::App(AppCommand::BrowserSelectAll)));
         }
         out.actions.extend(actions);
         self.controls = out.controls;
         out.actions
     }
+}
+
+/// The selected rows that are tracks of the library, in the order of their files, a track that
+/// is in two rows once.
+fn selected_tracks<'a>(view: &View<'a>) -> Vec<&'a FileRow> {
+    let browser = view.browser;
+    if !browser
+        .collection
+        .as_ref()
+        .is_some_and(CollectionView::shown)
+    {
+        return Vec::new();
+    }
+    let mut rows: Vec<&FileRow> = Vec::new();
+    for row in browser
+        .marked
+        .iter()
+        .filter_map(|index| browser.rows.get(*index))
+        .filter(|row| matches!(row.kind, RowKind::Track(_)))
+    {
+        if !rows.iter().any(|seen| seen.path == row.path) {
+            rows.push(row);
+        }
+    }
+    // By file, not by place in the list: a save that sorts the list again keeps the order.
+    rows.sort_by(|a, b| a.path.cmp(&b.path));
+    rows
+}
+
+fn track_paths(rows: &[&FileRow]) -> Vec<std::path::PathBuf> {
+    rows.iter().map(|row| row.path.clone()).collect()
+}
+
+/// What the library has of a track, with what the dialog saved since it opened.
+fn values_of(row: &FileRow, edits: &[DetailsEdit]) -> Option<TrackDetails> {
+    let RowKind::Track(track) = &row.kind else {
+        return None;
+    };
+    let text = |value: &Option<String>| value.clone().unwrap_or_default();
+    let mut values = TrackDetails {
+        title: text(&track.title),
+        artist: text(&track.artist),
+        album: text(&track.album),
+        genre: text(&track.genre),
+        comment: text(&track.comment),
+        rating: track.rating.unwrap_or(0),
+    };
+    for edit in edits.iter().filter(|edit| edit.tracks.contains(&row.path)) {
+        for field in DetailField::ALL
+            .into_iter()
+            .filter(|field| edit.fields.contains(*field))
+        {
+            details::copy_field(&mut values, &edit.details, field);
+        }
+    }
+    Some(values)
+}
+
+/// The form of the dialog of the details at `position` of the selected tracks: all of them at
+/// 0, one of them from 1.
+fn details_of(view: &View<'_>, position: usize, edits: &[DetailsEdit]) -> Option<DetailsForm> {
+    let rows = selected_tracks(view);
+    let count = rows.len();
+    let position = if count > 1 { position.min(count) } else { 0 };
+    let tracks = track_paths(&rows);
+    if position == 0 && count > 1 {
+        let all: Vec<TrackDetails> = rows
+            .iter()
+            .filter_map(|row| values_of(row, edits))
+            .collect();
+        let first = all.first()?;
+        let mut shared = DetailFields::NONE;
+        let mut values = TrackDetails::default();
+        for field in DetailField::ALL {
+            if all
+                .iter()
+                .all(|other| details::same_field(other, first, field))
+            {
+                shared.insert(field);
+                details::copy_field(&mut values, first, field);
+            }
+        }
+        return Some(DetailsForm {
+            file: String::new(),
+            folder: String::new(),
+            opened: values.clone(),
+            details: values,
+            count,
+            position,
+            shared,
+            ticked: shared,
+            tracks,
+        });
+    }
+    let row = rows.get(position.saturating_sub(1))?;
+    let values = values_of(row, edits)?;
+    Some(DetailsForm {
+        file: row.name.clone(),
+        folder: row
+            .path
+            .parent()
+            .map(|folder| folder.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        opened: values.clone(),
+        details: values,
+        count,
+        position,
+        shared: DetailFields::ALL,
+        ticked: DetailFields::NONE,
+        tracks,
+    })
 }
 
 /// The rectangles of the main window.
@@ -275,21 +556,25 @@ impl Zones {
         });
         let lanes = band(top, LANES_HEIGHT);
         top = lanes.bottom() + seam;
+        let decks_height = match view.settings.deck_size {
+            DeckSize::Full => DECKS_HEIGHT,
+            DeckSize::Compact => COMPACT_DECKS_HEIGHT,
+        };
         // Decks and mixer keep their width; in a wider window they stay in the middle.
         let left = (screen.center().x - DESIGN_WIDTH / 2.0)
             .max(screen.left())
             .round();
         let deck_a =
-            Rect::from_min_size(egui::pos2(left, top), egui::vec2(DECK_WIDTH, DECKS_HEIGHT));
+            Rect::from_min_size(egui::pos2(left, top), egui::vec2(DECK_WIDTH, decks_height));
         let deck_b = Rect::from_min_size(
             egui::pos2(left + DESIGN_WIDTH - DECK_WIDTH, top),
-            egui::vec2(DECK_WIDTH, DECKS_HEIGHT),
+            egui::vec2(DECK_WIDTH, decks_height),
         );
         let mixer = Rect::from_min_max(
             egui::pos2(deck_a.right() + seam, top),
-            egui::pos2(deck_b.left() - seam, top + DECKS_HEIGHT),
+            egui::pos2(deck_b.left() - seam, top + decks_height),
         );
-        top += DECKS_HEIGHT + seam;
+        top += decks_height + seam;
         let browser = Rect::from_min_max(
             egui::pos2(screen.left(), top),
             screen.max.max(egui::pos2(screen.left(), top)),

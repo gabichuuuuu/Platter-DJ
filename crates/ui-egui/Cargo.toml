@@ -17,3 +17,6 @@ platter-dsp = { path = "../dsp" }
 platter-engine = { path = "../engine" }
 platter-library = { path = "../library" }
 toml.workspace = true
+
+[dev-dependencies]
+platter-testkit = { path = "../testkit" }

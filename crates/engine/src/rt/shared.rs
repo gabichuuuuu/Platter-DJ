@@ -139,6 +139,9 @@ pub struct Shared {
     /// Gain the limiter is applying: one when it is idle, lower while it works. It reads
     /// zero until the first block has been processed.
     pub limiter_gain: AtomicF32,
+    pub preview_playing: Flag,
+    /// Play position of the preview player, in seconds of track time.
+    pub preview_position: AtomicF64,
 }
 
 impl Default for Shared {
@@ -150,6 +153,8 @@ impl Default for Shared {
             crossfader: AtomicF32::new(0.5),
             master_levels: Default::default(),
             limiter_gain: AtomicF32::default(),
+            preview_playing: Flag::default(),
+            preview_position: AtomicF64::default(),
         }
     }
 }

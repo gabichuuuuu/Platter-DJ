@@ -1,8 +1,7 @@
 # Writing tags
 
 The tags of a track (title, artist, album and the rest) live in the track file. This note
-covers how Platter writes changed tags back into the file. It is the back end of the editing
-of tags; the dialog that uses it comes in a later change.
+covers how Platter writes changed tags back into the file, and when.
 
 ## What the public manual says
 
@@ -11,6 +10,8 @@ Sections of the public manual, read on 15 November 2026:
 - *Managing Your Track Collection*, section *Editing Track Metadata in the Track List*
 - *Managing Your Track Collection*, section *Editing Track Metadata using the Edit Dialog*
 - *Managing Your Track Collection*, section *Editing Track Cover Artwork*
+- *Preferences*, *File Management page*, *Tag writing mode*; *Analyze Options page*, *Musical
+  key*, *Written to File Tags* (read on 16 November 2026)
 
 A track file can carry properties such as the title, the name of the artist, the name of the
 album and the cover artwork, and the documented application edits them in two ways: in place,
@@ -28,7 +29,35 @@ An imported cover is stored within the track files.
 
 The sections name no format, field length or failure case.
 
+A preference chooses what the application writes into the files: no tags at all, only tags of
+its own, or every tag. The key is written in a notation the preferences choose.
+
 ## What Platter does
+
+### When Platter writes
+
+A setting of the Library page of the preferences, *Tag writing*, chooses what Platter writes
+into the files (`library.tag_writing.set`):
+
+| Mode | What is written |
+| --- | --- |
+| Everything, the default | The tags the details dialog saves; the tempo of the grid and the key the analysis found; Platter's own field |
+| Platter's own field only | The beatgrid and the stored cues, in the field of Platter's own |
+| Nothing | No file is changed |
+
+- **Details.** Saving the details of a track writes its title, artist, album, genre and
+  comment into the file as well as into the collection (`docs/behavior/browser.md`, *Track
+  details*). The rating is kept in the collection only.
+- **What a deck or the analysis learned.** Each time the collection keeps the grid and the
+  cues of a track (`docs/behavior/library.md`, *Cues, grid and analysis*), Platter's own field
+  takes the text of the track, and the tempo field the tempo of the grid; each time it keeps
+  the key the analysis found, the key field takes it, as ID3 writes a key: the letter of the
+  note, `b` for a flat and `m` for a minor key (`Dbm`), whatever notation the browser shows.
+- The writing runs on the worker of the collection, or on the worker of the analysis in the
+  background, never on the interface thread. A file that cannot be written, a read-only one or
+  one of a format Platter does not write, keeps what it had; the collection keeps the change
+  all the same, and the log says why the file did not.
+- A file a deck holds can be written: the deck plays the audio it decoded into memory.
 
 `platter-decode` writes with `write_tags(path, &TagEdit)`. A `TagEdit` holds one entry per
 field; an entry left out (`None`) leaves the field of the file as it is.
@@ -288,8 +317,12 @@ No input makes writing tags panic.
 
 ## Tests
 
-`crates/decode/tests/tag_write.rs`, against files the tests synthesise in a folder under the
-build directory:
+When Platter writes: `crates/ui-egui/tests/collection.rs` (the details, what a deck learned,
+each mode, a read-only file), the unit tests of `apps/platter/src/background.rs` (what the
+analysis found) and `crates/ui-egui/tests/settings_mixer.rs` (the setting).
+
+How each format is written: `crates/decode/tests/tag_write.rs`, against files the tests
+synthesise in a folder under the build directory:
 
 - WAV, AIFF and FLAC from `platter-testkit`, MP3 as silent frames, Ogg Vorbis as pages built
   in the test with an identification header and a setup packet that holds no codebooks, and

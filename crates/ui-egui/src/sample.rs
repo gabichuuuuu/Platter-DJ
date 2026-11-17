@@ -7,13 +7,22 @@ use std::sync::Arc;
 
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
-use platter_engine::{DeckSnapshot, Snapshot, TrackInfo, WaveformPeaks};
+use platter_engine::{
+    AnalysedTempo, DeckSnapshot, Key, Mode, PreviewSnapshot, Snapshot, TrackAnalysis, TrackInfo,
+    Transposed, WaveformPeaks,
+};
+use platter_library::{NodeId, SessionId};
 
+use crate::collection::TagWriting;
+use crate::command::DeckSize;
 use crate::i18n::Language;
 use crate::keymap::Keymap;
+use crate::keys::KeyNotation;
 use crate::model::{
-    AudioProblem, AudioState, AudioView, BrowserView, Clock, CollectionView, DeviceView, FileRow,
-    MidiView, OutputKind, RowKind, SettingsView, StreamView, TrackRow, TreeRow, View,
+    AnalysisStatus, AudioProblem, AudioState, AudioView, BindingRow, BrowserView, Clock,
+    CollectionView, ControlType, ControllerManager, ControllerRow, DeviceView, FileRow,
+    MaintenanceOutcome, MidiView, OutputKind, PlaylistRow, RowKind, SessionRow, SettingsView,
+    StreamView, TrackRow, TreeRow, View,
 };
 
 /// Everything a [`View`] borrows, owned in one place.
@@ -147,6 +156,7 @@ fn track(index: usize) -> TrackInfo {
             title: Some(title.to_owned()),
             artist: Some(artist.to_owned()),
             album: Some(album.to_owned()),
+            genre: None,
             bpm: Some(bpm),
         },
     }
@@ -233,6 +243,62 @@ fn tree() -> Vec<TreeRow> {
     ]
 }
 
+/// A folder of past sets and three playlists, by name, as the library lists them; the last one
+/// is the preparation list.
+fn playlists() -> Vec<PlaylistRow> {
+    let row = |id: i64, name: &str, depth: usize, entries: Option<usize>| PlaylistRow {
+        id: NodeId::new(id),
+        name: name.to_owned(),
+        depth,
+        folder: entries.is_none(),
+        entries,
+        current: false,
+        preparation: id == 2,
+        favourite: match id {
+            4 => Some(4),
+            2 => Some(5),
+            _ => None,
+        },
+    };
+    vec![
+        row(3, "Archive", 0, None),
+        row(4, "Summer terrace", 1, Some(41)),
+        row(1, "Friday warm-up", 0, Some(24)),
+        row(2, "New this week", 0, Some(12)),
+    ]
+}
+
+/// The session of this run, and two earlier ones where tracks were played.
+fn sessions() -> (SessionRow, Vec<SessionRow>) {
+    let row = |id: i64, label: &str, tracks: usize| SessionRow {
+        id: SessionId::new(id),
+        label: label.to_owned(),
+        tracks,
+        current: false,
+    };
+    (
+        row(9, "2026-11-15 20:14", 6),
+        vec![
+            row(7, "2026-11-14 21:30", 18),
+            row(4, "2026-11-08 22:05", 23),
+        ],
+    )
+}
+
+/// The keys of the tracks as the reference screen shows them: A min, E min, A min, D min,
+/// C maj, D♭ maj, E min, and two not analysed yet.
+const KEYS: [Option<u8>; TRACKS.len()] = [
+    Some(21),
+    Some(16),
+    Some(21),
+    Some(14),
+    Some(0),
+    Some(1),
+    Some(16),
+    None,
+    None,
+];
+
 fn rows() -> Vec<FileRow> {
     (0..TRACKS.len())
         .map(|index| {
@@ -250,10 +316,121 @@ fn rows() -> Vec<FileRow> {
                     format: container.name().to_owned(),
                     sample_rate: sample_rate.hz(),
                     missing: false,
+                    played: false,
+                    prepared: false,
+                    colour: 0,
+                    rating: None,
+                    genre: None,
+                    comment: None,
+                    key: KEYS[index],
                 }),
             }
         })
         .collect()
+}
+
+/// A generic two-deck controller with the assignments of the reference screen, learning the
+/// control of its loop size.
+fn controllers() -> ControllerManager {
+    let binding = |command: Option<&str>,
+                   deck: Option<DeckId>,
+                   control: ControlType,
+                   when: &[(u8, u8)],
+                   sets: Option<(u8, u8)>,
+                   midi: &str| BindingRow {
+        command: command.map(str::to_owned),
+        deck,
+        control,
+        when: when.to_vec(),
+        sets,
+        midi: Some(midi.to_owned()),
+    };
+    let a = Some(DeckId::A);
+    ControllerManager {
+        controllers: vec![
+            ControllerRow {
+                input: "USB MIDI controller".to_owned(),
+                mapping: "generic-two-deck.toml".to_owned(),
+                open: true,
+                problem: None,
+                bindings: vec![
+                    binding(
+                        Some("deck.play_pause"),
+                        a,
+                        ControlType::Button,
+                        &[],
+                        None,
+                        "note 1 24",
+                    ),
+                    binding(
+                        Some("deck.cue"),
+                        a,
+                        ControlType::ButtonHeld,
+                        &[],
+                        None,
+                        "note 1 26",
+                    ),
+                    binding(
+                        Some("deck.tempo.set"),
+                        a,
+                        ControlType::Fader,
+                        &[],
+                        None,
+                        "cc 1 14",
+                    ),
+                    binding(
+                        Some("deck.loop.size.step"),
+                        a,
+                        ControlType::Encoder,
+                        &[],
+                        None,
+                        "cc 1 20",
+                    ),
+                    binding(
+                        Some("deck.beatjump"),
+                        a,
+                        ControlType::Encoder,
+                        &[(1, 1)],
+                        None,
+                        "cc 1 20",
+                    ),
+                    binding(
+                        Some("mixer.fader.set"),
+                        a,
+                        ControlType::Fader,
+                        &[],
+                        None,
+                        "cc 1 7",
+                    ),
+                    binding(
+                        None,
+                        None,
+                        ControlType::ButtonHeld,
+                        &[],
+                        Some((1, 1)),
+                        "note 1 21",
+                    ),
+                ],
+            },
+            // A second one, so the list has a choice besides the one shown.
+            ControllerRow {
+                input: "Second MIDI controller".to_owned(),
+                mapping: "generic-two-deck.toml".to_owned(),
+                open: false,
+                problem: None,
+                bindings: Vec::new(),
+            },
+        ],
+        inputs: vec![
+            "USB MIDI controller".to_owned(),
+            "Second MIDI controller".to_owned(),
+        ],
+        selected: Some(0),
+        binding: Some(3),
+        learning: false,
+        target: DeckId::A,
+        importable: vec![PathBuf::from(format!("{FOLDER}/club-controller.toml"))],
+    }
 }
 
 fn audio(state: AudioState) -> AudioView {
@@ -279,8 +456,22 @@ fn settings() -> SettingsView {
         language: Language::English,
         fullscreen: false,
         tooltips: true,
+        fullscreen_at_start: false,
+        tempo_range: 8,
+        deck_size: DeckSize::Full,
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
+        library_file: "library.sqlite".to_owned(),
+        min_playtime: 30,
+        key_notation: KeyNotation::default(),
+        bpm_range: (70, 180),
+        load_stopped_only: false,
+        music_folders: vec![PathBuf::from(FOLDER), PathBuf::from("Music/Promos")],
+        music_folder: Some(0),
+        import_at_start: true,
+        check_at_start: false,
+        tag_writing: TagWriting::default(),
+        controllers: controllers(),
     }
 }
 
@@ -289,16 +480,44 @@ fn browser() -> BrowserView {
         collection: Some(CollectionView {
             available: Some(true),
             tracks: Some(1284),
+            playlists: playlists(),
+            session: Some(sessions().0),
+            sessions: sessions().1,
+            // Two tracks whose files a check found gone.
+            missing: vec![
+                "External drive/Crates/Hard Groove/Iron Lung.flac".to_owned(),
+                "External drive/Crates/Hard Groove/Late Train.mp3".to_owned(),
+            ],
+            missing_total: Some(2),
+            maintained: Some(MaintenanceOutcome::Checked {
+                missing: 2,
+                found: 0,
+            }),
             ..CollectionView::default()
         }),
         tree: tree(),
         search: String::new(),
         sort: None,
+        columns: crate::command::ListColumn::SHOWN_AT_FIRST.to_vec(),
         folder: Some(PathBuf::from("Home/Music/Sets")),
+        explorer: Some(PathBuf::from("Home/Music/Sets")),
+        pictures: vec![
+            PathBuf::from("Home/Music/Sets/Cover.jpg"),
+            PathBuf::from("Home/Music/Sets/Night sky.png"),
+        ],
+        closed_folders: Vec::new(),
+        history_open: true,
+        // The sample files are invented: the cells show the icon of a file without a cover.
+        covers: std::collections::HashMap::new(),
         crumbs: vec!["Home".to_owned(), "Music".to_owned(), "Sets".to_owned()],
         rows: rows(),
         selected: Some(2),
+        marked: vec![2],
         reading: false,
+        // As the design system shows the status bar.
+        analysis: Some(AnalysisStatus { done: 3, total: 12 }),
+        problem: None,
+        deck_covers: [None, None],
     }
 }
 
@@ -342,6 +561,34 @@ pub fn playing() -> Scene {
     engine.decks[1].cues.store(slot(3), Cue::at(31.0));
     // Deck A is the tempo master and deck B follows it, a little behind its beat.
     engine.clock.master = Some(DeckId::A);
+    // The preview player holds the selected track, paused at 01:48, as the reference screen.
+    let previewed = track(2);
+    engine.preview = PreviewSnapshot {
+        peaks: Some(Arc::new(peaks(previewed.seconds, 123.0, 3))),
+        track: Some(previewed),
+        loading: false,
+        playing: false,
+        position_seconds: 108.0,
+    };
+    // The analysis of deck A has finished: its resets have something to bring back.
+    engine.decks[0].analysis = Some(TrackAnalysis {
+        tempo: Bpm::new(125.0).ok().map(|bpm| AnalysedTempo {
+            bpm,
+            first_beat: 0.1,
+        }),
+        key: Some(Key {
+            tonic: 9,
+            mode: Mode::Minor,
+        }),
+        loudness: Some(-9.0),
+    });
+    engine.decks[0].resulting_key = Some(Transposed {
+        key: Key {
+            tonic: 9,
+            mode: Mode::Minor,
+        },
+        cents: 0.0,
+    });
     engine.clock.bpm = 124.0;
     engine.clock.snap = true;
     engine.decks[0].phase = Some(0.0);
@@ -375,6 +622,56 @@ pub fn playing() -> Scene {
     }
 }
 
+/// The main state with the playlist *Friday warm-up* shown in the list.
+pub fn playlist() -> Scene {
+    let mut scene = playing();
+    let friday = NodeId::new(1);
+    let browser = &mut scene.browser;
+    if let Some(collection) = &mut browser.collection {
+        collection.playlist = Some(friday);
+        collection.matched = Some(24);
+        for row in &mut collection.playlists {
+            row.current = row.id == friday;
+        }
+    }
+    browser.folder = None;
+    browser.crumbs.clear();
+    // Two tracks of the playlist were played in this session, and the two after them are in
+    // the preparation list. The DJ has rated them all and tagged some with a colour.
+    for (index, row) in browser.rows.iter_mut().enumerate() {
+        if let RowKind::Track(track) = &mut row.kind {
+            track.played = (3..5).contains(&index);
+            track.prepared = (5..7).contains(&index);
+            track.rating = Some([4, 5, 3, 2, 4, 5, 1, 3, 0][index % 9]);
+            track.colour = [1, 0, 3, 0, 5, 0, 2, 8, 0][index % 9];
+        }
+    }
+    for row in &mut browser.tree {
+        row.current = false;
+    }
+    scene
+}
+
+/// The list shows the history of an earlier session; every track in it was played then.
+pub fn history() -> Scene {
+    let mut scene = playing();
+    let browser = &mut scene.browser;
+    if let Some(collection) = &mut browser.collection {
+        let earlier = SessionId::new(7);
+        collection.history = Some(earlier);
+        collection.matched = Some(18);
+        for row in &mut collection.sessions {
+            row.current = row.id == earlier;
+        }
+    }
+    browser.folder = None;
+    browser.crumbs.clear();
+    for row in &mut browser.tree {
+        row.current = false;
+    }
+    scene
+}
+
 /// No audio device, deck A empty and deck B reading a file: the state of
 /// `Startup-states.html`.
 pub fn startup() -> Scene {
@@ -397,7 +694,12 @@ pub fn startup() -> Scene {
             device: None,
             ..settings()
         },
-        browser: browser(),
+        // Nothing is selected yet when Platter starts.
+        browser: BrowserView {
+            selected: None,
+            marked: Vec::new(),
+            ..browser()
+        },
         keymap: Keymap::defaults(),
         clock: Some(Clock {
             hour: 23,

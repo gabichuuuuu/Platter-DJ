@@ -49,10 +49,19 @@ pub enum Glyph {
     Search,
     Close,
     ChevronUp,
+    Playlist,
+    Check,
+    History,
+    Clock,
+    Bookmark,
+    Star,
+    Reverse,
+    Metronome,
+    Grid,
 }
 
 impl Glyph {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 30] = [
         Self::Play,
         Self::Pause,
         Self::Settings,
@@ -74,6 +83,15 @@ impl Glyph {
         Self::Search,
         Self::Close,
         Self::ChevronUp,
+        Self::Playlist,
+        Self::Check,
+        Self::History,
+        Self::Clock,
+        Self::Bookmark,
+        Self::Star,
+        Self::Reverse,
+        Self::Metronome,
+        Self::Grid,
     ];
 
     pub fn key(self) -> &'static str {
@@ -99,6 +117,15 @@ impl Glyph {
             Self::Search => "search",
             Self::Close => "close",
             Self::ChevronUp => "chevron-up",
+            Self::Playlist => "playlist",
+            Self::Check => "check",
+            Self::History => "history",
+            Self::Clock => "clock",
+            Self::Bookmark => "bookmark",
+            Self::Star => "star",
+            Self::Reverse => "reverse",
+            Self::Metronome => "metronome",
+            Self::Grid => "grid",
         }
     }
 }
@@ -246,6 +273,39 @@ impl Icons {
             solid: icon.solid,
         };
         drawing.paint(painter, &icon.outlines, rect, color);
+    }
+
+    /// Draws `glyph` filled, for a shape that is whole only when filled, such as a star that
+    /// counts in a rating. Each outline is filled as a fan of triangles from its centre, so it
+    /// must be seen whole from its centre, as a star is.
+    pub fn paint_filled(&self, painter: &Painter, glyph: Glyph, rect: Rect, color: Color32) {
+        let Some(icon) = self.icons.get(glyph.key()) else {
+            return;
+        };
+        let scale = rect.width().min(rect.height()) / self.grid;
+        let origin = rect.center() - egui::vec2(self.grid, self.grid) * 0.5 * scale;
+        for outline in &icon.outlines {
+            let points: Vec<Pos2> = outline
+                .points
+                .iter()
+                .map(|[x, y]| origin + egui::vec2(*x, *y) * scale)
+                .collect();
+            if points.len() < 3 {
+                continue;
+            }
+            let sum = points
+                .iter()
+                .fold(egui::Vec2::ZERO, |sum, point| sum + point.to_vec2());
+            let centre = (sum / points.len() as f32).to_pos2();
+            for (index, point) in points.iter().enumerate() {
+                let next = points[(index + 1) % points.len()];
+                painter.add(PathShape::convex_polygon(
+                    vec![centre, *point, next],
+                    color,
+                    Stroke::NONE,
+                ));
+            }
+        }
     }
 }
 

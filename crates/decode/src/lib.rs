@@ -86,6 +86,7 @@ pub struct Tags {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub genre: Option<String>,
     /// Tempo in beats per minute, as the tag states it. Platter does not measure tempo
     /// before M3.
     pub bpm: Option<f64>,
@@ -478,6 +479,7 @@ fn read_tags(reader: &mut dyn FormatReader) -> Tags {
             Some(StandardTag::TrackTitle(value)) => (&mut tags.title, value),
             Some(StandardTag::Artist(value)) => (&mut tags.artist, value),
             Some(StandardTag::Album(value)) => (&mut tags.album, value),
+            Some(StandardTag::Genre(value)) => (&mut tags.genre, value),
             _ => continue,
         };
         if slot.is_none() && !value.trim().is_empty() {

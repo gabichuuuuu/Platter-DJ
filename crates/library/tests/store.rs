@@ -6,10 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
-use platter_core::DeckId;
+use platter_core::{DeckId, TrackMemory};
 use platter_library::{
-    Column, Library, LibraryError, MAX_TAG_CHARS, NodeKind, Query, SqliteLibrary, Timestamp,
-    TrackId, TrackTags,
+    Column, Library, LibraryError, MAX_KEY, MAX_TAG_CHARS, NodeId, NodeKind, Query, SessionId,
+    Source, SqliteLibrary, Timestamp, TrackId, TrackTags,
 };
 
 /// A fresh directory for one test; names are unique among the tests, which run in parallel.
@@ -297,6 +297,73 @@ fn the_history_counts_plays_per_session() {
 }
 
 #[test]
+fn a_history_is_searched_in_the_order_of_play_without_the_tracks_removed_since() {
+    let mut library = library("history-search");
+    let a = add(&mut library, "/a", "Alpha", "X");
+    let b = add(&mut library, "/b", "Beta", "Y");
+    let c = add(&mut library, "/c", "Gamma", "X");
+    let first = library.open_session(Timestamp(100)).unwrap();
+    let empty = library.open_session(Timestamp(200)).unwrap();
+    let second = library.open_session(Timestamp(300)).unwrap();
+    // Recorded out of the order they started in; Beta twice, and twice in the same second.
+    for (track, started) in [(b, 320), (a, 310), (b, 320), (c, 330)] {
+        library
+            .record_played(second, track, DeckId::A, Timestamp(started), 40.0)
+            .unwrap();
+    }
+    library
+        .record_played(first, c, DeckId::B, Timestamp(110), 40.0)
+        .unwrap();
+    library.remove_track(c).unwrap();
+
+    let history = |session, column, descending| Query {
+        source: Source::History(session),
+        column,
+        descending,
+        ..Query::default()
+    };
+    let order = history(second, Column::Order, false);
+    assert_eq!(titles(&library, &order), ["Alpha", "Beta", "Beta"]);
+    let page = library.search(&order).unwrap();
+    assert_eq!(page.total, 3);
+    assert!(page.hits.iter().all(|hit| hit.entry.is_none()));
+    assert_eq!(
+        titles(&library, &history(second, Column::Order, true)),
+        ["Beta", "Beta", "Alpha"]
+    );
+    assert_eq!(
+        titles(&library, &history(second, Column::Title, true)),
+        ["Beta", "Beta", "Alpha"]
+    );
+    assert_eq!(
+        titles(
+            &library,
+            &Query {
+                text: "y".into(),
+                ..order.clone()
+            }
+        ),
+        ["Beta", "Beta"]
+    );
+    assert!(titles(&library, &history(first, Column::Order, false)).is_empty());
+    assert!(
+        titles(
+            &library,
+            &history(SessionId::new(999), Column::Order, false)
+        )
+        .is_empty()
+    );
+
+    let counts: Vec<_> = library
+        .sessions()
+        .unwrap()
+        .iter()
+        .map(|session| (session.id, session.played))
+        .collect();
+    assert_eq!(counts, [(second, 3), (empty, 0), (first, 0)]);
+}
+
+#[test]
 fn search_finds_every_word_in_any_alphabet_and_takes_wildcards_as_text() {
     let mut library = library("search");
     add(&mut library, "/1", "École de nuit", "Artiste");
@@ -368,7 +435,7 @@ fn search_in_a_playlist_gives_its_entries_in_its_order() {
     let list = library.create(None, NodeKind::Playlist, "Set").unwrap();
     library.add(list, &[b, a, b], None).unwrap();
     let query = Query {
-        playlist: Some(list),
+        source: Source::Playlist(list),
         ..Query::default()
     };
     let page = library.search(&query).unwrap();
@@ -443,12 +510,386 @@ fn a_library_from_a_newer_version_is_refused_unchanged() {
     drop(SqliteLibrary::open(&file).unwrap());
     {
         let connection = rusqlite::Connection::open(&file).unwrap();
-        connection.pragma_update(None, "user_version", 2).unwrap();
+        connection.pragma_update(None, "user_version", 6).unwrap();
     }
     let before = std::fs::read(&file).unwrap();
     assert!(matches!(
         SqliteLibrary::open(&file),
-        Err(LibraryError::Newer { version: 2 })
+        Err(LibraryError::Newer { version: 6 })
     ));
     assert_eq!(std::fs::read(&file).unwrap(), before);
+}
+
+#[test]
+fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
+    let directory = directory("upgrade");
+    let file = directory.join("library.db");
+    let list = {
+        let mut library = SqliteLibrary::open(&file).unwrap();
+        let a = add(&mut library, "/a", "Alpha", "X");
+        let list = library.create(None, NodeKind::Playlist, "Set").unwrap();
+        library.add(list, &[a], None).unwrap();
+        list
+    };
+    // The file as the first version wrote it: without the preparation list, the favourites
+    // and the colour, rating and comment of a track.
+    {
+        let connection = rusqlite::Connection::open(&file).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE preparation; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 1;",
+            )
+            .unwrap();
+    }
+    let mut library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(library.entries(list).unwrap().len(), 1);
+    assert_eq!(library.preparation().unwrap(), None);
+    assert!(library.favourites().unwrap().is_empty());
+    library.set_preparation(list).unwrap();
+    library.set_favourite(4, list).unwrap();
+    drop(library);
+    let library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(library.preparation().unwrap(), Some(list));
+    assert_eq!(library.favourites().unwrap(), [(4, list)]);
+    let version = |file: &Path| -> i64 {
+        rusqlite::Connection::open(file)
+            .unwrap()
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap()
+    };
+    assert_eq!(version(&file), 5);
+
+    // A file of the second version keeps its preparation list and gains the favourites.
+    {
+        let connection = rusqlite::Connection::open(&file).unwrap();
+        connection
+            .execute_batch(
+                "DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 2;",
+            )
+            .unwrap();
+    }
+    let library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(library.preparation().unwrap(), Some(list));
+    assert!(library.favourites().unwrap().is_empty());
+    assert_eq!(version(&file), 5);
+
+    // A file of the fourth version keeps its colours and gains what a deck learns.
+    let track = library.track_at(Path::new("/a")).unwrap().unwrap().id;
+    drop(library);
+    {
+        let connection = rusqlite::Connection::open(&file).unwrap();
+        connection
+            .execute_batch(
+                "UPDATE track SET colour = 3; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 4;",
+            )
+            .unwrap();
+    }
+    let mut library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(version(&file), 5);
+    let kept = library.track_at(Path::new("/a")).unwrap().unwrap();
+    assert_eq!((kept.colour, kept.key, kept.loudness), (3, None, None));
+    library.set_analysis(track, Some(21), Some(-8.5)).unwrap();
+    assert_eq!(library.memory_at(Path::new("/a")).unwrap(), None);
+}
+
+#[test]
+fn a_playlist_is_a_favourite_in_one_place_at_most() {
+    let mut library = library("favourites");
+    let folder = library.create(None, NodeKind::Folder, "Crate").unwrap();
+    let first = library.create(None, NodeKind::Playlist, "First").unwrap();
+    let second = library.create(None, NodeKind::Playlist, "Second").unwrap();
+    library.set_favourite(4, first).unwrap();
+    library.set_favourite(5, second).unwrap();
+    assert_eq!(library.favourites().unwrap(), [(4, first), (5, second)]);
+    // Into another place: it leaves the first one.
+    library.set_favourite(6, first).unwrap();
+    assert_eq!(library.favourites().unwrap(), [(5, second), (6, first)]);
+    // Into a taken place: the one there goes out.
+    library.set_favourite(5, first).unwrap();
+    assert_eq!(library.favourites().unwrap(), [(5, first)]);
+    assert!(matches!(
+        library.set_favourite(7, folder),
+        Err(LibraryError::WrongKind)
+    ));
+    library.clear_favourite(5).unwrap();
+    library.clear_favourite(8).unwrap();
+    assert!(library.favourites().unwrap().is_empty());
+    library.set_favourite(4, second).unwrap();
+    library.delete_node(second).unwrap();
+    assert!(library.favourites().unwrap().is_empty());
+}
+
+#[test]
+fn one_playlist_at_most_is_the_preparation_list() {
+    let mut library = library("preparation");
+    let folder = library.create(None, NodeKind::Folder, "Crate").unwrap();
+    let first = library.create(None, NodeKind::Playlist, "First").unwrap();
+    let second = library.create(None, NodeKind::Playlist, "Second").unwrap();
+    assert_eq!(library.preparation().unwrap(), None);
+    library.set_preparation(first).unwrap();
+    library.set_preparation(second).unwrap();
+    assert_eq!(library.preparation().unwrap(), Some(second));
+    assert!(matches!(
+        library.set_preparation(folder),
+        Err(LibraryError::WrongKind)
+    ));
+    assert!(matches!(
+        library.set_preparation(NodeId::new(999)),
+        Err(LibraryError::NoSuchNode)
+    ));
+    assert_eq!(library.preparation().unwrap(), Some(second));
+    library.delete_node(second).unwrap();
+    assert_eq!(library.preparation().unwrap(), None);
+}
+
+#[test]
+fn a_track_keeps_its_colour_rating_and_comment_through_a_new_import() {
+    let mut library = library("colour-rating");
+    let a = add(&mut library, "/a", "Alpha", "X");
+    let fresh = library.track(a).unwrap().unwrap();
+    assert_eq!((fresh.colour, fresh.rating, fresh.comment), (0, 0, None));
+    library.set_colour(a, 8).unwrap();
+    library.set_rating(a, 5).unwrap();
+    library.set_comment(a, Some("long intro")).unwrap();
+    assert!(matches!(
+        library.set_colour(a, 9),
+        Err(LibraryError::OutOfRange)
+    ));
+    assert!(matches!(
+        library.set_rating(a, 6),
+        Err(LibraryError::OutOfRange)
+    ));
+    let gone = add(&mut library, "/gone", "Gone", "X");
+    library.remove_track(gone).unwrap();
+    assert!(matches!(
+        library.set_rating(gone, 1),
+        Err(LibraryError::NoSuchTrack)
+    ));
+    // Importing the file again updates its tags and keeps what the DJ gave it.
+    add(&mut library, "/a", "Alpha 2", "X");
+    let track = library.track(a).unwrap().unwrap();
+    assert_eq!(track.tags.title.as_deref(), Some("Alpha 2"));
+    assert_eq!(
+        (track.colour, track.rating, track.comment.as_deref()),
+        (8, 5, Some("long intro"))
+    );
+    library.set_colour(a, 0).unwrap();
+    library.set_comment(a, Some("")).unwrap();
+    let track = library.track(a).unwrap().unwrap();
+    assert_eq!((track.colour, track.comment), (0, None));
+}
+
+fn memory() -> TrackMemory {
+    TrackMemory::parse(
+        "platter-track 1\nbpm 124\nmarker 0.25\ncue 1 cue 12.5 0 Intro\ncue 3 loop 40 7.5 Break\n",
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_grid_and_the_cues_of_a_track_are_kept_and_give_it_their_tempo() {
+    let mut library = library("memory");
+    let a = add(&mut library, "/a", "Alpha", "X");
+    let b = add(&mut library, "/b", "Beta", "Y");
+    assert_eq!(library.memory_at(Path::new("/a")).unwrap(), None);
+    library.set_memory(a, &memory()).unwrap();
+    assert_eq!(library.memory_at(Path::new("/a")).unwrap(), Some(memory()));
+    assert_eq!(library.memory_at(Path::new("/b")).unwrap(), None);
+    assert_eq!(library.memory_at(Path::new("/elsewhere")).unwrap(), None);
+    let track = library.track_at(Path::new("/a")).unwrap().unwrap();
+    assert_eq!(track.tags.bpm, Some(124.0));
+
+    // A grid without a tempo keeps the tempo of the record as it is.
+    let mut no_tempo = memory();
+    no_tempo.grid = platter_core::BeatGrid::default();
+    library.set_memory(a, &no_tempo).unwrap();
+    assert_eq!(library.memory_at(Path::new("/a")).unwrap(), Some(no_tempo));
+    assert_eq!(
+        library.track_at(Path::new("/a")).unwrap().unwrap().tags.bpm,
+        Some(124.0)
+    );
+
+    // Importing the file again keeps what was kept.
+    library.set_memory(b, &memory()).unwrap();
+    add(&mut library, "/b", "Beta again", "Y");
+    assert_eq!(library.memory_at(Path::new("/b")).unwrap(), Some(memory()));
+    library.remove_track(a).unwrap();
+    assert!(matches!(
+        library.set_memory(a, &memory()),
+        Err(LibraryError::NoSuchTrack)
+    ));
+}
+
+#[test]
+fn a_kept_text_this_version_cannot_read_is_left_as_it_is() {
+    let directory = directory("memory-newer");
+    let file = directory.join("library.db");
+    let mut library = SqliteLibrary::open(&file).unwrap();
+    add(&mut library, "/a", "Alpha", "X");
+    drop(library);
+    let written = "platter-track 2\nwhatever comes next\n";
+    {
+        let connection = rusqlite::Connection::open(&file).unwrap();
+        connection
+            .execute("UPDATE track SET memory = ?1", [written])
+            .unwrap();
+    }
+    let library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(library.memory_at(Path::new("/a")).unwrap(), None);
+    drop(library);
+    let connection = rusqlite::Connection::open(&file).unwrap();
+    let still: String = connection
+        .query_row("SELECT memory FROM track", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(still, written);
+}
+
+#[test]
+fn the_key_and_the_loudness_of_a_track_are_kept_within_their_range() {
+    let mut library = library("analysis");
+    let a = add(&mut library, "/a", "Alpha", "X");
+    let track = library.track_at(Path::new("/a")).unwrap().unwrap();
+    assert_eq!((track.key, track.loudness), (None, None));
+    library.set_analysis(a, Some(MAX_KEY), Some(-9.25)).unwrap();
+    let track = library.track_at(Path::new("/a")).unwrap().unwrap();
+    assert_eq!((track.key, track.loudness), (Some(23), Some(-9.25)));
+    for (key, loudness) in [
+        (Some(24), None),
+        (None, Some(f64::NAN)),
+        (None, Some(f64::INFINITY)),
+    ] {
+        assert!(matches!(
+            library.set_analysis(a, key, loudness),
+            Err(LibraryError::OutOfRange)
+        ));
+    }
+    library.set_analysis(a, None, None).unwrap();
+    let track = library.track_at(Path::new("/a")).unwrap().unwrap();
+    assert_eq!((track.key, track.loudness), (None, None));
+}
+
+#[test]
+fn the_tracks_to_analyse_come_newest_first_until_they_are_analysed() {
+    let directory = directory("unanalysed");
+    let mut library = SqliteLibrary::open(&directory.join("library.db")).unwrap();
+    let tags = TrackTags::default();
+    let (old_path, new_path) = (directory.join("old.wav"), directory.join("new.wav"));
+    std::fs::write(&old_path, b"x").unwrap();
+    std::fs::write(&new_path, b"x").unwrap();
+    let gone_path = directory.join("gone.wav");
+    let old = library.import(&old_path, &tags, Timestamp(10)).unwrap();
+    let new = library.import(&new_path, &tags, Timestamp(20)).unwrap();
+    library.import(&gone_path, &tags, Timestamp(30)).unwrap();
+    let paths = |library: &SqliteLibrary| -> Vec<PathBuf> {
+        library
+            .unanalysed(10)
+            .unwrap()
+            .into_iter()
+            .map(|track| track.path)
+            .collect()
+    };
+    assert_eq!(library.count_unanalysed().unwrap(), 3);
+    assert_eq!(paths(&library)[0], gone_path);
+    // A track whose file is gone waits until it comes back.
+    library.check_files().unwrap();
+    assert_eq!(paths(&library), [new_path.clone(), old_path.clone()]);
+    assert_eq!(library.unanalysed(1).unwrap().len(), 1);
+    // Nothing found still counts as analysed.
+    library.set_analysis(new, None, None).unwrap();
+    library.set_analysis(old, Some(3), Some(-10.0)).unwrap();
+    assert!(paths(&library).is_empty());
+    assert_eq!(library.count_unanalysed().unwrap(), 0);
+}
+
+#[test]
+fn keys_sort_round_the_circle_of_fifths_major_before_minor() {
+    let mut library = library("key-order");
+    // C major is 1d, A minor 1m, G major 2d, F major 12d; one track has no key.
+    for (path, title, key) in [
+        ("/g", "G major", Some(7)),
+        ("/none", "None", None),
+        ("/a", "A minor", Some(21)),
+        ("/f", "F major", Some(5)),
+        ("/c", "C major", Some(0)),
+    ] {
+        let id = library
+            .import(
+                Path::new(path),
+                &TrackTags {
+                    title: Some(title.into()),
+                    ..TrackTags::default()
+                },
+                Timestamp(1),
+            )
+            .unwrap();
+        library.set_analysis(id, key, None).unwrap();
+    }
+    let by_key = Query {
+        column: Column::Key,
+        ..Query::default()
+    };
+    assert_eq!(
+        titles(&library, &by_key),
+        ["C major", "A minor", "G major", "F major", "None"]
+    );
+}
+
+#[test]
+fn ratings_and_colours_sort_from_the_first_with_none_last_either_way() {
+    let mut library = library("rating-colour-order");
+    for (path, title, rating, colour) in [
+        ("/a", "Three, blue", 3, 6),
+        ("/b", "None", 0, 0),
+        ("/c", "Five, red", 5, 1),
+        ("/d", "One, green", 1, 4),
+    ] {
+        let id = add(&mut library, path, title, "Artist");
+        library.set_rating(id, rating).unwrap();
+        library.set_colour(id, colour).unwrap();
+    }
+    let by = |column, descending| Query {
+        column,
+        descending,
+        ..Query::default()
+    };
+    assert_eq!(
+        titles(&library, &by(Column::Rating, false)),
+        ["One, green", "Three, blue", "Five, red", "None"]
+    );
+    assert_eq!(
+        titles(&library, &by(Column::Rating, true)),
+        ["Five, red", "Three, blue", "One, green", "None"]
+    );
+    assert_eq!(
+        titles(&library, &by(Column::Colour, false)),
+        ["Five, red", "One, green", "Three, blue", "None"]
+    );
+    assert_eq!(
+        titles(&library, &by(Column::Colour, true)),
+        ["Three, blue", "One, green", "Five, red", "None"]
+    );
+}
+
+#[test]
+fn deleting_a_session_forgets_its_history_and_keeps_the_tracks_and_their_counts() {
+    let mut library = library("delete-session");
+    let a = add(&mut library, "/a", "A", "X");
+    let first = library.open_session(Timestamp(100)).unwrap();
+    library
+        .record_played(first, a, DeckId::A, Timestamp(110), 300.0)
+        .unwrap();
+    let second = library.open_session(Timestamp(200)).unwrap();
+    library
+        .record_played(second, a, DeckId::B, Timestamp(220), 60.0)
+        .unwrap();
+
+    library.delete_session(first).unwrap();
+    let sessions: Vec<_> = library.sessions().unwrap().iter().map(|s| s.id).collect();
+    assert_eq!(sessions, [second]);
+    assert!(library.history(first).unwrap().is_empty());
+    assert_eq!(library.history(second).unwrap().len(), 1);
+    assert_eq!(library.track(a).unwrap().unwrap().play_count, 2);
+    // A session the library does not have: nothing changes.
+    library.delete_session(first).unwrap();
+    assert_eq!(library.sessions().unwrap().len(), 1);
 }

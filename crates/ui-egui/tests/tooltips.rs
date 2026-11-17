@@ -6,6 +6,7 @@
 
 use egui::epaint::{ClippedShape, Shape};
 use egui::{Event, Key, Modifiers, Pos2, RawInput, Rect};
+use platter_ui_egui::command::SettingsPage;
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
@@ -128,4 +129,47 @@ fn no_tooltip_shows_while_they_are_off() {
     stage.frame(vec![Event::PointerMoved(key)], 0.0);
     let later = stage.frame(Vec::new(), 2.0);
     assert!(!has(&later, "Preferences"));
+}
+
+fn count(texts: &[String], text: &str) -> usize {
+    texts.iter().filter(|painted| *painted == text).count()
+}
+
+#[test]
+fn a_fader_and_a_list_show_their_names_too() {
+    let mut stage = Stage::new(true);
+    let crossfader = stage
+        .shell
+        .controls()
+        .iter()
+        .find(|control| control.command == "mixer.crossfader.set")
+        .unwrap()
+        .rect
+        .center();
+    let before = stage.frame(vec![Event::PointerMoved(crossfader)], 0.0);
+    let later = stage.frame(Vec::new(), 0.7);
+    assert_eq!(
+        count(&later, "Crossfader"),
+        count(&before, "Crossfader") + 1,
+        "{later:?}"
+    );
+
+    let mut stage = Stage::new(true);
+    stage.shell.state.settings_page = Some(SettingsPage::Decks);
+    stage.frame(Vec::new(), 0.0);
+    let range = stage
+        .shell
+        .controls()
+        .iter()
+        .find(|control| control.command == "app.analysis_range.set")
+        .unwrap()
+        .rect
+        .center();
+    let before = stage.frame(vec![Event::PointerMoved(range)], 0.0);
+    let later = stage.frame(Vec::new(), 0.7);
+    assert_eq!(
+        count(&later, "Range of tempos"),
+        count(&before, "Range of tempos") + 1,
+        "{later:?}"
+    );
 }

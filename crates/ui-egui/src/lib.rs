@@ -8,19 +8,23 @@
 
 pub mod collection;
 pub mod command;
+pub mod covers;
 pub mod cx;
 pub mod files;
 mod format;
 pub mod i18n;
 pub mod icons;
 pub mod keymap;
+pub mod keys;
 pub mod model;
 mod paint;
 mod panels;
+pub mod played;
 pub mod sample;
 pub mod shell;
 pub mod theme;
 pub mod tokens;
 mod widgets;
 
+pub use panels::browser::{BrowserMenu, MenuTarget, Naming};
 pub use panels::deck::NUDGE_AMOUNT;

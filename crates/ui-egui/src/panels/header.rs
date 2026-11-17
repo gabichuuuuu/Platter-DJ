@@ -17,6 +17,7 @@ use crate::model::{AudioProblem, AudioState, MidiView, OutputKind, View};
 use crate::paint;
 use crate::shell::ViewState;
 use crate::widgets::choice::{self, Choice};
+use crate::widgets::field::{self, Typing};
 use crate::widgets::key::{self, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec};
 use crate::widgets::value::{self, Steps, ValueSpec, button_info};
@@ -287,6 +288,7 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
     let pieces = [
         (0.0, Piece::Label(texts.get("header.tempo"))),
         (apart, Piece::Field),
+        (near, Piece::Icon),
         (apart, Piece::Modes(modes)),
         (apart, Piece::Key(texts.get("header.tap"))),
         (near, Piece::Icon),
@@ -316,7 +318,7 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
         .sum();
     let mut x = span.left() + ((span.width() - total) / 2.0).max(0.0);
     let top = span.center().y - CLOCK_KEY_HEIGHT / 2.0;
-    let mut rects = [Rect::NOTHING; 10];
+    let mut rects = [Rect::NOTHING; 11];
     for ((rect, (before, _)), width) in rects.iter_mut().zip(&pieces).zip(widths) {
         x += before;
         *rect = Rect::from_min_size(egui::pos2(x, top), egui::vec2(width, CLOCK_KEY_HEIGHT));
@@ -325,6 +327,7 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
     let [
         label,
         field,
+        metronome,
         modes_rect,
         tap,
         down,
@@ -348,28 +351,61 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
     );
     let range = Bpm::MAX - Bpm::MIN;
     let position = ((clock.bpm - Bpm::MIN) / range).clamp(0.0, 1.0);
-    value::field(
-        cx,
-        field,
-        id("clock-tempo"),
-        ValueSpec {
-            name: texts.get("header.tempo_name"),
-            position,
-            default: position,
-            steps: Steps {
-                small: CLOCK_FIELD_STEP / range,
-                fine: CLOCK_FIELD_STEP / 10.0 / range,
-                large: 1.0 / range,
-            },
-            enabled: own,
-        },
-        &format::bpm(clock.bpm),
-        |position| {
-            Command::ClockTempoSet {
-                bpm: Bpm::MIN + position * range,
+    // A double click, or Enter on the field, types the tempo.
+    let typed = if own {
+        field::typing(
+            cx,
+            field,
+            id("clock-tempo"),
+            &format::bpm(clock.bpm),
+            texts.get("header.tempo_name"),
+            "clock.tempo.set",
+        )
+    } else {
+        Typing::Idle
+    };
+    match typed {
+        Typing::Idle => {
+            value::field(
+                cx,
+                field,
+                id("clock-tempo"),
+                ValueSpec {
+                    name: texts.get("header.tempo_name"),
+                    position,
+                    default: position,
+                    steps: Steps {
+                        small: CLOCK_FIELD_STEP / range,
+                        fine: CLOCK_FIELD_STEP / 10.0 / range,
+                        large: 1.0 / range,
+                    },
+                    enabled: own,
+                },
+                &format::bpm(clock.bpm),
+                |position| {
+                    Command::ClockTempoSet {
+                        bpm: Bpm::MIN + position * range,
+                    }
+                    .into()
+                },
+            );
+        }
+        Typing::Open => {}
+        Typing::Confirmed(text) => {
+            if let Some(bpm) = format::typed_bpm(&text) {
+                cx.out.emit(Command::ClockTempoSet { bpm });
             }
-            .into()
-        },
+        }
+    }
+    // The metronome clicks on every beat of the clock in the headphones.
+    let spec = KeySpec::icon(Glyph::Metronome, 16.0, texts.get("header.metronome_name"))
+        .lit(clock.metronome.then_some(color.text_primary));
+    key::key(
+        cx,
+        metronome,
+        id("clock-metronome"),
+        spec,
+        Press::Click(Command::ClockMetronomeToggle.into()),
     );
     let choices = modes.map(|label| Choice {
         label,

@@ -3,22 +3,22 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use platter_core::DeckId;
+use platter_core::{DeckId, TrackMemory};
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Row, Transaction, params, params_from_iter,
 };
 
 use crate::text::{contains, fold, positive, tag};
 use crate::{
-    CheckReport, Column, Entry, EntryId, Hit, Library, LibraryError, MAX_NAME_CHARS, MAX_PAGE,
-    Node, NodeId, NodeKind, Page, Played, Query, Session, SessionId, Timestamp, Track, TrackId,
-    TrackTags,
+    CheckReport, Column, Entry, EntryId, Hit, Library, LibraryError, MAX_COLOUR, MAX_KEY,
+    MAX_NAME_CHARS, MAX_PAGE, MAX_RATING, Node, NodeId, NodeKind, Page, Played, Query, Session,
+    SessionId, Source, Timestamp, Track, TrackId, TrackTags,
 };
 
 /// Marks the file as a library of Platter: "PLTR".
 const APPLICATION_ID: i64 = 0x504C_5452;
 /// The version of the tables this code writes. A file at a higher one is refused.
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 5;
 /// How long a call waits for a file another program is writing.
 const BUSY_WAIT: Duration = Duration::from_secs(2);
 
@@ -65,8 +65,37 @@ CREATE TABLE played (
 CREATE INDEX played_session ON played(session);
 ";
 
+/// What each version adds to the one before, from version 2 on: the preparation list, the
+/// favourites, the colour, rating and comment of a track, then what a deck learned of it.
+const UPGRADES: [&str; 4] = [
+    "
+CREATE TABLE preparation (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    playlist INTEGER REFERENCES node(id) ON DELETE SET NULL
+);
+",
+    "
+CREATE TABLE favourite (
+    place INTEGER PRIMARY KEY,
+    playlist INTEGER NOT NULL UNIQUE REFERENCES node(id) ON DELETE CASCADE
+);
+",
+    "
+ALTER TABLE track ADD COLUMN colour INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE track ADD COLUMN rating INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE track ADD COLUMN comment TEXT;
+",
+    "
+ALTER TABLE track ADD COLUMN memory TEXT;
+ALTER TABLE track ADD COLUMN key INTEGER;
+ALTER TABLE track ADD COLUMN loudness REAL;
+ALTER TABLE track ADD COLUMN analysed INTEGER NOT NULL DEFAULT 0;
+",
+];
+
 const TRACK_COLUMNS: &str = "t.id, t.path, t.title, t.artist, t.album, t.genre, t.seconds, \
-     t.sample_rate, t.bpm, t.imported, t.play_count, t.last_played, t.missing";
+     t.sample_rate, t.bpm, t.imported, t.play_count, t.last_played, t.missing, t.colour, t.rating, \
+     t.comment, t.key, t.loudness";
 
 /// The library in one SQLite file.
 pub struct SqliteLibrary {
@@ -93,6 +122,9 @@ impl SqliteLibrary {
         match (application, version) {
             (0, 0) if objects == 0 => create(&connection)?,
             (APPLICATION_ID, SCHEMA_VERSION) => {}
+            (APPLICATION_ID, older) if (1..SCHEMA_VERSION).contains(&older) => {
+                upgrade(&connection, older)?;
+            }
             (APPLICATION_ID, newer) if newer > SCHEMA_VERSION => {
                 return Err(LibraryError::Newer { version: newer });
             }
@@ -118,6 +150,23 @@ impl SqliteLibrary {
             NodeKind::Playlist => Ok(()),
             NodeKind::Folder => Err(LibraryError::WrongKind),
         }
+    }
+
+    /// Sets one value of a track; `column` is one of the names written in this file.
+    fn set_track_value(
+        &mut self,
+        track: TrackId,
+        column: &'static str,
+        value: rusqlite::types::Value,
+    ) -> Result<(), LibraryError> {
+        let changed = self.connection.execute(
+            &format!("UPDATE track SET {column} = ?1 WHERE id = ?2"),
+            params![value, track.0],
+        )?;
+        if changed == 0 {
+            return Err(LibraryError::NoSuchTrack);
+        }
+        Ok(())
     }
 
     fn has_track(&self, id: TrackId) -> Result<bool, LibraryError> {
@@ -152,8 +201,19 @@ impl SqliteLibrary {
 
 fn create(connection: &Connection) -> Result<(), LibraryError> {
     connection.execute_batch(&format!(
-        "BEGIN; {SCHEMA} PRAGMA application_id = {APPLICATION_ID}; \
-         PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
+        "BEGIN; {SCHEMA} {} PRAGMA application_id = {APPLICATION_ID}; \
+         PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;",
+        UPGRADES.concat()
+    ))?;
+    Ok(())
+}
+
+/// Brings a library of version `from` up to [`SCHEMA_VERSION`], in one transaction.
+fn upgrade(connection: &Connection, from: i64) -> Result<(), LibraryError> {
+    let skip = usize::try_from(from - 1).unwrap_or(UPGRADES.len());
+    let tables: String = UPGRADES.iter().skip(skip).copied().collect();
+    connection.execute_batch(&format!(
+        "BEGIN; {tables} PRAGMA user_version = {SCHEMA_VERSION}; COMMIT;"
     ))?;
     Ok(())
 }
@@ -198,6 +258,8 @@ fn track_from(row: &Row<'_>, first: usize) -> rusqlite::Result<Track> {
     let path: String = row.get(column(1))?;
     let play_count: i64 = row.get(column(10))?;
     let missing: i64 = row.get(column(12))?;
+    let colour: i64 = row.get(column(13))?;
+    let rating: i64 = row.get(column(14))?;
     Ok(Track {
         id: TrackId(row.get(column(0))?),
         path: PathBuf::from(path),
@@ -216,10 +278,27 @@ fn track_from(row: &Row<'_>, first: usize) -> rusqlite::Result<Track> {
         play_count: u32::try_from(play_count).unwrap_or(u32::MAX),
         last_played: row.get::<_, Option<i64>>(column(11))?.map(Timestamp),
         missing: missing != 0,
+        // Values out of range, written by hand, read as none.
+        colour: u8::try_from(colour)
+            .ok()
+            .filter(|colour| *colour <= MAX_COLOUR)
+            .unwrap_or(0),
+        rating: u8::try_from(rating)
+            .ok()
+            .filter(|rating| *rating <= MAX_RATING)
+            .unwrap_or(0),
+        comment: row.get(column(15))?,
+        key: row
+            .get::<_, Option<i64>>(column(16))?
+            .and_then(|key| u8::try_from(key).ok())
+            .filter(|key| *key <= MAX_KEY),
+        loudness: row
+            .get::<_, Option<f64>>(column(17))?
+            .filter(|lufs| lufs.is_finite()),
     })
 }
 
-fn sort_expression(column: Column, in_playlist: bool) -> &'static str {
+fn sort_expression(column: Column, source: Source) -> &'static str {
     match column {
         Column::Title => "t.title_key",
         Column::Artist => "t.artist_key",
@@ -227,10 +306,20 @@ fn sort_expression(column: Column, in_playlist: bool) -> &'static str {
         Column::Genre => "t.genre_key",
         Column::Tempo => "t.bpm",
         Column::Duration => "t.seconds",
+        // The Open Key number round the circle of fifths, twice, plus one for minor.
+        Column::Key => {
+            "CASE WHEN t.key BETWEEN 0 AND 11 THEN ((t.key * 7) % 12) * 2 \
+             WHEN t.key BETWEEN 12 AND 23 THEN (((t.key - 9) * 7) % 12) * 2 + 1 END"
+        }
         Column::Imported => "t.imported",
+        Column::Rating => "NULLIF(t.rating, 0)",
+        Column::Colour => "NULLIF(t.colour, 0)",
         Column::PlayCount => "t.play_count",
-        Column::Order if in_playlist => "e.position",
-        Column::Order => "t.path",
+        Column::Order => match source {
+            Source::Collection => "t.path",
+            Source::Playlist(_) => "e.position",
+            Source::History(_) => "h.started",
+        },
     }
 }
 
@@ -255,7 +344,7 @@ fn upsert(
                  album = excluded.album, genre = excluded.genre, title_key = excluded.title_key, \
                  artist_key = excluded.artist_key, album_key = excluded.album_key, \
                  genre_key = excluded.genre_key, seconds = excluded.seconds, \
-                 sample_rate = excluded.sample_rate, bpm = excluded.bpm \
+                 sample_rate = excluded.sample_rate, \n                 bpm = CASE WHEN track.memory IS NULL OR track.bpm IS NULL \n                     THEN excluded.bpm ELSE track.bpm END \
              RETURNING id",
         params![
             path,
@@ -321,6 +410,127 @@ impl Library for SqliteLibrary {
                 |row| track_from(row, 0),
             )
             .optional()?)
+    }
+
+    fn set_colour(&mut self, track: TrackId, colour: u8) -> Result<(), LibraryError> {
+        if colour > MAX_COLOUR {
+            return Err(LibraryError::OutOfRange);
+        }
+        self.set_track_value(
+            track,
+            "colour",
+            rusqlite::types::Value::from(i64::from(colour)),
+        )
+    }
+
+    fn set_rating(&mut self, track: TrackId, rating: u8) -> Result<(), LibraryError> {
+        if rating > MAX_RATING {
+            return Err(LibraryError::OutOfRange);
+        }
+        self.set_track_value(
+            track,
+            "rating",
+            rusqlite::types::Value::from(i64::from(rating)),
+        )
+    }
+
+    fn set_comment(&mut self, track: TrackId, comment: Option<&str>) -> Result<(), LibraryError> {
+        let value = tag(comment).map_or(rusqlite::types::Value::Null, rusqlite::types::Value::from);
+        self.set_track_value(track, "comment", value)
+    }
+
+    fn memory_at(&self, path: &Path) -> Result<Option<TrackMemory>, LibraryError> {
+        let text: Option<Option<String>> = self
+            .connection
+            .query_row(
+                "SELECT memory FROM track WHERE path = ?1",
+                [text_of(path)?],
+                |row| row.get(0),
+            )
+            .optional()?;
+        // A text this version cannot read is left as it is, as if nothing were kept.
+        Ok(text
+            .flatten()
+            .and_then(|text| TrackMemory::parse(&text).ok()))
+    }
+
+    fn has_memory(&self, path: &Path) -> Result<bool, LibraryError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT memory IS NOT NULL FROM track WHERE path = ?1",
+                [text_of(path)?],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    fn set_memory(&mut self, track: TrackId, memory: &TrackMemory) -> Result<(), LibraryError> {
+        let text = memory.to_text();
+        let changed = match memory.grid.bpm() {
+            Some(bpm) => self.connection.execute(
+                "UPDATE track SET memory = ?1, bpm = ?2 WHERE id = ?3",
+                params![text, bpm.value(), track.0],
+            )?,
+            None => self.connection.execute(
+                "UPDATE track SET memory = ?1 WHERE id = ?2",
+                params![text, track.0],
+            )?,
+        };
+        if changed == 0 {
+            return Err(LibraryError::NoSuchTrack);
+        }
+        Ok(())
+    }
+
+    fn set_analysis(
+        &mut self,
+        track: TrackId,
+        key: Option<u8>,
+        loudness: Option<f64>,
+    ) -> Result<(), LibraryError> {
+        if key.is_some_and(|key| key > MAX_KEY) || loudness.is_some_and(|lufs| !lufs.is_finite()) {
+            return Err(LibraryError::OutOfRange);
+        }
+        let changed = self.connection.execute(
+            "UPDATE track SET key = ?1, loudness = ?2, analysed = 1 WHERE id = ?3",
+            params![key.map(i64::from), loudness, track.0],
+        )?;
+        if changed == 0 {
+            return Err(LibraryError::NoSuchTrack);
+        }
+        Ok(())
+    }
+
+    fn unanalysed(&self, limit: usize) -> Result<Vec<Track>, LibraryError> {
+        let limit = i64::try_from(limit.min(MAX_PAGE)).unwrap_or(0);
+        let mut select = self.connection.prepare(&format!(
+            "SELECT {TRACK_COLUMNS} FROM track t WHERE t.analysed = 0 AND t.missing = 0              ORDER BY t.imported DESC, t.id DESC LIMIT ?1"
+        ))?;
+        let tracks = select
+            .query_map([limit], |row| track_from(row, 0))?
+            .collect::<Result<_, _>>()?;
+        Ok(tracks)
+    }
+
+    fn count_unanalysed(&self) -> Result<usize, LibraryError> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM track WHERE analysed = 0 AND missing = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
+    fn missing(&self) -> Result<Vec<Track>, LibraryError> {
+        let mut select = self.connection.prepare(&format!(
+            "SELECT {TRACK_COLUMNS} FROM track t WHERE t.missing = 1 ORDER BY t.path"
+        ))?;
+        let tracks = select
+            .query_map([], |row| track_from(row, 0))?
+            .collect::<Result<_, _>>()?;
+        Ok(tracks)
     }
 
     fn remove_track(&mut self, id: TrackId) -> Result<(), LibraryError> {
@@ -576,6 +786,60 @@ impl Library for SqliteLibrary {
         Ok(())
     }
 
+    fn preparation(&self) -> Result<Option<NodeId>, LibraryError> {
+        let playlist: Option<Option<i64>> = self
+            .connection
+            .query_row("SELECT playlist FROM preparation WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        Ok(playlist.flatten().map(NodeId))
+    }
+
+    fn set_preparation(&mut self, playlist: NodeId) -> Result<(), LibraryError> {
+        self.playlist(playlist)?;
+        self.connection.execute(
+            "INSERT INTO preparation (id, playlist) VALUES (1, ?1)              ON CONFLICT (id) DO UPDATE SET playlist = excluded.playlist",
+            [playlist.0],
+        )?;
+        Ok(())
+    }
+
+    fn favourites(&self) -> Result<Vec<(usize, NodeId)>, LibraryError> {
+        let mut select = self
+            .connection
+            .prepare("SELECT place, playlist FROM favourite ORDER BY place")?;
+        let favourites = select
+            .query_map([], |row| {
+                let place: i64 = row.get(0)?;
+                Ok((usize::try_from(place).unwrap_or(0), NodeId(row.get(1)?)))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(favourites)
+    }
+
+    fn set_favourite(&mut self, place: usize, playlist: NodeId) -> Result<(), LibraryError> {
+        self.playlist(playlist)?;
+        let place = i64::try_from(place).unwrap_or(i64::MAX);
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM favourite WHERE playlist = ?1", [playlist.0])?;
+        transaction.execute(
+            "INSERT INTO favourite (place, playlist) VALUES (?1, ?2) \
+             ON CONFLICT (place) DO UPDATE SET playlist = excluded.playlist",
+            [place, playlist.0],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn clear_favourite(&mut self, place: usize) -> Result<(), LibraryError> {
+        if let Ok(place) = i64::try_from(place) {
+            self.connection
+                .execute("DELETE FROM favourite WHERE place = ?1", [place])?;
+        }
+        Ok(())
+    }
+
     fn open_session(&mut self, at: Timestamp) -> Result<SessionId, LibraryError> {
         self.connection
             .execute("INSERT INTO session (opened) VALUES (?1)", [at.0])?;
@@ -583,14 +847,16 @@ impl Library for SqliteLibrary {
     }
 
     fn sessions(&self) -> Result<Vec<Session>, LibraryError> {
-        let mut select = self
-            .connection
-            .prepare("SELECT id, opened FROM session ORDER BY opened DESC, id DESC")?;
+        let mut select = self.connection.prepare(
+            "SELECT s.id, s.opened, (SELECT count(*) FROM played p JOIN track t ON t.id = p.track              WHERE p.session = s.id) FROM session s ORDER BY s.opened DESC, s.id DESC",
+        )?;
         let sessions = select
             .query_map([], |row| {
+                let played: i64 = row.get(2)?;
                 Ok(Session {
                     id: SessionId(row.get(0)?),
                     opened: Timestamp(row.get(1)?),
+                    played: usize::try_from(played).unwrap_or(0),
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -660,6 +926,13 @@ impl Library for SqliteLibrary {
         Ok(played)
     }
 
+    fn delete_session(&mut self, session: SessionId) -> Result<(), LibraryError> {
+        // The entries of its history go with it: `played` cascades on `session`.
+        self.connection
+            .execute("DELETE FROM session WHERE id = ?1", [session.0])?;
+        Ok(())
+    }
+
     fn reset_played(&mut self, track: TrackId) -> Result<(), LibraryError> {
         if self.connection.execute(
             "UPDATE track SET play_count = 0, last_played = NULL WHERE id = ?1",
@@ -672,15 +945,19 @@ impl Library for SqliteLibrary {
     }
 
     fn search(&self, query: &Query) -> Result<Page, LibraryError> {
-        if let Some(playlist) = query.playlist {
-            self.playlist(playlist)?;
-        }
-        let in_playlist = query.playlist.is_some();
         let mut values: Vec<rusqlite::types::Value> = Vec::new();
         let mut from = String::from("FROM track t");
-        if let Some(playlist) = query.playlist {
-            from.push_str(" JOIN entry e ON e.track = t.id AND e.playlist = ?1");
-            values.push(playlist.0.into());
+        match query.source {
+            Source::Collection => {}
+            Source::Playlist(playlist) => {
+                self.playlist(playlist)?;
+                from.push_str(" JOIN entry e ON e.track = t.id AND e.playlist = ?1");
+                values.push(playlist.0.into());
+            }
+            Source::History(session) => {
+                from.push_str(" JOIN played h ON h.track = t.id AND h.session = ?1");
+                values.push(session.0.into());
+            }
         }
         let mut filter = String::from(" WHERE 1");
         for word in query.text.split_whitespace() {
@@ -696,14 +973,23 @@ impl Library for SqliteLibrary {
             params_from_iter(values.iter()),
             |row| row.get(0),
         )?;
-        let sort = sort_expression(query.column, in_playlist);
+        let sort = sort_expression(query.column, query.source);
         let direction = if query.descending { "DESC" } else { "ASC" };
-        let entry = if in_playlist { "e.id" } else { "NULL" };
+        let entry = match query.source {
+            Source::Playlist(_) => "e.id",
+            Source::Collection | Source::History(_) => "NULL",
+        };
+        // In a history, ties keep the order the tracks were recorded in: two tracks can start
+        // in the same second, and one track can be there twice.
+        let tie = match query.source {
+            Source::History(_) => format!("h.id {direction}, "),
+            Source::Collection | Source::Playlist(_) => String::new(),
+        };
         let limit = query.limit.min(MAX_PAGE) as i64;
         let offset = i64::try_from(query.offset).unwrap_or(i64::MAX);
         let sql = format!(
             "SELECT {entry}, {TRACK_COLUMNS} {from}{filter} \
-             ORDER BY ({sort} IS NULL), {sort} {direction}, t.path LIMIT {limit} OFFSET {offset}"
+             ORDER BY ({sort} IS NULL), {sort} {direction}, {tie}t.path LIMIT {limit} OFFSET {offset}"
         );
         let mut select = self.connection.prepare(&sql)?;
         let hits = select

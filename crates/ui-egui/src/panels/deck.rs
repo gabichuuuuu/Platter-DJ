@@ -18,19 +18,22 @@ use platter_engine::{
     BpmScale, Command, CueStep, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep,
 };
 
-use crate::command::{Action, AppCommand, DeckPage};
+use crate::command::{Action, AppCommand, DeckPage, DeckSize};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::i18n::Texts;
 use crate::icons::Glyph;
+use crate::keys;
 use crate::model::{DeckNotice, View};
 use crate::paint;
+use crate::panels::browser;
 use crate::panels::waveform::{self, deck_color};
 use crate::shell::ViewState;
 use crate::tokens::{TextStyle, Tokens, Weight};
 use crate::widgets::choice::{self, Choice, SelectSpec};
+use crate::widgets::field::{self, Typing};
 use crate::widgets::key::{self, Face, KeySpec, Press};
-use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, Steps, ValueSpec};
+use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, Steps, TEMPO_FADER, ValueSpec};
 
 /// How much the bend keys change the speed while held.
 pub const NUDGE_AMOUNT: f64 = 0.04;
@@ -56,6 +59,22 @@ const SYNC_WIDTH: f32 = 56.0;
 const MASTER_WIDTH: f32 = 68.0;
 const PHASE_WIDTH: f32 = 120.0;
 const PHASE_HEIGHT: f32 = 6.0;
+/// The key lock and the semitone keys, as the reference screen draws them.
+const KEY_LOCK_WIDTH: f32 = 28.0;
+const KEY_STEP_WIDTH: f32 = 24.0;
+const KEY_READOUT_WIDTH: f32 = 44.0;
+const KEY_ROW_HEIGHT: f32 = 24.0;
+const KEY_GAP: f32 = 4.0;
+/// The cover in the deck header, as the reference screen draws it.
+const COVER_SIDE: f32 = 54.0;
+/// The height of the header of a full deck, and of a compact one.
+const HEADER_HEIGHT: f32 = 56.0;
+const COMPACT_HEADER_HEIGHT: f32 = 26.0;
+/// What a compact deck draws under its overview, the advanced panel left out.
+const COMPACT_CONTROLS_HEIGHT: f32 = 192.0;
+/// FLUX and REVERSE beside play, as the reference screen draws them.
+const FLUX_WIDTH: f32 = 52.0;
+const REVERSE_WIDTH: f32 = 36.0;
 /// Height of the strip of its colour along the top of a pad that holds a cue.
 const PAD_STRIP: f32 = 4.0;
 const PAD_COLUMNS: usize = 4;
@@ -110,17 +129,35 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         }
     }
 
-    header(
-        cx,
-        Rect::from_min_size(inner.min, egui::vec2(inner.width(), 56.0)),
-        deck,
-        view,
-        state,
-    );
-    let overview = Rect::from_min_size(
-        inner.min + egui::vec2(0.0, 66.0),
-        egui::vec2(inner.width(), OVERVIEW_HEIGHT),
-    );
+    let compact = view.settings.deck_size == DeckSize::Compact;
+    let overview = if compact {
+        compact_header(
+            cx,
+            Rect::from_min_size(inner.min, egui::vec2(inner.width(), COMPACT_HEADER_HEIGHT)),
+            deck,
+            view,
+            state,
+        );
+        // The overview takes what the band leaves over.
+        let top = inner.top() + COMPACT_HEADER_HEIGHT + 10.0;
+        let height = (inner.bottom() - COMPACT_CONTROLS_HEIGHT - 10.0 - top).max(OVERVIEW_HEIGHT);
+        Rect::from_min_size(
+            egui::pos2(inner.left(), top),
+            egui::vec2(inner.width(), height),
+        )
+    } else {
+        header(
+            cx,
+            Rect::from_min_size(inner.min, egui::vec2(inner.width(), HEADER_HEIGHT)),
+            deck,
+            view,
+            state,
+        );
+        Rect::from_min_size(
+            inner.min + egui::vec2(0.0, HEADER_HEIGHT + 10.0),
+            egui::vec2(inner.width(), OVERVIEW_HEIGHT),
+        )
+    };
     waveform::overview(cx, overview, deck, snapshot);
 
     let controls = Rect::from_min_max(
@@ -143,18 +180,29 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         let area =
             Rect::from_min_size(egui::pos2(left.left(), top), egui::vec2(left.width(), 52.0));
         deck_notice(cx, area, deck, notice);
+    }
+    // Without the advanced panel the hotcues and the loop row sit lower, where its rows
+    // would be: they are placed from the bottom of an area that reaches past the deck by
+    // the height of those rows.
+    let above_pages = if compact {
+        Rect::from_min_max(left.min, left.max + egui::vec2(0.0, pages_height(tokens)))
     } else {
-        hotcue_pads(cx, left, deck, snapshot, mapping);
+        left
+    };
+    if view.notices[deck.index()].is_none() {
+        hotcue_pads(cx, above_pages, deck, snapshot, mapping);
     }
     transport(cx, left, deck, snapshot);
-    loop_controls(cx, left, deck, snapshot);
-    let page = state.deck_page[deck.index()];
-    match page {
-        DeckPage::Move => move_page(cx, left, deck, snapshot),
-        DeckPage::Cue => cue_page(cx, left, deck, snapshot, mapping),
-        DeckPage::Grid => grid_page(cx, left, deck, snapshot),
+    loop_controls(cx, above_pages, deck, snapshot);
+    if !compact {
+        let page = state.deck_page[deck.index()];
+        match page {
+            DeckPage::Move => move_page(cx, left, deck, snapshot),
+            DeckPage::Cue => cue_page(cx, left, deck, snapshot, mapping),
+            DeckPage::Grid => grid_page(cx, left, deck, snapshot),
+        }
+        page_selector(cx, left, deck, page);
     }
-    page_selector(cx, left, deck, page);
     tempo(cx, tempo_column, deck, snapshot);
 }
 
@@ -245,16 +293,16 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
         .ui
         .interact(slot, id(("deck-phase", deck.index())), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Image, true, &name));
+    let keys_left = key_controls(cx, area, deck, view);
     if master {
         let caption = Rect::from_min_max(
             egui::pos2(slot.right() + gap, area.top()),
-            egui::pos2(area.right(), area.top() + height),
+            egui::pos2(keys_left - gap, area.top() + height),
         );
-        paint::text(
-            painter,
+        paint::text_elided(
+            cx.painter(),
             theme,
             caption,
-            Align2::LEFT_CENTER,
             texts.get("deck.tempo_master"),
             tokens.text.label,
             color.text_secondary,
@@ -262,8 +310,106 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
     }
 }
 
+/// Key lock, a semitone down, the key the deck plays and a semitone up, at the right of the
+/// row of sync. Returns where they start.
+fn key_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) -> f32 {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let snapshot = &view.engine.decks[deck.index()];
+    let letter = deck.letter().to_string();
+    let ready = is_ready(snapshot);
+    let top = area.top() + (tokens.size.button_h - KEY_ROW_HEIGHT) / 2.0;
+    let width = KEY_LOCK_WIDTH + 2.0 * KEY_STEP_WIDTH + KEY_READOUT_WIDTH + 3.0 * KEY_GAP;
+    let left = area.right() - width;
+    let mut row = Row {
+        x: left,
+        top,
+        height: KEY_ROW_HEIGHT,
+        gap: KEY_GAP,
+    };
+
+    let name = texts.format("deck.key_lock_name", &[("deck", &letter)]);
+    let spec = KeySpec::icon(Glyph::Lock, 14.0, &name)
+        .lit(snapshot.key_lock.then_some(color.text_primary))
+        .enabled(ready);
+    key::key(
+        cx,
+        row.place(KEY_LOCK_WIDTH),
+        id(("deck-key-lock", deck.index())),
+        spec,
+        Press::Click(Command::DeckKeyLockToggle { deck }.into()),
+    );
+    let down = texts.format("deck.key_down_name", &[("deck", &letter)]);
+    let up = texts.format("deck.key_up_name", &[("deck", &letter)]);
+    let shift = snapshot.key_shift;
+    let step = |cx: &mut Cx<'_>, rect: Rect, glyph: Glyph, name: &str, direction: SizeStep| {
+        let limit = if direction == SizeStep::Down {
+            -12.0
+        } else {
+            12.0
+        };
+        key::key(
+            cx,
+            rect,
+            id(("deck-key-step", deck.index(), direction == SizeStep::Up)),
+            KeySpec::icon(glyph, 14.0, name).enabled(ready && shift != limit),
+            Press::Click(Command::DeckKeyStep { deck, direction }.into()),
+        );
+    };
+    step(
+        cx,
+        row.place(KEY_STEP_WIDTH),
+        Glyph::Minus,
+        &down,
+        SizeStep::Down,
+    );
+    let readout = row.place(KEY_READOUT_WIDTH);
+    step(
+        cx,
+        row.place(KEY_STEP_WIDTH),
+        Glyph::Plus,
+        &up,
+        SizeStep::Up,
+    );
+    // The key the deck plays: what the analysis found, moved by the shift or the speed.
+    let played = snapshot.resulting_key.map_or_else(
+        || "--".to_owned(),
+        |transposed| {
+            keys::key_text(
+                keys::number_of(transposed.key),
+                view.settings.key_notation,
+                (
+                    texts.get("browser.key_major"),
+                    texts.get("browser.key_minor"),
+                ),
+            )
+        },
+    );
+    paint::text(
+        cx.painter(),
+        theme,
+        readout,
+        Align2::CENTER_CENTER,
+        &played,
+        tokens.text.label,
+        if ready {
+            color.text_primary
+        } else {
+            color.text_disabled
+        },
+    );
+    left
+}
+
 /// The tops of the two rows of a page of the advanced panel, above the transport keys at
 /// the bottom of `area`.
+/// The height of the two rows of the advanced panel, with the gaps around them.
+fn pages_height(tokens: &Tokens) -> f32 {
+    2.0 * GRID_ROW_HEIGHT + tokens.space.s2 + tokens.space.s3
+}
+
 fn page_rows(area: Rect, tokens: &Tokens) -> (f32, f32) {
     let second = area.bottom() - tokens.size.transport_h - tokens.space.s3 - GRID_ROW_HEIGHT;
     (second - tokens.space.s2 - GRID_ROW_HEIGHT, second)
@@ -980,14 +1126,42 @@ fn cue_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot, 
                 egui::pos2(numeral.right() + tokens.space.s1, reading.top()),
                 egui::pos2(position.left() - tokens.space.s2, reading.bottom()),
             );
-            paint::text_elided(
-                painter,
-                theme,
+            // The name is typed after a double click, or Enter while it has the keyboard.
+            let name_id = id(("deck-cue-name", deck.index()));
+            let rename = named("deck.cue_rename_name");
+            match field::typing(
+                cx,
                 label,
-                cue_label(texts, cue),
-                tokens.text.body,
-                color.text_primary,
-            );
+                name_id,
+                cue.name.as_str(),
+                &rename,
+                "deck.cue.rename",
+            ) {
+                Typing::Idle => {
+                    cx.record("deck.cue.rename", label, ControlKind::Keys, true);
+                    let response = cx
+                        .ui
+                        .interact(label, name_id, cx.sense(true, Sense::click()));
+                    response.widget_info(|| WidgetInfo::labeled(Role::TextInput, true, &rename));
+                    if response.clicked() {
+                        response.request_focus();
+                    }
+                    let painter = cx.painter();
+                    paint::text_elided(
+                        painter,
+                        theme,
+                        label,
+                        cue_label(texts, cue),
+                        tokens.text.body,
+                        color.text_primary,
+                    );
+                    if response.has_focus() {
+                        paint::focus_ring(painter, theme, label, tokens.radius.sm);
+                    }
+                }
+                Typing::Open => {}
+                Typing::Confirmed(name) => cx.out.emit(Command::DeckCueRename { deck, name }),
+            }
         }
         None => {
             paint::text_elided(
@@ -1120,30 +1294,52 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
     );
     let field_text = shown.map_or_else(|| texts.get("deck.no_tempo").to_owned(), format::bpm);
     let name = named("deck.grid_bpm_name");
-    value::field(
-        cx,
-        field_rect,
-        id(("deck-grid-bpm", deck.index())),
-        ValueSpec {
-            name: &name,
-            position: (start - Bpm::MIN) / span,
-            default: (start - Bpm::MIN) / span,
-            steps: Steps {
-                small: BPM_STEP / span,
-                fine: BPM_STEP / 10.0 / span,
-                large: 1.0 / span,
-            },
-            enabled: editable,
-        },
-        &field_text,
-        |position| {
-            Command::DeckGridBpmSet {
-                deck,
-                bpm: Bpm::MIN + position * span,
+    let typed = if editable {
+        field::typing(
+            cx,
+            field_rect,
+            id(("deck-grid-bpm", deck.index())),
+            &format::bpm(start),
+            &name,
+            "deck.grid.bpm.set",
+        )
+    } else {
+        Typing::Idle
+    };
+    match typed {
+        Typing::Idle => {
+            value::field(
+                cx,
+                field_rect,
+                id(("deck-grid-bpm", deck.index())),
+                ValueSpec {
+                    name: &name,
+                    position: (start - Bpm::MIN) / span,
+                    default: (start - Bpm::MIN) / span,
+                    steps: Steps {
+                        small: BPM_STEP / span,
+                        fine: BPM_STEP / 10.0 / span,
+                        large: 1.0 / span,
+                    },
+                    enabled: editable,
+                },
+                &field_text,
+                |position| {
+                    Command::DeckGridBpmSet {
+                        deck,
+                        bpm: Bpm::MIN + position * span,
+                    }
+                    .into()
+                },
+            );
+        }
+        Typing::Open => {}
+        Typing::Confirmed(text) => {
+            if let Some(bpm) = format::typed_bpm(&text) {
+                cx.out.emit(Command::DeckGridBpmSet { deck, bpm });
             }
-            .into()
-        },
-    );
+        }
+    }
 
     let mut row = Row {
         x: field_rect.right() + gap,
@@ -1233,6 +1429,22 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         egui::pos2(area.right() - GRID_KEY_WIDTH, first_top),
         egui::vec2(GRID_KEY_WIDTH, height),
     );
+    // The beat tick, just before the lock.
+    let tick = Rect::from_min_size(
+        egui::pos2(lock.left() - gap - GRID_KEY_WIDTH, first_top),
+        egui::vec2(GRID_KEY_WIDTH, height),
+    );
+    let name = named("deck.beat_tick_name");
+    let spec = KeySpec::icon(Glyph::Metronome, 14.0, &name)
+        .enabled(loaded)
+        .lit(snapshot.beat_tick.then_some(deck_color(theme, deck)));
+    key::key(
+        cx,
+        tick,
+        id(("deck-beat-tick", deck.index())),
+        spec,
+        Press::Click(Command::DeckBeatTickToggle { deck }.into()),
+    );
     let name = named("deck.grid_lock_name");
     let mut spec = KeySpec::icon(Glyph::Lock, 14.0, &name).enabled(loaded);
     spec.lit = grid.is_locked().then_some(deck_color(theme, deck));
@@ -1294,6 +1506,37 @@ fn grid_page(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         KeySpec::icon(Glyph::Trash, 14.0, &name).enabled(editable && has_markers),
         Press::Click(Command::DeckGridMarkerDelete { deck }.into()),
     );
+    // The resets bring back what the analysis of the load found: the grid, or its tempo alone.
+    let found = snapshot
+        .analysis
+        .and_then(|analysis| analysis.tempo)
+        .is_some();
+    let analysed = snapshot.analysis.is_some();
+    let resets = [
+        (
+            Glyph::Grid,
+            "deck.grid_reset_name",
+            Command::DeckGridReset { deck },
+            editable && analysed,
+        ),
+        (
+            Glyph::Clock,
+            "deck.grid_bpm_reset_name",
+            Command::DeckGridBpmReset { deck },
+            editable && found,
+        ),
+    ];
+    for (index, (glyph, name, command, enabled)) in resets.into_iter().enumerate() {
+        let rect = row.place(GRID_KEY_WIDTH);
+        let name = named(name);
+        key::key(
+            cx,
+            rect,
+            id(("deck-grid-reset", deck.index(), index)),
+            KeySpec::icon(glyph, 14.0, &name).enabled(enabled),
+            Press::Click(command.into()),
+        );
+    }
 }
 
 fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
@@ -1319,10 +1562,40 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
         egui::pos2(time_block.left() - tokens.space.s4 - 96.0, rect.top()),
         egui::pos2(time_block.left() - tokens.space.s4, rect.bottom()),
     );
+    // The cover of the track, or a frame with the icon of an audio file.
+    let cover = Rect::from_min_size(
+        egui::pos2(badge.right() + tokens.space.s3, rect.top()),
+        egui::vec2(COVER_SIDE, COVER_SIDE),
+    );
+    painter.rect(
+        cover,
+        paint::radius(tokens.radius.sm),
+        color.bg_app,
+        paint::hairline(theme, color.line_key),
+        StrokeKind::Inside,
+    );
+    let image = snapshot
+        .track
+        .as_ref()
+        .zip(view.browser.deck_covers[deck.index()].as_ref());
+    match image {
+        Some((track, image)) => {
+            let texture = browser::cover_texture(cx, &track.path, image);
+            let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            painter.image(texture, cover.shrink(1.0), uv, egui::Color32::WHITE);
+        }
+        None => theme.icons.paint(
+            painter,
+            Glyph::FileAudio,
+            Rect::from_center_size(cover.center(), egui::vec2(26.0, 26.0)),
+            color.text_disabled,
+        ),
+    }
     let text_block = Rect::from_min_max(
-        egui::pos2(badge.right() + tokens.space.s4, rect.top()),
+        egui::pos2(cover.right() + tokens.space.s4, rect.top()),
         egui::pos2(tempo_block.left() - tokens.space.s4, rect.bottom()),
     );
+    size_switch(cx, Rect::from_min_max(rect.min, text_block.max), deck, view);
     let line = |block: Rect, top: f32, height: f32| {
         Rect::from_min_size(
             egui::pos2(block.left(), block.top() + top),
@@ -1421,119 +1694,38 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
         }
     }
 
-    // Tempo: the current tempo, and its offset from the base tempo. Both follow the speed
-    // of the deck, which sync sets apart from the fader.
-    let offset = format::signed_percent(snapshot.speed - 1.0);
-    // The tempo of the grid; until there is one, the tempo the tag gives.
-    let base = snapshot
-        .grid
-        .bpm()
-        .map(|bpm| bpm.value())
-        .or_else(|| track.and_then(|track| track.tags.bpm))
-        .filter(|_| loaded);
-    let ink = |loaded_ink| {
-        if loaded {
-            loaded_ink
-        } else {
-            color.text_disabled
-        }
-    };
-    let (tempo, detail) = match base {
-        Some(base) => (
-            format::bpm(base * snapshot.speed),
-            texts.format(
-                "deck.tempo_of",
-                &[("offset", &offset), ("base", &format::bpm(base))],
-            ),
-        ),
-        None => (
-            texts.get("deck.no_tempo").to_owned(),
-            texts.format("deck.tempo_offset", &[("offset", &offset)]),
-        ),
-    };
-    let tempo_ink = if base.is_some() {
-        color.text_primary
-    } else {
-        color.text_disabled
-    };
+    let readings = Readings::of(cx, snapshot, state.remaining_large[deck.index()]);
     paint::text(
         painter,
         theme,
         line(tempo_block, 0.0, 22.0),
         Align2::RIGHT_CENTER,
-        &tempo,
+        &readings.tempo,
         tokens.text.tempo,
-        tempo_ink,
+        readings.tempo_ink,
     );
     paint::text(
         painter,
         theme,
         line(tempo_block, 22.0, 14.0),
         Align2::RIGHT_CENTER,
-        &detail,
+        &readings.detail,
         tokens.text.readout,
-        ink(color.text_secondary),
+        readings.small_ink,
     );
 
     // Times: one large, the other two below it. A click swaps remaining and elapsed.
-    let action = AppCommand::DeckTimeDisplayToggle { deck };
-    cx.record(action.id(), time_block, ControlKind::Button, loaded);
-    let response = cx.ui.interact(
-        time_block,
-        id(("deck-time", deck.index())),
-        cx.sense(loaded, Sense::click()),
-    );
-    let name = texts.format("deck.time_name", &[("deck", &letter)]);
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, loaded, &name));
-    if response.has_focus() {
-        cx.out.claim(&[egui::Key::Space, egui::Key::Enter]);
-        paint::focus_ring(painter, theme, time_block, tokens.radius.md);
-    }
-    if response.clicked() {
-        cx.out.emit(action);
-    }
-    let none = texts.get("deck.no_time");
-    let (large, second, third, large_ink) = match track {
-        Some(track) => {
-            let elapsed = snapshot.position_seconds.min(track.seconds);
-            let left = (track.seconds - elapsed).max(0.0);
-            let remaining = format::time(left, true);
-            let elapsed = format::time(elapsed, false);
-            let total = format::time(track.seconds, false);
-            let ending = snapshot.playing && left < ENDING_SECONDS;
-            if state.remaining_large[deck.index()] {
-                let ink = if ending {
-                    color.status_warn
-                } else {
-                    color.text_primary
-                };
-                (remaining, elapsed, total, ink)
-            } else {
-                (elapsed, remaining, total, color.text_primary)
-            }
-        }
-        None => (
-            none.to_owned(),
-            none.to_owned(),
-            String::new(),
-            color.text_disabled,
-        ),
-    };
-    let large_ink = if snapshot.loading {
-        color.text_secondary
-    } else {
-        large_ink
-    };
+    time_key(cx, time_block, deck, loaded);
     paint::text(
         painter,
         theme,
         line(time_block, 0.0, 26.0),
         Align2::RIGHT_CENTER,
-        &large,
+        &readings.large,
         tokens.text.time,
-        large_ink,
+        readings.large_ink,
     );
-    for (index, text) in [second, third].iter().enumerate() {
+    for (index, text) in [&readings.second, &readings.third].iter().enumerate() {
         paint::text(
             painter,
             theme,
@@ -1541,8 +1733,232 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
             Align2::RIGHT_CENTER,
             text,
             tokens.text.readout,
-            ink(color.text_secondary),
+            readings.small_ink,
         );
+    }
+}
+
+/// The header of a compact deck: one row with the letter, the title, the current tempo and
+/// the large time. `docs/behavior/interface.md`, *Deck sizes*.
+fn compact_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let painter = cx.painter();
+    let snapshot = &view.engine.decks[deck.index()];
+    let loaded = is_ready(snapshot);
+    let badge = Rect::from_min_size(
+        egui::pos2(rect.left(), rect.center().y - 11.0),
+        egui::vec2(22.0, 22.0),
+    );
+    paint::badge(
+        painter,
+        theme,
+        badge,
+        deck.letter(),
+        deck_color(theme, deck),
+    );
+    let time_block = Rect::from_min_max(egui::pos2(rect.right() - 96.0, rect.top()), rect.max);
+    let tempo_block = Rect::from_min_max(
+        egui::pos2(time_block.left() - tokens.space.s4 - 96.0, rect.top()),
+        egui::pos2(time_block.left() - tokens.space.s4, rect.bottom()),
+    );
+    let text_block = Rect::from_min_max(
+        egui::pos2(badge.right() + tokens.space.s4, rect.top()),
+        egui::pos2(tempo_block.left() - tokens.space.s4, rect.bottom()),
+    );
+    size_switch(cx, Rect::from_min_max(rect.min, text_block.max), deck, view);
+
+    let title_line =
+        Rect::from_center_size(text_block.center(), egui::vec2(text_block.width(), 18.0));
+    match title_of(snapshot) {
+        Some(title) => {
+            let elided = paint::text_elided(
+                painter,
+                theme,
+                title_line,
+                &title,
+                tokens.text.title,
+                color.text_primary,
+            );
+            let response =
+                cx.ui
+                    .interact(title_line, id(("deck-title", deck.index())), Sense::hover());
+            response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &title));
+            if elided {
+                response.on_hover_text(title);
+            }
+        }
+        None => {
+            let waiting = texts.get(if snapshot.loading {
+                "deck.loading"
+            } else {
+                "deck.empty_title"
+            });
+            paint::text_elided(
+                painter,
+                theme,
+                title_line,
+                waiting,
+                tokens.text.title,
+                color.text_secondary,
+            );
+        }
+    }
+
+    let readings = Readings::of(cx, snapshot, state.remaining_large[deck.index()]);
+    paint::text(
+        painter,
+        theme,
+        tempo_block,
+        Align2::RIGHT_CENTER,
+        &readings.tempo,
+        tokens.text.tempo,
+        readings.tempo_ink,
+    );
+    time_key(cx, time_block, deck, loaded);
+    paint::text(
+        painter,
+        theme,
+        time_block,
+        Align2::RIGHT_CENTER,
+        &readings.large,
+        tokens.text.time,
+        readings.large_ink,
+    );
+}
+
+/// A double click on the header of a deck, left of its tempo, switches the size of the decks.
+/// The pointer alone operates it; the General page of the preferences sends the same command.
+fn size_switch(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
+    let response = cx.ui.interact(
+        area,
+        id(("deck-size", deck.index())),
+        cx.sense(true, Sense::click()),
+    );
+    if response.double_clicked() {
+        cx.out.emit(AppCommand::DeckSizeSet {
+            size: view.settings.deck_size.other(),
+        });
+    }
+}
+
+/// The key the times of a deck are: a click swaps remaining and elapsed.
+fn time_key(cx: &mut Cx<'_>, time_block: Rect, deck: DeckId, loaded: bool) {
+    let theme = cx.theme;
+    let letter = deck.letter().to_string();
+    let action = AppCommand::DeckTimeDisplayToggle { deck };
+    cx.record(action.id(), time_block, ControlKind::Button, loaded);
+    let response = cx.ui.interact(
+        time_block,
+        id(("deck-time", deck.index())),
+        cx.sense(loaded, Sense::click()),
+    );
+    let name = cx.texts.format("deck.time_name", &[("deck", &letter)]);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, loaded, &name));
+    if response.has_focus() {
+        cx.out.claim(&[egui::Key::Space, egui::Key::Enter]);
+        paint::focus_ring(cx.painter(), theme, time_block, theme.tokens.radius.md);
+    }
+    if response.clicked() {
+        cx.out.emit(action);
+    }
+}
+
+/// What the header of a deck reads out: the tempo and the times, with their colours.
+struct Readings {
+    tempo: String,
+    /// The offset of the tempo, and the base tempo when there is one.
+    detail: String,
+    tempo_ink: Color32,
+    large: String,
+    second: String,
+    third: String,
+    large_ink: Color32,
+    /// The colour of the small readings.
+    small_ink: Color32,
+}
+
+impl Readings {
+    fn of(cx: &Cx<'_>, snapshot: &DeckSnapshot, remaining_large: bool) -> Self {
+        let texts = cx.texts;
+        let color = &cx.theme.tokens.color;
+        let track = snapshot.track.as_ref();
+        let loaded = is_ready(snapshot);
+        // Both follow the speed of the deck, which sync sets apart from the fader.
+        let offset = format::signed_percent(snapshot.speed - 1.0);
+        // The tempo of the grid; until there is one, the tempo the tag gives.
+        let base = snapshot
+            .grid
+            .bpm()
+            .map(|bpm| bpm.value())
+            .or_else(|| track.and_then(|track| track.tags.bpm))
+            .filter(|_| loaded);
+        let (tempo, detail) = match base {
+            Some(base) => (
+                format::bpm(base * snapshot.speed),
+                texts.format(
+                    "deck.tempo_of",
+                    &[("offset", &offset), ("base", &format::bpm(base))],
+                ),
+            ),
+            None => (
+                texts.get("deck.no_tempo").to_owned(),
+                texts.format("deck.tempo_offset", &[("offset", &offset)]),
+            ),
+        };
+        let tempo_ink = if base.is_some() {
+            color.text_primary
+        } else {
+            color.text_disabled
+        };
+        let none = texts.get("deck.no_time");
+        let (large, second, third, large_ink) = match track {
+            Some(track) => {
+                let elapsed = snapshot.position_seconds.min(track.seconds);
+                let left = (track.seconds - elapsed).max(0.0);
+                let remaining = format::time(left, true);
+                let elapsed = format::time(elapsed, false);
+                let total = format::time(track.seconds, false);
+                let ending = snapshot.playing && left < ENDING_SECONDS;
+                if remaining_large {
+                    let ink = if ending {
+                        color.status_warn
+                    } else {
+                        color.text_primary
+                    };
+                    (remaining, elapsed, total, ink)
+                } else {
+                    (elapsed, remaining, total, color.text_primary)
+                }
+            }
+            None => (
+                none.to_owned(),
+                none.to_owned(),
+                String::new(),
+                color.text_disabled,
+            ),
+        };
+        let large_ink = if snapshot.loading {
+            color.text_secondary
+        } else {
+            large_ink
+        };
+        Self {
+            tempo,
+            detail,
+            tempo_ink,
+            large,
+            second,
+            third,
+            large_ink,
+            small_ink: if loaded {
+                color.text_secondary
+            } else {
+                color.text_disabled
+            },
+        }
     }
 }
 
@@ -1640,6 +2056,49 @@ fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         spec,
         Press::Click(Command::DeckPlayPause { deck }.into()),
     );
+
+    let flux = texts.get("deck.flux");
+    let rect = Rect::from_min_size(
+        egui::pos2(left, top),
+        egui::vec2(key::width_for(cx, flux, FLUX_WIDTH), height),
+    );
+    left = rect.right() + tokens.space.s3;
+    let name = texts.format("deck.flux_name", &[("deck", &letter)]);
+    let mut spec = KeySpec::text(flux)
+        .enabled(loaded)
+        .lit(snapshot.flux.then_some(tokens.color.text_primary));
+    spec.name = &name;
+    key::key(
+        cx,
+        rect,
+        id(("deck-flux", deck.index())),
+        spec,
+        Press::Click(Command::DeckFluxToggle { deck }.into()),
+    );
+    let rect = Rect::from_min_size(egui::pos2(left, top), egui::vec2(REVERSE_WIDTH, height));
+    let name = texts.format("deck.reverse_name", &[("deck", &letter)]);
+    let mut spec = KeySpec::icon(Glyph::Reverse, 14.0, &name)
+        .enabled(loaded)
+        .lit(snapshot.reverse.then_some(tokens.color.text_primary));
+    spec.held = Some(tokens.color.text_primary);
+    key::key(
+        cx,
+        rect,
+        id(("deck-reverse", deck.index())),
+        spec,
+        Press::Hold {
+            down: Command::DeckReverse {
+                deck,
+                pressed: true,
+            }
+            .into(),
+            up: Command::DeckReverse {
+                deck,
+                pressed: false,
+            }
+            .into(),
+        },
+    );
 }
 
 /// The tempo range, the tempo fader, its reading and the two bend keys, top to bottom.
@@ -1704,6 +2163,7 @@ fn tempo(cx: &mut Cx<'_>, column: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
                 enabled: loaded,
             },
             mark: 0.5,
+            look: TEMPO_FADER,
         },
         |position| {
             Command::DeckTempoSet {

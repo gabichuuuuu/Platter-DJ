@@ -1,6 +1,7 @@
 //! Importing folders, on folders made in a temporary directory, with a reader that takes the
 //! extension for the format and the name for the title.
-//! Behaviour note: `docs/behavior/library.md`, section *Importing folders*.
+//! Behaviour note: `docs/behavior/library.md`, sections *Importing folders* and *Importing
+//! one file*.
 
 #![allow(clippy::unwrap_used, clippy::panic)]
 
@@ -8,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use platter_library::{
     Library, LibraryError, MAX_DEPTH, Query, Reading, SqliteLibrary, TagReader, Timestamp,
-    TrackTags, import_folder,
+    TrackTags, import_file, import_folder,
 };
 
 const AT: Timestamp = Timestamp(1_700_000_000);
@@ -270,4 +271,157 @@ fn names_that_are_not_unicode_are_left_out() {
     let mut library = SqliteLibrary::open(&directory("names-db").join("library.db")).unwrap();
     let report = import_folder(&mut library, &root, &mut Reader::default(), AT).unwrap();
     assert_eq!((report.added.len(), report.skipped), (1, 1));
+}
+
+#[test]
+fn one_file_enters_the_collection_once_whichever_way_its_path_is_written() {
+    let root = directory("one-file");
+    touch(&root, "sets/opener.wav");
+    let mut library = SqliteLibrary::open(&directory("one-file-db").join("library.db")).unwrap();
+    let mut reader = Reader::default();
+    let path = root.join("sets").join("opener.wav");
+    let id = import_file(&mut library, &path, &mut reader, AT)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        collection(&library, &root),
+        [("sets/opener.wav".to_owned(), "opener".to_owned())]
+    );
+    // The same file named another way is the same track, and is not read again.
+    let other = root.join("sets").join("..").join("sets").join("opener.wav");
+    assert_eq!(
+        import_file(&mut library, &other, &mut reader, AT).unwrap(),
+        Some(id)
+    );
+    assert_eq!(reader.asked.len(), 1);
+}
+
+#[test]
+fn a_file_without_music_or_without_a_file_gives_no_track() {
+    let root = directory("one-file-none");
+    touch(&root, "notes.txt");
+    touch(&root, "broken.bad");
+    let mut library =
+        SqliteLibrary::open(&directory("one-file-none-db").join("library.db")).unwrap();
+    let mut reader = Reader::default();
+    for name in ["notes.txt", "broken.bad", "gone.wav"] {
+        assert_eq!(
+            import_file(&mut library, &root.join(name), &mut reader, AT).unwrap(),
+            None,
+            "{name}"
+        );
+    }
+    // A folder is not a file.
+    assert_eq!(
+        import_file(&mut library, &root, &mut reader, AT).unwrap(),
+        None
+    );
+    assert!(collection(&library, &root).is_empty());
+}
+
+#[test]
+fn a_track_whose_file_is_gone_is_still_found_by_its_path() {
+    let root = directory("one-file-missing");
+    touch(&root, "kept.wav");
+    let mut library =
+        SqliteLibrary::open(&directory("one-file-missing-db").join("library.db")).unwrap();
+    let mut reader = Reader::default();
+    let id = import_file(&mut library, &root.join("kept.wav"), &mut reader, AT)
+        .unwrap()
+        .unwrap();
+    let stored = library.track(id).unwrap().unwrap().path;
+    std::fs::remove_file(&stored).unwrap();
+    assert_eq!(
+        import_file(&mut library, &stored, &mut reader, AT).unwrap(),
+        Some(id)
+    );
+}
+
+#[test]
+fn missing_tracks_are_relocated_by_a_name_found_once_and_wanted_once() {
+    let root = directory("relocate");
+    let old = root.join("old");
+    for file in [
+        "a.wav",
+        "b.wav",
+        "one/x.wav",
+        "two/x.wav",
+        "c.wav",
+        "keep.wav",
+    ] {
+        touch(&old, file);
+    }
+    let mut library = SqliteLibrary::open(&root.join("library.db")).unwrap();
+    import_folder(&mut library, &old, &mut Reader::default(), AT).unwrap();
+    for file in ["a.wav", "b.wav", "one/x.wav", "two/x.wav", "c.wav"] {
+        std::fs::remove_file(old.join(file)).unwrap();
+    }
+    // The a-side under another case, b twice, x once for two missing tracks, c nowhere.
+    let new = root.join("new");
+    for file in ["deep/A.wav", "b.wav", "copy/b.wav", "x.wav"] {
+        touch(&new, file);
+    }
+    assert_eq!(library.check_files().unwrap().missing.len(), 5);
+    assert_eq!(library.missing().unwrap().len(), 5);
+
+    let report = platter_library::relocate_missing(&mut library, &new).unwrap();
+    assert_eq!(report.relocated.len(), 1);
+    assert_eq!(report.ambiguous, 3);
+    assert_eq!(report.not_found, 1);
+    let relocated = library.track(report.relocated[0]).unwrap().unwrap();
+    assert!(!relocated.missing);
+    assert_eq!(relocated.tags.title.as_deref(), Some("a"));
+    assert_eq!(library.missing().unwrap().len(), 4);
+
+    // The new path is kept as an import keeps it: importing the folder finds the track known.
+    let imported = import_folder(&mut library, &new, &mut Reader::default(), AT).unwrap();
+    assert_eq!(imported.known, 1);
+    assert_eq!(imported.added.len(), 3);
+
+    assert!(matches!(
+        platter_library::relocate_missing(&mut library, &root.join("nowhere")),
+        Err(LibraryError::NotAFolder(_))
+    ));
+}
+
+/// A reader that stops the import once it has looked at `after` files.
+struct Stopping {
+    inner: Reader,
+    after: usize,
+    told: Vec<usize>,
+}
+
+impl TagReader for Stopping {
+    fn read(&mut self, path: &Path) -> Reading {
+        self.inner.read(path)
+    }
+
+    fn keep_going(&mut self, looked: usize) -> bool {
+        self.told.push(looked);
+        looked < self.after
+    }
+}
+
+#[test]
+fn a_reader_stops_the_import_and_what_was_read_stays() {
+    let root = directory("stopped");
+    for file in ["a.wav", "b.wav", "c.wav", "inner/d.wav"] {
+        touch(&root, file);
+    }
+    let mut library = SqliteLibrary::open(&directory("stopped-db").join("library.db")).unwrap();
+    let mut reader = Stopping {
+        inner: Reader::default(),
+        after: 2,
+        told: Vec::new(),
+    };
+    let report = import_folder(&mut library, &root, &mut reader, AT).unwrap();
+    assert!(report.stopped);
+    assert_eq!(report.added.len(), 2);
+    assert_eq!(reader.told, [0, 1, 2]);
+    assert_eq!(paths(&collection(&library, &root)), ["a.wav", "b.wav"]);
+
+    // Again to the end: the files read before are known, the rest are added.
+    let report = import_folder(&mut library, &root, &mut Reader::default(), AT).unwrap();
+    assert!(!report.stopped);
+    assert_eq!((report.added.len(), report.known), (2, 2));
 }

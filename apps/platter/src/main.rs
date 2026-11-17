@@ -7,10 +7,14 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod background;
 mod capture;
 mod config;
+mod keeping;
+mod manager;
 mod midi;
 mod png;
+mod starting;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

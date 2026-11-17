@@ -18,6 +18,17 @@ use crate::rt::Output;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
+    /// Loads a file into the preview player, in the background, and plays it:
+    /// `docs/behavior/browser.md`, *Preview player*.
+    PreviewLoad {
+        path: PathBuf,
+    },
+    /// Starts or stops the preview player.
+    PreviewPlayPause,
+    /// Moves the play position of the preview player to a share of its track, 0 to 1.
+    PreviewSeek {
+        position: f64,
+    },
     /// Loads a file into a deck, in the background.
     DeckLoad {
         deck: DeckId,
@@ -71,6 +82,11 @@ pub enum Command {
     /// Moves to the next range of the tempo fader.
     DeckTempoRangeCycle {
         deck: DeckId,
+    },
+    /// Gives the tempo fader one of its ranges, in percent: 8, 16 or 50.
+    DeckTempoRangeSet {
+        deck: DeckId,
+        percent: u32,
     },
     /// Sets the tempo of the beatgrid, in beats per minute.
     DeckGridBpmSet {
@@ -351,6 +367,8 @@ pub enum Command {
     },
     /// New cues and loops land on the nearest beat.
     GlobalSnapToggle,
+    /// Whether a track with a cue of the type load starts at it.
+    GlobalLoadMarkerToggle,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     GlobalQuantizeToggle,
 }
@@ -617,6 +635,24 @@ const BUTTON_ACTION: ParamSpec = ParamSpec {
 /// Every command, in the order a list shows them.
 pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
+        id: "preview.load",
+        label: "Preview a track",
+        params: &[ParamSpec {
+            name: "path",
+            kind: ParamKind::Path,
+        }],
+    },
+    CommandSpec {
+        id: "preview.play_pause",
+        label: "Play or pause the preview",
+        params: &[],
+    },
+    CommandSpec {
+        id: "preview.seek",
+        label: "Seek in the preview",
+        params: &[number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
         id: "deck.load",
         label: "Load track",
         params: &[
@@ -686,6 +722,11 @@ pub const SPECS: &[CommandSpec] = &[
         id: "deck.tempo.range.cycle",
         label: "Next tempo range",
         params: &[DECK],
+    },
+    CommandSpec {
+        id: "deck.tempo.range.set",
+        label: "Set tempo range",
+        params: &[DECK, number("percent", 8.0, 50.0)],
     },
     CommandSpec {
         id: "deck.grid.bpm.set",
@@ -1080,6 +1121,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "global.load_marker.toggle",
+        label: "Start at the load marker",
+        params: &[],
+    },
+    CommandSpec {
         id: "global.quantize.toggle",
         label: "Quantize",
         params: &[],
@@ -1361,6 +1407,13 @@ impl Command {
         }
         let read = Reader { spec, args };
         Ok(match spec.id {
+            "preview.load" => Self::PreviewLoad {
+                path: PathBuf::from(read.text("path")?),
+            },
+            "preview.play_pause" => Self::PreviewPlayPause,
+            "preview.seek" => Self::PreviewSeek {
+                position: read.number("position")?,
+            },
             "deck.load" => Self::DeckLoad {
                 deck: read.deck()?,
                 path: PathBuf::from(read.text("path")?),
@@ -1405,6 +1458,10 @@ impl Command {
                 amount: read.number("amount")?,
             },
             "deck.tempo.range.cycle" => Self::DeckTempoRangeCycle { deck: read.deck()? },
+            "deck.tempo.range.set" => Self::DeckTempoRangeSet {
+                deck: read.deck()?,
+                percent: read.number("percent")?.round() as u32,
+            },
             grid if grid.starts_with("deck.grid.") => return Self::grid_from_args(grid, &read),
             "deck.loop.toggle" => Self::DeckLoopToggle { deck: read.deck()? },
             "deck.loop.in" => Self::DeckLoopIn { deck: read.deck()? },
@@ -1453,6 +1510,7 @@ impl Command {
                         | "deck.master.set"
                         | "global.sync.mode.set"
                         | "global.snap.toggle"
+                        | "global.load_marker.toggle"
                         | "global.quantize.toggle"
                 ) =>
             {
@@ -1484,6 +1542,7 @@ impl Command {
                 mode: read.sync_mode()?,
             },
             "global.snap.toggle" => Self::GlobalSnapToggle,
+            "global.load_marker.toggle" => Self::GlobalLoadMarkerToggle,
             "global.quantize.toggle" => Self::GlobalQuantizeToggle,
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
@@ -1627,6 +1686,9 @@ impl Command {
     /// The stable identifier of the command.
     pub fn id(&self) -> &'static str {
         match self {
+            Self::PreviewLoad { .. } => "preview.load",
+            Self::PreviewPlayPause => "preview.play_pause",
+            Self::PreviewSeek { .. } => "preview.seek",
             Self::DeckLoad { .. } => "deck.load",
             Self::DeckEject { .. } => "deck.eject",
             Self::DeckPlay { .. } => "deck.play",
@@ -1640,6 +1702,7 @@ impl Command {
             Self::DeckTempoSet { .. } => "deck.tempo.set",
             Self::DeckNudge { .. } => "deck.nudge",
             Self::DeckTempoRangeCycle { .. } => "deck.tempo.range.cycle",
+            Self::DeckTempoRangeSet { .. } => "deck.tempo.range.set",
             Self::DeckGridBpmSet { .. } => "deck.grid.bpm.set",
             Self::DeckGridBpmScale { .. } => "deck.grid.bpm.scale",
             Self::DeckGridBpmStep { .. } => "deck.grid.bpm.step",
@@ -1708,6 +1771,7 @@ impl Command {
             Self::ClockMetronomeToggle => "clock.metronome.toggle",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
+            Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
         }
     }

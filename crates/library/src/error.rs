@@ -42,6 +42,8 @@ pub enum LibraryError {
     Cycle,
     /// Another track already has that path.
     PathTaken,
+    /// A colour or a rating outside its range.
+    OutOfRange,
     /// The folder to import does not exist, is not a folder or cannot be read.
     NotAFolder(std::io::Error),
 }
@@ -68,6 +70,7 @@ impl fmt::Display for LibraryError {
             Self::WrongKind => formatter.write_str("a playlist and a folder were mixed up"),
             Self::Cycle => formatter.write_str("a folder cannot go inside itself"),
             Self::PathTaken => formatter.write_str("another track already has that path"),
+            Self::OutOfRange => formatter.write_str("a colour or a rating out of its range"),
             Self::NotAFolder(error) => write!(formatter, "the folder cannot be read: {error}"),
         }
     }

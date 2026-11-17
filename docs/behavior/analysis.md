@@ -3,8 +3,9 @@
 Analysis reads a whole track and finds its tempo, where its beats fall and its musical key, so
 a DJ does not tap or type them. This note covers what the detection finds, how it fails, how
 the engine runs it when a track is loaded and the reset of the grid to what it found. The keys
-of the GRID page for the resets and the display of the key come with the interface, later in
-M3. The grid it fills is described in `docs/behavior/beatgrid.md`.
+of the resets are on the GRID page (`docs/behavior/beatgrid.md`) and the key is shown in the
+deck and the browser (`docs/behavior/keylock.md`, `docs/behavior/browser.md`). The grid it
+fills is described in `docs/behavior/beatgrid.md`.
 
 ## What the public manual says
 
@@ -65,7 +66,10 @@ a tempo with the position of a beat, and a key, each one only when it is found.
   M3.
 - When the result arrives, a grid that is still empty and unlocked takes the tempo found and
   one marker on the first beat. A grid the user has given a tempo or a marker in the
-  meantime, or has locked, stays as it is; the result is kept for the resets.
+  meantime, or has locked, stays as it is, and so does a grid that came back from the
+  collection with any of them; the result is kept for the resets.
+- The key and the loudness found are kept in the collection with the track
+  (`docs/behavior/library.md`, *Cues, grid and analysis*).
 - The key found is kept with the loaded track and published with the deck.
 - The loudness of the track is measured too, for autogain (`docs/behavior/autogain.md`).
 - The tempo of the tag is not put in the grid: it stays what the deck header shows until the
@@ -75,7 +79,23 @@ a tempo with the position of a beat, and a key, each one only when it is found.
 - Once another track is in the deck, or the deck is ejected, the result for the previous one
   is dropped, even when it arrives later. A load that fails leaves the deck with its track and
   the analysis of that track.
-- The range of tempos is the default, 70 to 180 BPM, until the preferences choose another.
+- The range of tempos is the one the Decks page of the preferences chooses, 70 to 180 BPM by
+  default (`docs/behavior/settings.md`, *Decks*).
+
+### Range of tempos
+
+Read again on 17 November 2026: *Preferences*, *Analyze Options* page, setting *BPM Range*.
+The range sets the lowest and the highest tempo the analysis considers, to help it find the
+right one.
+
+- The Decks page offers a wide range, 70 to 180 BPM, the default, and ranges of one octave:
+  60 to 120, 70 to 140, 80 to 160, 90 to 180, 100 to 200 and 120 to 240 BPM.
+- A new range applies to every analysis that starts after it: the analysis of a load and that
+  of the collection in the background. An analysis already running ends with the range it
+  started with, and tracks already analysed keep their tempo; a reset of the grid uses the
+  result of the load (*Reset and lock*).
+- The range is kept in the settings file as its two ends; a range written there that is not
+  one of the choices is used if it is valid and leaves none selected.
 
 ### Reset and lock
 
@@ -100,8 +120,10 @@ period and the offset that collect the most of it over the whole track.
 ## Differences
 
 - The documented application offers an automatic range that also finds the downbeat. Platter's range
-  is fixed and the marker goes on the first beat, which may not be the first beat of a bar:
-  the bars of the waveform then count from it until the marker is moved.
+  is one of a list and the marker goes on the first beat, which may not be the first beat of a
+  bar: the bars of the waveform then count from it until the marker is moved.
+- The documented application's analysis page also chooses which markers analysis sets. Platter
+  always sets the grid marker on the first beat and no cue.
 - One tempo per track, as the grid holds in M3.
 - The tuning of a track is not measured; a track tuned far from A = 440 Hz may get a key a
   semitone away.
@@ -109,8 +131,9 @@ period and the offset that collect the most of it over the whole track.
   `docs/behavior/autogain.md`.
 - The documented application analyses again on a reset of the grid; the result of Platter's
   analysis depends only on the samples, so a reset uses the result of the load.
-- Analysis on import into the collection comes with the collection, later in M3. Until then
-  the result lives with the loaded track and is found again on each load.
+- A track is analysed again on each load, even when the collection keeps its result: the
+  resets need the tempo and the first beat found, which the collection does not keep. Tracks
+  never loaded are analysed in the background (`docs/behavior/browser.md`).
 - The lock does not yet keep a key: the key cannot be edited, so the analysis of the load
   always gives it.
 
@@ -122,7 +145,7 @@ period and the offset that collect the most of it over the whole track.
 | A sample that is not a finite number | An error |
 | Silence, a constant value, white noise | No tempo and no key |
 | A track shorter than eight beats of the slowest tempo of the range | No tempo |
-| A range outside 20 to 400 BPM, or one whose top is less than 1.5 times its bottom | An error |
+| A range outside 20 to 400 BPM, or one whose top is less than 1.5 times its bottom | An error; from the settings file or a command, the range in use stays |
 | A track longer than 20 minutes | Only its first 20 minutes are read |
 | The grid is edited or locked while the track is being analysed | The grid stays as the user left it |
 | Another track is loaded, or the deck is ejected, while it is being analysed | The result is dropped |

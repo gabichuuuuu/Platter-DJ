@@ -10,6 +10,7 @@ pub mod log;
 mod loops;
 mod rate;
 mod tempo;
+mod track_text;
 
 pub use cue::{Cue, CueKind, CueName, Cues, HotcueSlot};
 pub use deck::DeckId;
@@ -19,3 +20,4 @@ pub use grid::{BEATS_PER_BAR, Beat, BeatGrid, Bpm, MAX_BEATS_VISITED, MAX_MARKER
 pub use loops::{LoopRegion, LoopSize};
 pub use rate::SampleRate;
 pub use tempo::Tempo;
+pub use track_text::{MAX_TRACK_TEXT, TrackMemory, TrackTextError};

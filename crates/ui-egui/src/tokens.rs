@@ -124,6 +124,7 @@ token_group! {
         grid_beat => "grid-beat",
         grid_downbeat => "grid-downbeat",
         loop_region => "loop-region",
+        key_match => "key-match",
     }
 }
 

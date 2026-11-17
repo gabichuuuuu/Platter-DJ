@@ -3,6 +3,9 @@
 //! the detection: `docs/decisions/0020-own-analysis.md`; the level of autogain:
 //! `docs/decisions/0029-autogain-level.md`.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use platter_analysis::{Key, TempoRange, detect, integrated_loudness};
 use platter_core::{Bpm, SampleRate};
 
@@ -45,16 +48,54 @@ pub trait Analyser: Send + Sync {
     fn analyse(&self, stereo: &[f32], rate: SampleRate) -> TrackAnalysis;
 }
 
+/// The range of tempos of the preferences, shared by the analyses that read it: the loads of
+/// the decks and the analysis of the collection. A new range applies to the analyses that start
+/// after it is set.
+#[derive(Clone, Debug, Default)]
+pub struct SharedRange(Arc<AtomicU64>);
+
+impl SharedRange {
+    pub fn new(range: TempoRange) -> Self {
+        let shared = Self::default();
+        shared.set(range);
+        shared
+    }
+
+    /// Both ends go in one atomic word, in hundredths of a BPM, so a reader never sees the
+    /// bottom of one range with the top of another.
+    pub fn set(&self, range: TempoRange) {
+        let hundredths = |bpm: f64| (bpm * 100.0).round() as u64 & u64::from(u32::MAX);
+        self.0.store(
+            (hundredths(range.min()) << 32) | hundredths(range.max()),
+            Ordering::Relaxed,
+        );
+    }
+
+    /// The range set last; the default range before any is set.
+    pub fn get(&self) -> TempoRange {
+        let word = self.0.load(Ordering::Relaxed);
+        let bpm = |hundredths: u64| hundredths as f64 / 100.0;
+        TempoRange::new(bpm(word >> 32), bpm(word & u64::from(u32::MAX))).unwrap_or_default()
+    }
+}
+
 /// Platter's own detection, in the range of tempos of the preferences.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct PlatterAnalyser {
-    pub range: TempoRange,
+    range: SharedRange,
+}
+
+impl PlatterAnalyser {
+    /// A detection that looks in the range `range` holds when each analysis starts.
+    pub fn with_range(range: SharedRange) -> Self {
+        Self { range }
+    }
 }
 
 impl Analyser for PlatterAnalyser {
     /// A track the detection cannot read counts as one where nothing was found.
     fn analyse(&self, stereo: &[f32], rate: SampleRate) -> TrackAnalysis {
-        let Ok(found) = detect(stereo, 2, rate.hz(), self.range) else {
+        let Ok(found) = detect(stereo, 2, rate.hz(), self.range.get()) else {
             return TrackAnalysis::default();
         };
         TrackAnalysis {
@@ -68,4 +109,17 @@ impl Analyser for PlatterAnalyser {
             key: found.key,
         }
     }
+}
+
+/// Decodes the file at `path` and analyses it, as a load does, for a track no deck holds:
+/// the analysis of the collection in the background (`docs/behavior/browser.md`). Slow: it
+/// runs on a worker thread.
+pub fn analyse_file(
+    analyser: &dyn Analyser,
+    path: &std::path::Path,
+) -> Result<TrackAnalysis, platter_decode::DecodeError> {
+    let decoded = platter_decode::decode_file(path)?;
+    let rate = decoded.sample_rate;
+    let stereo = decoded.into_stereo();
+    Ok(analyser.analyse(&stereo, rate))
 }
