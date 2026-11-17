@@ -45,6 +45,10 @@ pub const COMMAND_CAPACITY: usize = 256;
 /// The most the key of a deck moves either way, in semitones.
 pub const MAX_KEY_SHIFT: f64 = 12.0;
 
+/// The side of the crossfader each channel starts on, deck A first.
+pub const CROSSFADER_SIDES: [CrossfaderSide; DeckId::COUNT] =
+    [CrossfaderSide::Left, CrossfaderSide::Right];
+
 /// A track as a deck holds it: its audio and the stretch key lock plays it with, when one
 /// could be built for it.
 #[derive(Debug)]

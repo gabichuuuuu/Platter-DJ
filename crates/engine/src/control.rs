@@ -28,8 +28,8 @@ use crate::command::{
 };
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
-    self, COMMAND_CAPACITY, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit, LoopPart,
-    LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
+    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
+    LoopPart, LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
 };
 use crate::stretch::TrackStretch;
 use crate::tap::TapTempo;
@@ -151,7 +151,7 @@ pub struct MixerControls {
     pub crossfader: f64,
     pub crossfader_curve: CrossfaderCurve,
     /// The side of the crossfader each channel is on, deck A first.
-    pub crossfader_sides: [CrossfaderSide; 2],
+    pub crossfader_sides: [CrossfaderSide; DeckId::COUNT],
     /// Beats of the master clock an automatic fade across the whole travel takes.
     pub fade_beats: f64,
     pub master_gain_db: f64,
@@ -175,7 +175,7 @@ impl Default for MixerControls {
         Self {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
-            crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
+            crossfader_sides: CROSSFADER_SIDES,
             fade_beats: 8.0,
             master_gain_db: 0.0,
             headphone_mix: 0.0,
@@ -305,7 +305,7 @@ impl Default for DeckSnapshot {
 /// State of the engine at one moment, for the interface to draw.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
-    pub decks: [DeckSnapshot; 2],
+    pub decks: [DeckSnapshot; DeckId::COUNT],
     /// A track with a cue of the type load starts at it: `docs/behavior/cues.md`.
     pub load_marker: bool,
     pub preview: PreviewSnapshot,
@@ -399,7 +399,7 @@ struct PreviewControl {
 
 pub struct Engine {
     ends: ControlEnds,
-    decks: [DeckControl; 2],
+    decks: [DeckControl; DeckId::COUNT],
     preview: PreviewControl,
     mixer: MixerControls,
     /// The tempo master is chosen automatically.
@@ -1382,7 +1382,7 @@ impl Engine {
             }
         };
         Snapshot {
-            decks: [deck(DeckId::A), deck(DeckId::B)],
+            decks: DeckId::ALL.map(deck),
             mixer: MixerControls {
                 crossfader: self.crossfader(),
                 ..self.mixer.clone()
