@@ -145,7 +145,7 @@ impl Default for DeckControls {
     }
 }
 
-/// Where the controls shared by both decks stand.
+/// Where the controls shared by all the decks stand.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MixerControls {
     pub crossfader: f64,
@@ -937,7 +937,7 @@ impl Engine {
         Ok(())
     }
 
-    /// The commands of the controls both decks share.
+    /// The commands of the controls all the decks share.
     fn dispatch_shared(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
             Command::MixerCrossfaderSet { position } => {

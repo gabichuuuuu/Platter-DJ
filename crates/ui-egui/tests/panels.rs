@@ -52,6 +52,11 @@ struct State {
     min_controls: usize,
 }
 
+/// What the two decks the window shows hold, with decks C and D as they start.
+fn shown<T: Default>([a, b]: [T; 2]) -> [T; DeckId::COUNT] {
+    [a, b, T::default(), T::default()]
+}
+
 /// The four states of the reference screens, plus one with everything that only shows
 /// when something went wrong: a clipped master and a deck that could not read its file.
 fn states() -> Vec<State> {
@@ -292,8 +297,8 @@ impl Stage {
         let mut shell = Shell::new(Language::English).unwrap();
         shell.set_texts(texts);
         shell.state.settings_page = state.page;
-        shell.state.deck_page = state.pages;
-        shell.state.cue_map = state.mapping;
+        shell.state.deck_page = shown(state.pages);
+        shell.state.cue_map = shown(state.mapping);
         shell.state.browser.menu = state.menu;
         shell.state.browser.naming = state.naming;
         shell.state.browser.tree_scroll = state.tree_scroll;
@@ -332,7 +337,7 @@ impl Stage {
         };
         let mut actions = Vec::new();
         let mut view = self.state.scene.view();
-        view.notices = self.state.notices;
+        view.notices = shown(self.state.notices);
         let shell = &mut self.shell;
         let mut output = self.ctx.run_ui(input, |ui| {
             actions = shell.show(ui, &view);
@@ -503,7 +508,7 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
                 .filter(|state| state.page.is_none() && !state.details)
             {
                 let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
-                stage.shell.state.deck_page = pages;
+                stage.shell.state.deck_page = shown(pages);
                 stage.frame(Vec::new());
                 stage.frame(Vec::new());
                 let controls: Vec<Control> = stage

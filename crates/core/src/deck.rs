@@ -2,15 +2,17 @@ use std::fmt;
 
 use crate::ValueError;
 
-/// A deck of the mixer. Decks C and D arrive with the four-deck layout.
+/// A deck of the mixer: `docs/behavior/decks.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeckId {
     A,
     B,
+    C,
+    D,
 }
 
 impl DeckId {
-    pub const ALL: [Self; 2] = [Self::A, Self::B];
+    pub const ALL: [Self; 4] = [Self::A, Self::B, Self::C, Self::D];
     pub const COUNT: usize = Self::ALL.len();
 
     /// Position of the deck in per-deck arrays.
@@ -18,6 +20,8 @@ impl DeckId {
         match self {
             Self::A => 0,
             Self::B => 1,
+            Self::C => 2,
+            Self::D => 3,
         }
     }
 
@@ -25,6 +29,8 @@ impl DeckId {
         match self {
             Self::A => 'A',
             Self::B => 'B',
+            Self::C => 'C',
+            Self::D => 'D',
         }
     }
 
@@ -33,9 +39,11 @@ impl DeckId {
         match text {
             "a" | "A" => Ok(Self::A),
             "b" | "B" => Ok(Self::B),
+            "c" | "C" => Ok(Self::C),
+            "d" | "D" => Ok(Self::D),
             _ => Err(ValueError::UnknownChoice {
                 name: "deck",
-                expected: "a, b",
+                expected: "a, b, c, d",
             }),
         }
     }
@@ -58,7 +66,8 @@ mod tests {
             assert_eq!(DeckId::parse(&deck.to_string()), Ok(deck));
         }
         assert_eq!(DeckId::parse("b"), Ok(DeckId::B));
-        assert!(DeckId::parse("c").is_err());
+        assert_eq!(DeckId::parse("d"), Ok(DeckId::D));
+        assert!(DeckId::parse("e").is_err());
         assert!(DeckId::parse("").is_err());
     }
 }

@@ -1,4 +1,4 @@
-//! The processor: two decks, the mixer, the master section and the headphone output, or
+//! The processor: four decks, the mixer, the master section and the headphone output, or
 //! each deck on its own outputs in external mixer mode.
 
 use std::sync::Arc;
@@ -116,10 +116,10 @@ impl Processor {
 
     /// Fills `output`, interleaved with `channels` channels per frame, with the next block
     /// of the mix. The master goes to the first two channels and, when there are four or
-    /// more, the headphones go to the third and the fourth; in external mode deck A and
-    /// deck B take those pairs instead. One channel gets the sum of both sides of the first
-    /// pair at half level; further channels are silent. This is the function the audio
-    /// callback calls, and the deviceless render calls the same one.
+    /// more, the headphones go to the third and the fourth; in external mode decks A and C
+    /// take the first pair and decks B and D the second instead. One channel gets the sum
+    /// of both sides of the first pair at half level; further channels are silent. This is
+    /// the function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
         self.clock.choose(self.candidates());
@@ -313,9 +313,9 @@ impl Processor {
 
     /// The next frame of the first and the second pair of outputs. In internal mode they
     /// are the master and the headphones; without a second pair the headphone part of the
-    /// path is skipped, parameter ramps included. In external mode they are deck A and
-    /// deck B, or both decks on the first pair; during the ramp between the modes both
-    /// paths run and their outputs are blended.
+    /// path is skipped, parameter ramps included. In external mode they are decks A and C
+    /// and decks B and D, or all the decks on the first pair; during the ramp between the
+    /// modes both paths run and their outputs are blended.
     fn next_frame(&mut self, two_pairs: bool) -> (Frame, Frame) {
         let mut mix = [0.0f32; 2];
         let mut pre_listened = [0.0f32; 2];

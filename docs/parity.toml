@@ -32,7 +32,7 @@ id = "decks"
 title = "Decks"
 features = [
   { id = "decks-a-b", name = "Decks A and B", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels" },
-  { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "planned" },
+  { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "in_progress", evidence = "cargo test -p platter-engine --test four_decks" },
   { id = "track-deck", name = "Track deck", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-engine --test transport" },
   { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "planned" },
   { id = "remix-deck", name = "Remix deck", milestone = "M5", status = "planned" },

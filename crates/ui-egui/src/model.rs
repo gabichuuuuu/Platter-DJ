@@ -17,6 +17,10 @@ use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
 
+/// The decks the window shows. Decks C and D wait for the four-deck layout:
+/// `docs/behavior/decks.md`.
+pub const SHOWN_DECKS: [DeckId; 2] = [DeckId::A, DeckId::B];
+
 /// Time of day for the clock of the status header.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Clock {
@@ -448,7 +452,7 @@ pub struct BrowserView {
     /// Why the analysis of the collection stopped, if it did.
     pub problem: Option<String>,
     /// The covers of the tracks the decks hold.
-    pub deck_covers: [Option<CoverImage>; 2],
+    pub deck_covers: [Option<CoverImage>; DeckId::COUNT],
 }
 
 /// How far the analysis of the collection in the background has gone.

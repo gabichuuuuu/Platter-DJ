@@ -17,6 +17,7 @@ use crate::command::AppCommand;
 use crate::cx::{ControlKind, Cx, id};
 use crate::i18n::Texts;
 use crate::icons::Glyph;
+use crate::model::SHOWN_DECKS;
 use crate::paint;
 use crate::theme::Theme;
 use crate::widgets::key::{self, KeySpec, Press};
@@ -192,6 +193,8 @@ pub fn band_colors(theme: &Theme, deck: DeckId) -> [Color32; 3] {
     match deck {
         DeckId::A => [color.deck_a_low, color.deck_a, color.deck_a_high],
         DeckId::B => [color.deck_b_low, color.deck_b, color.deck_b_high],
+        DeckId::C => [color.deck_c_low, color.deck_c, color.deck_c_high],
+        DeckId::D => [color.deck_d_low, color.deck_d, color.deck_d_high],
     }
 }
 
@@ -363,15 +366,20 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
 
 /// The two scrolling lanes of the main window: for each deck a gutter with its badge and
 /// zoom keys, and its lane.
-pub fn lanes(cx: &mut Cx<'_>, rect: Rect, decks: &[DeckSnapshot; 2], zoom: [usize; 2]) {
+pub fn lanes(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    decks: &[DeckSnapshot; DeckId::COUNT],
+    zoom: [usize; DeckId::COUNT],
+) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
     let color = &tokens.color;
     let seam = tokens.space.s1;
     let lane_height = (rect.height() - seam) / 2.0;
-    for deck in DeckId::ALL {
-        let top = rect.top() + deck.index() as f32 * (lane_height + seam);
+    for (row, deck) in SHOWN_DECKS.into_iter().enumerate() {
+        let top = rect.top() + row as f32 * (lane_height + seam);
         let row = Rect::from_min_size(
             egui::pos2(rect.left(), top),
             egui::vec2(rect.width(), lane_height),

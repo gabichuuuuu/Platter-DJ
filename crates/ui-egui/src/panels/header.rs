@@ -9,7 +9,7 @@ use egui::{Align2, CornerRadius, Rect, Sense};
 use platter_core::Bpm;
 use platter_engine::{ClockMode, ClockSnapshot, Command};
 
-use crate::command::{AppCommand, SettingsPage};
+use crate::command::{AppCommand, MeterId, SettingsPage};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
@@ -240,7 +240,7 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         meter_rect,
         &MeterSpec {
             levels: view.engine.master_levels,
-            memory: state.meters[2],
+            memory: state.meters[MeterId::Master.index()],
             segments: MASTER_METER_SEGMENTS,
             vertical: false,
         },

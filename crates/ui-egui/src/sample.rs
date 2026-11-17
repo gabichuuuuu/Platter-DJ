@@ -517,7 +517,7 @@ fn browser() -> BrowserView {
         // As the design system shows the status bar.
         analysis: Some(AnalysisStatus { done: 3, total: 12 }),
         problem: None,
-        deck_covers: [None, None],
+        deck_covers: [None, None, None, None],
     }
 }
 
@@ -527,6 +527,8 @@ pub fn playing() -> Scene {
         decks: [
             loaded_deck(0, 299.95, 124.0 / 125.0, [0.42, 0.38]),
             loaded_deck(1, 32.15, 124.0 / 126.0, [0.47, 0.5]),
+            DeckSnapshot::default(),
+            DeckSnapshot::default(),
         ],
         master_levels: [0.55, 0.5],
         limiter_gain: 1.0,
@@ -683,7 +685,12 @@ pub fn startup() -> Scene {
     };
     Scene {
         engine: Snapshot {
-            decks: [DeckSnapshot::default(), reading],
+            decks: [
+                DeckSnapshot::default(),
+                reading,
+                DeckSnapshot::default(),
+                DeckSnapshot::default(),
+            ],
             ..Snapshot::default()
         },
         audio: AudioView {

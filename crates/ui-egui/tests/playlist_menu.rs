@@ -1207,7 +1207,7 @@ fn covers_are_drawn_in_the_rows_and_in_the_header_of_a_deck() {
     for (index, path) in paths.into_iter().enumerate() {
         scene.browser.covers.insert(path, cover(index as u8));
     }
-    scene.browser.deck_covers = [Some(cover(200)), None];
+    scene.browser.deck_covers = [Some(cover(200)), None, None, None];
     let mut stage = Stage::new(scene);
     // Drawn again with the same pictures, then with one read again, as after an import.
     stage.frame(Vec::new());
