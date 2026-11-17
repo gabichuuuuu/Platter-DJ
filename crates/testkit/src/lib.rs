@@ -6,4 +6,5 @@
 pub mod alloc;
 pub mod files;
 pub mod measure;
+pub mod pictures;
 pub mod signal;

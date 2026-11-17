@@ -15,6 +15,7 @@ use platter_decode::{
     COVER_SIDE, Cover, CoverError, DecodeError, MAX_PICTURE_BYTES, cover_bytes, cover_file,
 };
 use platter_testkit::files::{aiff_pcm16, flac_pcm16, flac_pcm16_tagged, wav_pcm16};
+use platter_testkit::pictures::{adler32, crc32, flac_with_pictures, picture_block, png, rgba_png};
 use proptest::prelude::{ProptestConfig, any, prop, proptest};
 
 const RATE: u32 = 44_100;
@@ -27,28 +28,6 @@ const BACK_COVER: u8 = 4;
 
 // ---------------------------------------------------------------------------------------
 // Checksums and encodings
-
-fn crc32(bytes: &[u8]) -> u32 {
-    !bytes.iter().fold(u32::MAX, |mut crc, byte| {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            crc = if crc & 1 != 0 {
-                (crc >> 1) ^ 0xEDB8_8320
-            } else {
-                crc >> 1
-            };
-        }
-        crc
-    })
-}
-
-fn adler32(bytes: &[u8]) -> u32 {
-    let (a, b) = bytes.iter().fold((1u32, 0u32), |(a, b), byte| {
-        let a = (a + u32::from(*byte)) % 65_521;
-        (a, (b + a) % 65_521)
-    });
-    (b << 16) | a
-}
 
 fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -72,59 +51,6 @@ fn base64(bytes: &[u8]) -> String {
 
 // ---------------------------------------------------------------------------------------
 // Pictures
-
-/// Colour type of the PNG header: 0 grey, 2 RGB, 6 RGBA.
-fn png(width: u32, height: u32, colour_type: u8, pixels: &[u8]) -> Vec<u8> {
-    let channels = match colour_type {
-        0 => 1,
-        2 => 3,
-        _ => 4,
-    };
-    let row = width as usize * channels;
-    assert_eq!(pixels.len(), row * height as usize);
-    let mut raw = Vec::new();
-    for line in pixels.chunks(row) {
-        // Filter type 0: the row as it is.
-        raw.push(0);
-        raw.extend_from_slice(line);
-    }
-    let mut zlib = vec![0x78, 0x01];
-    let blocks: Vec<&[u8]> = raw.chunks(65_535).collect();
-    for (index, block) in blocks.iter().enumerate() {
-        zlib.push(u8::from(index + 1 == blocks.len()));
-        let length = block.len() as u16;
-        zlib.extend_from_slice(&length.to_le_bytes());
-        zlib.extend_from_slice(&(!length).to_le_bytes());
-        zlib.extend_from_slice(block);
-    }
-    zlib.extend_from_slice(&adler32(&raw).to_be_bytes());
-
-    let mut header = Vec::new();
-    header.extend_from_slice(&width.to_be_bytes());
-    header.extend_from_slice(&height.to_be_bytes());
-    header.extend_from_slice(&[8, colour_type, 0, 0, 0]);
-
-    let mut out = vec![0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n'];
-    for (kind, body) in [(b"IHDR", header), (b"IDAT", zlib), (b"IEND", Vec::new())] {
-        out.extend_from_slice(&(body.len() as u32).to_be_bytes());
-        let start = out.len();
-        out.extend_from_slice(kind);
-        out.extend_from_slice(&body);
-        let crc = crc32(&out[start..]);
-        out.extend_from_slice(&crc.to_be_bytes());
-    }
-    out
-}
-
-fn rgba_png(width: u32, height: u32, pixel: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
-    let mut data = Vec::new();
-    for y in 0..height {
-        for x in 0..width {
-            data.extend_from_slice(&pixel(x, y));
-        }
-    }
-    png(width, height, 6, &data)
-}
 
 fn solid_png(colour: [u8; 4]) -> Vec<u8> {
     rgba_png(2, 2, |_, _| colour)
@@ -221,37 +147,6 @@ fn grey_jpeg(blocks_wide: u16, levels: &[u8], declared: Option<(u16, u16)>) -> V
 
 // ---------------------------------------------------------------------------------------
 // Containers
-
-/// The body of a FLAC picture block (RFC 9639, section 8.8), also the content of a
-/// `METADATA_BLOCK_PICTURE` comment.
-fn picture_block(kind: u8, mime: &str, data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(&u32::from(kind).to_be_bytes());
-    out.extend_from_slice(&(mime.len() as u32).to_be_bytes());
-    out.extend_from_slice(mime.as_bytes());
-    // No description; width, height, depth and palette size left at zero (unknown).
-    out.extend_from_slice(&[0; 4 * 5]);
-    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
-    out.extend_from_slice(data);
-    out
-}
-
-/// A FLAC file of silence with picture blocks after the stream information.
-fn flac_with_pictures(pictures: &[(u8, &[u8])]) -> Vec<u8> {
-    let plain = flac_pcm16(RATE, 2, &SILENCE);
-    // The stream information block: its header at 4, its 34-byte body after.
-    let mut out = plain[..42].to_vec();
-    out[4] = 0x00;
-    for (index, (kind, data)) in pictures.iter().enumerate() {
-        let body = picture_block(*kind, "image/png", data);
-        let last = if index + 1 == pictures.len() { 0x80 } else { 0 };
-        out.push(last | 6);
-        out.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
-        out.extend_from_slice(&body);
-    }
-    out.extend_from_slice(&plain[42..]);
-    out
-}
 
 /// An ID3v2.3 tag with one attached-picture frame per entry (ID3v2.3, section 4.15).
 fn id3v2(pictures: &[(u8, &[u8])]) -> Vec<u8> {
