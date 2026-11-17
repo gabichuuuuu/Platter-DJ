@@ -152,6 +152,12 @@ Nobody creates a tag by hand and nobody edits the version or `CHANGELOG.md` outs
 pull request. `release-plz.toml` holds the configuration; a new crate that is part of the
 application goes into the `changelog_include` list of the `platter` package.
 
+A crate added after the last release also needs a `[[package]]` section with a tag name of its
+own, such as `git_tag_name = "<crate>-v{{ version }}"`: release-plz reads every crate at the last
+tag and fails the release pull request when one did not exist there. Remove that section in the
+first pull request after the release whose tag contains the crate; kept longer, it makes every
+merge, docs alone included, raise the version.
+
 ## Adding a dependency
 
 1. Check that it is on the approved list in `docs/dependencies.md`. If it is not, stop and ask
