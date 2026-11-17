@@ -1,19 +1,30 @@
 //! Decodes an audio file into `f32` PCM in memory.
 //!
 //! The decoding itself is done by `symphonia`, which is confined to this crate: no type of
-//! that library appears in the public interface, so replacing it touches this file only.
+//! that library appears in the public interface, so replacing it touches this file and the
+//! module `cover` only. The cover pictures of the tags are decoded in `cover`.
 //!
 //! A file is untrusted input. Whatever it contains, decoding returns audio or an error; the
 //! sizes it declares are bounded before memory is reserved for them.
+//!
+//! The tags of a track are written back into its file by the module `tag_write`, Platter's
+//! own code, which uses no external library.
 
+mod cover;
 mod mp4_edit;
+mod tag_write;
 
 use std::fmt;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
 
+pub use cover::{
+    COVER_SIDE, Cover, CoverError, CoverPicture, MAX_COVER_IMPORT_BYTES, MAX_PICTURE_BYTES,
+    MAX_PICTURE_SIDE, PictureFormat, cover_bytes, cover_file,
+};
 use mp4_edit::{Edit, read_edit};
+pub use tag_write::{MAX_PLATTER_BYTES, MAX_TAG_CHARS, TagEdit, TagWriteError, write_tags};
 
 use platter_core::SampleRate;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -235,11 +246,9 @@ fn file_edit(path: &Path) -> Option<Edit> {
 /// header fields can overflow, which panics in builds with overflow checks; a damaged file
 /// must be an error for the caller, never the end of the program. See
 /// `docs/decisions/0008-decoder-panic-boundary.md`.
-fn guarded<T>(work: impl FnOnce() -> Result<T, DecodeError>) -> Result<T, DecodeError> {
+fn guarded<T, E: From<DecodeError>>(work: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| {
-        Err(DecodeError::Corrupt(
-            "the decoder gave up on the content".to_owned(),
-        ))
+        Err(DecodeError::Corrupt("the decoder gave up on the content".to_owned()).into())
     })
 }
 

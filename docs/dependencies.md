@@ -21,8 +21,10 @@ dependency has no row or a row has no dependency.
 | `rusqlite` | The library file: collection, playlists and history, with the SQLite it compiles (`bundled`) | MIT; libsqlite3-sys MIT, the rest MIT, Apache-2.0 or Zlib | `platter-library`, module `store` (`docs/decisions/0022-library-store.md`) | Another store behind the trait `Library` |
 | `serde` | Deserialises the feature inventory and the render script | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script` | A hand-written reader for the few structures involved |
 | `timestretch` | Key lock and transposition: plays a track at the tempo of the deck and the pitch of the track moved by the shift of its key (`docs/decisions/0031-transposition.md`); brings rustfft and its helpers | MIT; its dependencies MIT OR Apache-2.0 | `platter-engine`, module `stretch`, behind the trait `Stretch` of `platter-dsp` (`docs/decisions/0021-key-lock-stretch.md`); its feature `accelerate` stays off | An own stretch in `platter-dsp` |
-| `symphonia` | Decodes MP3, AAC in M4A, WAV, AIFF, FLAC and Ogg Vorbis; reads title, artist and album | MPL-2.0 | `platter-decode`, behind its own types and a panic boundary (`docs/decisions/0008-decoder-panic-boundary.md`) | Own decoders from the public specifications |
+| `symphonia` | Decodes MP3, AAC in M4A, WAV, AIFF, FLAC and Ogg Vorbis; reads title, artist, album and the pictures of the tags | MPL-2.0 | `platter-decode`, behind its own types and a panic boundary (`docs/decisions/0008-decoder-panic-boundary.md`) | Own decoders from the public specifications |
 | `toml` | Parses `docs/parity.toml`, the render script, the design tokens, the icons, the translations, the shortcut file, the MIDI mappings and the settings file | MIT OR Apache-2.0 | `xtask` (not distributed); `platter-cli`, module `script`; `platter-ui-egui`, modules `tokens`, `icons`, `i18n` and `keymap`; `platter-control`, module `file`; `platter`, module `config` | A reader for the TOML subset the project files use |
+| `zune-jpeg` | Decodes the JPEG cover pictures of the tags (`docs/behavior/cover-art.md`); brings zune-core | MIT OR Apache-2.0 OR Zlib, as zune-core | `platter-decode`, module `cover`; none of its types is public, and it runs behind a panic boundary | An own baseline and progressive JPEG decoder |
+| `zune-png` | Decodes the PNG cover pictures of the tags (`docs/behavior/cover-art.md`); brings zune-core, zune-inflate (MIT OR Apache-2.0 OR Zlib) and simd-adler32 (MIT) | MIT OR Apache-2.0 OR Zlib | `platter-decode`, module `cover`; none of its types is public, and it runs behind a panic boundary | An own PNG decoder with its inflate |
 
 Tools that are not dependencies: `cargo-deny` 0.20.2 (licences and advisories), installed
 separately; release-plz 0.4.3 (Apache-2.0), approved by the maintainer, which runs only in
@@ -46,10 +48,12 @@ licence again and read the documentation of the version obtained.
 | Property tests | proptest | 1.12.0 | MIT OR Apache-2.0 | M1 | Tests only; not distributed |
 | Cargo metadata | cargo_metadata | 0.23.1 | MIT | M0 | `xtask` only; not distributed |
 | MIDI | midir | 0.11.1 | MIT | M3 | Access to the MIDI ports of the system |
-| Tags | lofty | 0.25.5 | MIT OR Apache-2.0 | M3 | Temporary, behind a project trait |
+| Tags | none | - | - | M3 | Not external: tags are written by the project's own code (`platter-decode`, module `tag_write`). lofty 0.25.5 was tried and is not used: it brings `paste`, which `cargo deny check` reports as unmaintained |
 | Library | rusqlite | 0.42.0 | MIT | M3 | Temporary, behind a project trait |
 | Stems | ort | 2.0.0-rc.15 | MIT OR Apache-2.0 | M4 | ONNX runtime |
 | HID | hidapi | 2.6.7 | MIT | M5 | Access to the HID devices of the system |
+| Cover art | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify |
+| Cover art | zune-png | 0.5.2 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify; PNG comes from the same family of decoders |
 
 Notes:
 

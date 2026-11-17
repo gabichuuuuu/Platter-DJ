@@ -18,6 +18,8 @@ aac = ["symphonia/aac", "symphonia/isomp4"]
 [dependencies]
 platter-core = { path = "../core" }
 symphonia = { workspace = true, features = ["mp3", "wav", "aiff", "pcm", "flac", "ogg", "vorbis", "id3v2"] }
+zune-jpeg.workspace = true
+zune-png.workspace = true
 
 [dev-dependencies]
 platter-testkit = { path = "../testkit" }
