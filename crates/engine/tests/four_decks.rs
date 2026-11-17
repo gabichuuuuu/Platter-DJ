@@ -112,3 +112,27 @@ fn a_command_names_decks_c_and_d_and_no_other() {
     args.insert("deck".to_owned(), Value::Text("e".to_owned()));
     assert!(Command::from_args("deck.play_pause", &args).is_err());
 }
+
+#[test]
+fn four_decks_at_full_scale_stay_under_the_ceiling() {
+    let mut rig = Rig::new();
+    for (deck, hz) in DeckId::ALL.into_iter().zip(TONES) {
+        rig.load(
+            deck,
+            sine_file(&format!("four-loud-{deck}"), hz, 10.0, 0.9, RATE),
+        );
+        rig.send(Command::MixerCrossfaderAssign {
+            deck,
+            side: CrossfaderSide::Thru,
+        });
+        rig.send(Command::DeckPlay { deck });
+    }
+    let output = rig.run_stereo(1.0);
+    assert!(output.iter().all(|sample| sample.is_finite()));
+    let peak = output
+        .iter()
+        .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+    assert!(peak <= 1.0, "{peak}");
+    let snapshot = rig.engine.snapshot();
+    assert!(snapshot.limiter_gain < 0.5, "{}", snapshot.limiter_gain);
+}

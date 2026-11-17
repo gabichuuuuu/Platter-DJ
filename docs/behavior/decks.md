@@ -69,9 +69,13 @@ that only concerns decks C and D.
 | Decks A and C both on the left with the crossfader at the far right | Both are silent in the master |
 | Four decks playing at full scale | The safety limiter of the master holds the peak |
 | External mode, decks A and C playing, with a four-output device | Both are heard on the first pair, summed |
+| A file dropped on the window away from the decks, with decks A and B loaded | It loads into deck A, never into a deck the window does not show |
 | A history entry stored with a deck number Platter does not know | It reads as deck A |
 | A MIDI mapping or a render script written for two decks | It loads as before |
 
 ## Tests
 
-`crates/core/src/deck.rs` (letters and indices), `crates/engine/tests/four_decks.rs`.
+`crates/core/src/deck.rs` (letters and indices), `crates/engine/src/rt/clock.rs` (tempo
+master among four decks), `crates/engine/tests/four_decks.rs`,
+`crates/engine/tests/realtime_memory.rs` (four decks without allocation) and
+`crates/ui-egui/tests/panels.rs` (the window with decks C and D in use, and a dropped file).

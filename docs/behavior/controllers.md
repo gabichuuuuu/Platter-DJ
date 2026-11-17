@@ -210,7 +210,7 @@ The Controllers page of the preferences, as the design system draws it:
   the next one. The messages do not act on the engine while Learn is on.
 - *Add* offers the functions a control can drive: those without parameters but the deck, as
   buttons, and those with one number, as faders over its range. The deck is the one the page
-  targets, A or B.
+  targets, A, B, C or D (`docs/behavior/decks.md`).
 - Every change is written into the mapping file at once, and the controller is opened again
   with it; a mapping with a mistake is not written and the page says why. An assignment
   without a control is not written until Learn gives it one.
@@ -230,7 +230,7 @@ The Controllers page of the preferences, as the design system draws it:
 - The public manual has a toggle mode and a mode that sets a fixed value. Platter has toggle
   commands and fixed parameters instead, so a button needs no state of its own beyond being
   down or up.
-- The focus deck as a target is not there: an assignment names deck A or B, or none.
+- The focus deck as a target is not there: an assignment names a deck, A to D, or none.
 - Mappings are TOML files of Platter. Mapping files of other applications are not read.
 - Output ports, the choice of all ports for a mapping, virtual ports and noticing a device
   plugged in or out come with the controller manager. An input whose device is unplugged

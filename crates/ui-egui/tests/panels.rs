@@ -7,6 +7,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::{BTreeSet, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
@@ -286,6 +288,8 @@ struct Stage {
     time: f64,
     /// Modifier keys held down during the frames.
     modifiers: Modifiers,
+    /// Files dropped onto the window in the next frame.
+    dropped: Vec<egui::DroppedFileHandle>,
 }
 
 impl Stage {
@@ -312,6 +316,7 @@ impl Stage {
             state: state.clone(),
             time: 0.0,
             modifiers: Modifiers::NONE,
+            dropped: Vec::new(),
         };
         // Two frames, so everything that takes a frame to settle has settled.
         stage.frame(Vec::new());
@@ -333,6 +338,7 @@ impl Stage {
             time: Some(self.time),
             events,
             focused: true,
+            dropped_files: std::mem::take(&mut self.dropped),
             ..RawInput::default()
         };
         let mut actions = Vec::new();
@@ -1574,4 +1580,50 @@ fn readouts_keep_their_width_while_their_digits_change() {
     let (wide, second) = left_edge(293.55);
     assert_eq!((narrow.as_str(), wide.as_str()), ("-01:51.1", "-01:18.8"));
     assert!((first - second).abs() < 0.01, "{first} and {second}");
+}
+
+/// A file dropped onto the window, as the platform hands it over.
+#[derive(Debug)]
+struct Dropped(PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        Ok(Vec::new())
+    }
+}
+
+/// Deck C holds a track, is the tempo master and clips, and deck D is empty, while the
+/// window shows decks A and B: `docs/behavior/decks.md`.
+#[test]
+fn the_window_draws_with_decks_c_and_d_in_use_and_drops_only_onto_a_shown_deck() {
+    let mut scene = sample::playing();
+    scene.engine.decks[DeckId::C.index()] = scene.engine.decks[DeckId::A.index()].clone();
+    scene.engine.decks[DeckId::C.index()].levels = [1.2, 1.2];
+    scene.engine.clock.master = Some(DeckId::C);
+    let mut state = state_named("main");
+    let shown_only = Stage::new(&state).controls().len();
+    state.scene = scene;
+    let mut stage = Stage::new(&state);
+    assert_eq!(
+        stage.controls().len(),
+        shown_only,
+        "decks C and D add no control to the window"
+    );
+    stage.frame(vec![Event::PointerGone]);
+    // Decks A and B hold tracks and the pointer is over no deck: the drop goes to deck A,
+    // not to deck D, empty but not shown.
+    stage.dropped = vec![Arc::new(Dropped(PathBuf::from("dropped.wav")))];
+    let (actions, _) = stage.frame(Vec::new());
+    let loads: Vec<_> = actions
+        .iter()
+        .filter_map(|action| match action {
+            Action::Engine(Command::DeckLoad { deck, .. }) => Some(*deck),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(loads, [DeckId::A]);
 }
