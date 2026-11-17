@@ -105,12 +105,14 @@ tag in a chunk (below).
   blocks (pictures, seek table, application data) stay as they are. The padding blocks are
   merged into one that keeps the metadata at its old size when the rest fits, so the audio
   frames do not move; when the metadata grows past it, it is followed by 1024 bytes of
-  padding. An ID3v2 tag in front of the stream is kept byte for byte. Sources: RFC 9639,
+  padding. An ID3v2 tag in front of the stream is kept byte for byte. An edit of the cover
+  changes the pictures in both (*Covers*). Sources: RFC 9639,
   sections 8.1 to 8.6 (<https://www.rfc-editor.org/rfc/rfc9639>);
   <https://xiph.org/vorbis/doc/v-comment.html>.
 - **Vorbis comments** (FLAC and Ogg). Field names compare without case. Every field with the
   name is removed and the new value takes the place of the first. Other fields, a picture in
-  `METADATA_BLOCK_PICTURE` included, stay byte for byte, and so does the vendor string; a new
+  `METADATA_BLOCK_PICTURE` included unless the edit names the cover, stay byte for byte, and
+  so does the vendor string; a new
   FLAC comment block has an empty one. The comment goes to `COMMENT`, the name most software
   reads; `DESCRIPTION`, the name the Vorbis comment document lists, is left as it is.
 - **Ogg Vorbis.** The comment header, the second packet, is rebuilt, and the pages holding it
@@ -148,6 +150,52 @@ tag in a chunk (below).
   the rest the native chunks held, because a reader that finds it may read nothing else:
   Platter's own reader shows only the ID3 chunk of an AIFF file once there is one.
 
+### Covers
+
+The edit can import a cover or delete the covers of a file (`TagEdit::cover`):
+`Some(Some(picture))` imports one, `Some(None)` deletes them. A picture is built with
+`CoverPicture::from_bytes`, which takes the bytes of a JPEG or PNG file and refuses them
+unless Platter's own reader would show them (`docs/behavior/cover-art.md`): at most 8 MiB
+(`MAX_COVER_IMPORT_BYTES`), a size it can decode, at most 4096 pixels on a side.
+
+- **Importing** removes every picture of the file marked as the front cover, in every set of
+  tags, and writes the new one as the front cover, first among the pictures of the main tag.
+  Other pictures (a back cover, a picture of the artist) stay. The reader then shows the new
+  picture, since a front cover wins over any other.
+- **Deleting** removes every picture of the file, in every set of tags, so the reader finds
+  none.
+- **The 8 MiB bound.** A FLAC metadata block declares its length in 24 bits (RFC 9639,
+  section 8.1), so a picture block holds at most 16 MiB less its header; 8 MiB leaves room
+  for the header and for the base64 of the Ogg comment, and is far above a cover.
+
+| Format | Where the cover goes |
+| --- | --- |
+| ID3v2.3 / 2.4 | `APIC` frame: encoding 0, the MIME type (`image/jpeg`, `image/png`), picture type 3 (front cover), empty description, the picture |
+| ID3v2.2 | `PIC` frame: encoding 0, image format `JPG` or `PNG`, picture type 3, empty description, the picture |
+| FLAC | `PICTURE` metadata block (type 6): picture type 3, MIME type, empty description, width, height, colour depth (24 for JPEG; PNG from its header), 0 colours, the picture |
+| Ogg Vorbis | `METADATA_BLOCK_PICTURE` comment: the body of a FLAC `PICTURE` block, in base64 |
+| M4A | `covr` item: one `data` box of type 13 (JPEG) or 14 (PNG) |
+| WAV, AIFF | `APIC` frame of the ID3v2 tag of the `id3 ` or `ID3 ` chunk, created when missing |
+
+- **Which pictures a format marks as the front cover.** ID3v2 and FLAC by the picture type
+  (3); a `METADATA_BLOCK_PICTURE` comment by the type in its decoded body; every `data` box of
+  a `covr` item, as the reader marks them all. `COVERART`, an older Vorbis comment without a
+  picture type, is removed by both importing and deleting.
+- **Sets of tags.** In MP3 the ID3v2 tag at the start; in FLAC the metadata blocks, the
+  comment and an ID3v2 tag in front of the stream, which is edited for the cover only; in WAV
+  and AIFF the ID3 chunk. An ID3v1 tag has no picture.
+- **Base64** for the Ogg comment is Platter's own code, the alphabet and padding of RFC 4648,
+  section 4 (<https://www.rfc-editor.org/rfc/rfc4648>).
+- Sources: <https://id3.org/id3v2.4.0-frames> (section 4.14), <https://id3.org/id3v2.3.0>
+  (section 4.15), <https://id3.org/id3v2-00> (section 4.15); RFC 9639, sections 8.1 and 8.8
+  (<https://www.rfc-editor.org/rfc/rfc9639>). The Vorbis comment page of the Xiph wiki, which
+  describes `METADATA_BLOCK_PICTURE` and `COVERART`, could not be read on 17 November 2026
+  (its certificate had expired); the field names and their encoding were checked in the
+  source of the decoding library (version 0.6.1), which reads both, and so were the `data`
+  types 13 and 14 of a `covr` item, since the page of the QuickTime well-known types
+  (<https://developer.apple.com/documentation/quicktime-file-format/well-known_types>)
+  shows nothing without a script.
+
 ### Safe writing
 
 - **Which files.** The file must open with Platter's own reader (`probe_file`) as one of the six
@@ -174,11 +222,13 @@ tag in a chunk (below).
 
 ## Differences
 
-- No interface yet: there is no Edit dialog, no editing in the list and no editing of a
-  selection. The collection does not learn the new values from this call; the caller updates
-  it.
-- The rating, the colour and the cover are not written. Writing covers comes with the editing
-  of covers.
+- The details dialog and the menu of the list write tags (`docs/behavior/browser.md`, *Track
+  details*, and `docs/behavior/cover-art.md`, *Importing and deleting a cover*); there is no
+  editing in the list itself. The collection does not learn the new values from this call;
+  the caller updates it.
+- The rating and the colour are not written.
+- The public manual imports and deletes JPEG covers only; Platter imports PNG pictures too,
+  since its reader shows them.
 - Platter's own reader shows title, artist, album and tempo. It does not show genre, comment,
   key or Platter's data, and in WAV it shows no tag at all: the decoding library in use reads
   the `INFO` chunk only before the audio and does not return what it finds there, and does
@@ -229,6 +279,8 @@ tag in a chunk (below).
 | RF64 WAV, or a file the change would push past 4 GiB | Error; the file is unchanged |
 | The written copy no longer reads as the same format, rate, channel count or length | Error; the copy is deleted |
 | Read-only file | Error "the file is read-only"; the file is unchanged |
+| Cover picture over 8 MiB, of another format than JPEG or PNG, damaged, or over 4096 pixels on a side | Refused by `CoverPicture::from_bytes`; no file is opened |
+| Cover deleted from a file without pictures | The file is written again with its tags as they were |
 | Missing file, or a folder | Error from the system |
 | The folder does not let a file be created | Error from the system; the file is unchanged |
 

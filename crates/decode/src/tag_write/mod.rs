@@ -42,7 +42,7 @@ use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{Container, DecodeError, TAG_BPM_RANGE, probe_file};
+use crate::{Container, CoverPicture, DecodeError, TAG_BPM_RANGE, probe_file};
 
 /// Longest text written into one field, in characters; longer text is cut. The same bound
 /// as the library of Platter keeps, so a value it stores fits the file unchanged.
@@ -76,6 +76,9 @@ pub struct TagEdit {
     /// Platter's own data, opaque to the writer: `Some(Some(text))` sets it as given, even
     /// empty, `Some(None)` removes it. At most [`MAX_PLATTER_BYTES`].
     pub platter: Option<Option<String>>,
+    /// The cover: `Some(Some(picture))` replaces every front cover of the file with it,
+    /// `Some(None)` removes every picture.
+    pub cover: Option<Option<CoverPicture>>,
 }
 
 #[derive(Debug)]
@@ -248,6 +251,7 @@ struct Changes {
     key: Option<Option<String>>,
     platter: Option<Option<String>>,
     bpm: Option<Option<f64>>,
+    cover: Option<Option<CoverPicture>>,
 }
 
 impl Changes {
@@ -272,7 +276,19 @@ impl Changes {
             key: text(&edit.key),
             platter: edit.platter.clone(),
             bpm: edit.bpm,
+            cover: edit.cover.clone(),
         })
+    }
+
+    /// What happens to the pictures: `None` leaves them, `Some(None)` removes them all,
+    /// `Some(Some(picture))` makes it the only front cover.
+    fn cover(&self) -> Option<Option<&CoverPicture>> {
+        self.cover.as_ref().map(Option::as_ref)
+    }
+
+    /// Whether the edit imports a cover, which needs a tag to hold it.
+    fn imports_cover(&self) -> bool {
+        matches!(self.cover, Some(Some(_)))
     }
 
     fn field(&self, field: Field) -> Change<'_> {

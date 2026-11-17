@@ -37,6 +37,103 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1A, b'\n
 /// Start-of-image marker followed by the first byte of the next marker.
 const JPEG_START: [u8; 3] = [0xFF, 0xD8, 0xFF];
 
+/// Largest picture Platter writes into a file as its cover, in bytes. A FLAC metadata block
+/// holds at most 16 MiB with its header (RFC 9639, section 8.1), and the Vorbis comment of Ogg
+/// holds the picture in base64, a third larger.
+pub const MAX_COVER_IMPORT_BYTES: usize = 8 * 1024 * 1024;
+
+/// The image formats of a cover Platter writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PictureFormat {
+    Jpeg,
+    Png,
+}
+
+impl PictureFormat {
+    /// The MIME type, as ID3v2 and FLAC name the format of a picture.
+    pub fn mime(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+        }
+    }
+}
+
+/// A picture checked to be one Platter's reader shows, ready to be written as a cover.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoverPicture {
+    data: Vec<u8>,
+    format: PictureFormat,
+    width: u32,
+    height: u32,
+    /// Bits per pixel, as a FLAC picture block declares them.
+    depth: u32,
+}
+
+impl CoverPicture {
+    /// Takes the bytes of a JPEG or PNG file. They are decoded once, with the bounds of the
+    /// reader, so a cover Platter writes is always one it can show.
+    pub fn from_bytes(data: Vec<u8>) -> Result<Self, CoverError> {
+        if data.len() > MAX_COVER_IMPORT_BYTES {
+            return Err(CoverError::TooLargeToImport);
+        }
+        let decoded = decode_whole(&data)?;
+        let format = if data.starts_with(&PNG_SIGNATURE) {
+            PictureFormat::Png
+        } else {
+            PictureFormat::Jpeg
+        };
+        let depth = match format {
+            // The decoder gives RGB for every JPEG it reads.
+            PictureFormat::Jpeg => 24,
+            PictureFormat::Png => png_depth(&data).unwrap_or(32),
+        };
+        let side = |value: usize| u32::try_from(value).map_err(|_| CoverError::TooLarge);
+        Ok(Self {
+            width: side(decoded.width)?,
+            height: side(decoded.height)?,
+            data,
+            format,
+            depth,
+        })
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn format(&self) -> PictureFormat {
+        self.format
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Bits per pixel.
+    pub fn depth(&self) -> u32 {
+        self.depth
+    }
+}
+
+/// Bits per pixel of a PNG picture: the bit depth of its header chunk times the samples of
+/// its colour type (PNG specification, third edition, section 11.2.1).
+fn png_depth(data: &[u8]) -> Option<u32> {
+    let bit_depth = u32::from(*data.get(24)?);
+    let samples = match data.get(25)? {
+        0 | 3 => 1,
+        2 => 3,
+        4 => 2,
+        6 => 4,
+        _ => return None,
+    };
+    Some(bit_depth * samples)
+}
+
 /// A cover decoded and scaled down to fit in [`COVER_SIDE`] by [`COVER_SIDE`] pixels.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cover {
@@ -58,6 +155,8 @@ pub enum CoverError {
     /// The picture is over [`MAX_PICTURE_BYTES`] as stored, or declares more than
     /// [`MAX_PICTURE_SIDE`] pixels on a side.
     TooLarge,
+    /// The picture to write is over [`MAX_COVER_IMPORT_BYTES`].
+    TooLargeToImport,
 }
 
 impl fmt::Display for CoverError {
@@ -75,6 +174,11 @@ impl fmt::Display for CoverError {
                 f,
                 "the picture is too large: over {} MiB or {MAX_PICTURE_SIDE} pixels on a side",
                 MAX_PICTURE_BYTES / (1024 * 1024)
+            ),
+            Self::TooLargeToImport => write!(
+                f,
+                "the picture is too large to write as a cover: over {} MiB",
+                MAX_COVER_IMPORT_BYTES / (1024 * 1024)
             ),
         }
     }
@@ -157,12 +261,17 @@ struct Rgba {
 }
 
 fn decode_picture(data: &[u8]) -> Result<Cover, CoverError> {
+    Ok(fit(&decode_whole(data)?))
+}
+
+/// The pixels of a picture at its own size, within the bounds of the reader.
+fn decode_whole(data: &[u8]) -> Result<Rgba, CoverError> {
     if data.len() > MAX_PICTURE_BYTES {
         return Err(CoverError::TooLarge);
     }
     // The image decoders are third-party code fed with untrusted bytes, like the audio
     // decoder (`docs/decisions/0008-decoder-panic-boundary.md`).
-    let decoded = std::panic::catch_unwind(|| {
+    std::panic::catch_unwind(|| {
         if data.starts_with(&PNG_SIGNATURE) {
             decode_png(data)
         } else if data.starts_with(&JPEG_START) {
@@ -177,8 +286,7 @@ fn decode_picture(data: &[u8]) -> Result<Cover, CoverError> {
         Err(CoverError::Damaged(
             "the image decoder gave up on it".to_owned(),
         ))
-    })?;
-    Ok(fit(&decoded))
+    })
 }
 
 fn check_side(width: usize, height: usize) -> Result<(), CoverError> {

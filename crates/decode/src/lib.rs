@@ -20,7 +20,8 @@ use std::io::Cursor;
 use std::path::Path;
 
 pub use cover::{
-    COVER_SIDE, Cover, CoverError, MAX_PICTURE_BYTES, MAX_PICTURE_SIDE, cover_bytes, cover_file,
+    COVER_SIDE, Cover, CoverError, CoverPicture, MAX_COVER_IMPORT_BYTES, MAX_PICTURE_BYTES,
+    MAX_PICTURE_SIDE, PictureFormat, cover_bytes, cover_file,
 };
 use mp4_edit::{Edit, read_edit};
 pub use tag_write::{MAX_PLATTER_BYTES, MAX_TAG_CHARS, TagEdit, TagWriteError, write_tags};

@@ -12,6 +12,7 @@ use super::{
     Change, Changes, Field, GROWTH_PADDING, Source, TagWriteError, be_u32, corrupt, put, slice,
     to_usize, unsupported,
 };
+use crate::{CoverPicture, PictureFormat};
 
 /// Frames read from one tag before it is refused.
 const MAX_FRAMES: usize = 8192;
@@ -19,6 +20,8 @@ const MAX_FRAMES: usize = 8192;
 pub(super) const PLATTER_DESCRIPTION: &str = "PLATTER";
 /// Language of a new comment frame: "undetermined" in ISO 639-2.
 const UNDETERMINED: &[u8; 3] = b"und";
+/// Picture type of the front cover (ID3v2.4 frames, section 4.14; the same in 2.2 and 2.3).
+pub(super) const FRONT_COVER: u8 = 3;
 
 /// One frame: its identifier, its two flag bytes (zero in ID3v2.2) and its data.
 #[derive(Clone, Debug)]
@@ -165,6 +168,60 @@ impl Tag {
             let id = self.id(b"TBP", b"TBPM");
             self.set_text(id, bpm.as_deref());
         }
+        match changes.cover() {
+            Some(Some(picture)) => self.set_cover(picture),
+            Some(None) => self.remove_pictures(),
+            None => {}
+        }
+    }
+
+    /// Removes every picture frame, those the writer cannot read included.
+    pub(super) fn remove_pictures(&mut self) {
+        let id = self.id(b"PIC", b"APIC");
+        self.frames.retain(|frame| frame.id != id);
+    }
+
+    /// Removes the picture frames marked as the front cover. A compressed or encrypted one,
+    /// whose type cannot be read, stays.
+    pub(super) fn remove_front_covers(&mut self) {
+        let id = self.id(b"PIC", b"APIC");
+        let version = self.version;
+        self.frames.retain(|frame| {
+            frame.id != id || picture_type(frame.content(version), version) != Some(FRONT_COVER)
+        });
+    }
+
+    /// Makes `picture` the front cover: the old front covers go and the new one comes first
+    /// among the pictures. The description is empty and the encoding ISO-8859-1, which every
+    /// version has.
+    fn set_cover(&mut self, picture: &CoverPicture) {
+        let id = self.id(b"PIC", b"APIC");
+        let first = self.frames.iter().position(|frame| frame.id == id);
+        self.remove_front_covers();
+        let format: &[u8] = if self.version == 2 {
+            match picture.format() {
+                PictureFormat::Jpeg => b"JPG",
+                PictureFormat::Png => b"PNG",
+            }
+        } else {
+            picture.format().mime().as_bytes()
+        };
+        let terminated = if self.version == 2 { &[][..] } else { &[0][..] };
+        let body = [
+            &[0][..],
+            format,
+            terminated,
+            &[FRONT_COVER, 0],
+            picture.data(),
+        ]
+        .concat();
+        let frame = Frame {
+            id: id.to_vec(),
+            flags: [0, 0],
+            body,
+        };
+        let at = first.unwrap_or(self.frames.len()).min(self.frames.len());
+        self.frames.insert(at, frame);
     }
 
     /// The identifier of a frame: three characters in ID3v2.2, four after.
@@ -329,6 +386,17 @@ impl Frame {
         };
         self.body.get(skip..)
     }
+}
+
+/// The picture type of a picture frame: after the encoding and the MIME type ending with a
+/// zero (APIC), or the three characters of the image format (PIC in ID3v2.2).
+fn picture_type(content: Option<&[u8]>, version: u8) -> Option<u8> {
+    let content = content?;
+    if version == 2 {
+        return content.get(4).copied();
+    }
+    let mime_len = content.get(1..)?.iter().position(|byte| *byte == 0)?;
+    content.get(1 + mime_len + 1).copied()
 }
 
 fn read_frames(

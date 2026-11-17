@@ -19,11 +19,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use platter_decode::{
-    Container, MAX_PLATTER_BYTES, MAX_TAG_CHARS, TagEdit, TagWriteError, decode_file, probe_file,
-    write_tags,
+    Container, CoverError, CoverPicture, MAX_COVER_IMPORT_BYTES, MAX_PLATTER_BYTES, MAX_TAG_CHARS,
+    PictureFormat, TagEdit, TagWriteError, cover_file, decode_file, probe_file, write_tags,
 };
 use platter_testkit::files::{aiff_pcm16, flac_pcm16, flac_pcm16_tagged, wav_pcm16};
-use platter_testkit::pictures::{adler32, flac_with_pictures, rgba_png};
+use platter_testkit::pictures::{adler32, flac_with_pictures, picture_block, rgba_png};
 use platter_testkit::signal::{sine, stereo, to_i16};
 use proptest::prelude::*;
 
@@ -869,6 +869,7 @@ fn full_edit() -> TagEdit {
         key: Some("8A".to_owned()),
         bpm: Some(Some(126.5)),
         platter: Some(Some(PLATTER_DATA.to_owned())),
+        cover: None,
     }
 }
 
@@ -913,6 +914,7 @@ fn round_trip(name: &str, bytes: &[u8], read: Reader, shows: Shows) -> PathBuf {
             key: Some(String::new()),
             bpm: Some(None),
             platter: Some(None),
+            cover: None,
         },
     )
     .unwrap();
@@ -2362,4 +2364,322 @@ proptest! {
         }
         assert_no_copy_left(&folder);
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// Covers. Behaviour note: `docs/behavior/tag-writing.md`, *Covers*, and
+// `docs/behavior/cover-art.md`.
+
+const FRONT: u8 = 3;
+const BACK: u8 = 4;
+const OLD: [u8; 4] = [200, 0, 0, 255];
+const NEW: [u8; 4] = [0, 200, 0, 255];
+const OTHER: [u8; 4] = [0, 0, 200, 255];
+
+fn solid(colour: [u8; 4]) -> Vec<u8> {
+    rgba_png(4, 4, |_, _| colour)
+}
+
+fn new_cover() -> CoverPicture {
+    CoverPicture::from_bytes(solid(NEW)).unwrap()
+}
+
+fn cover_edit(cover: Option<CoverPicture>) -> TagEdit {
+    TagEdit {
+        cover: Some(cover),
+        ..TagEdit::default()
+    }
+}
+
+/// The colour of the first pixel of the cover Platter's own reader shows.
+fn shown(path: &Path) -> Option<[u8; 4]> {
+    cover_file(path)
+        .unwrap()
+        .map(|cover| cover.rgba[..4].try_into().unwrap())
+}
+
+fn count(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .filter(|window| *window == needle)
+        .count()
+}
+
+/// An ID3v2.3 tag with one attached-picture frame per entry (ID3v2.3, section 4.15).
+fn id3v23_pictures(pictures: &[(u8, &[u8])]) -> Vec<u8> {
+    let mut frames = Vec::new();
+    for (kind, data) in pictures {
+        let body = [&[0][..], b"image/png\0", &[*kind, 0], data].concat();
+        frames.extend_from_slice(b"APIC");
+        frames.extend_from_slice(&(body.len() as u32).to_be_bytes());
+        frames.extend_from_slice(&[0, 0]);
+        frames.extend_from_slice(&body);
+    }
+    [
+        b"ID3".as_slice(),
+        &[3, 0, 0],
+        &synchsafe(frames.len()),
+        &frames,
+    ]
+    .concat()
+}
+
+/// An AIFF file with `tag` in an ID3 chunk at the end.
+fn aiff_with_id3(tag: &[u8]) -> Vec<u8> {
+    let mut out = aiff_pcm16(RATE, 2, &sine_pcm());
+    out.extend_from_slice(b"ID3 ");
+    out.extend_from_slice(&(tag.len() as u32).to_be_bytes());
+    out.extend_from_slice(tag);
+    if tag.len() % 2 == 1 {
+        out.push(0);
+    }
+    let form = (out.len() - 8) as u32;
+    out[4..8].copy_from_slice(&form.to_be_bytes());
+    out
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for group in bytes.chunks(3) {
+        let bits = group.iter().enumerate().fold(0u32, |bits, (index, byte)| {
+            bits | u32::from(*byte) << (16 - 8 * index)
+        });
+        for index in 0..4 {
+            if index <= group.len() {
+                out.push(char::from(
+                    ALPHABET[(bits >> (18 - 6 * index)) as usize & 0x3F],
+                ));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+fn base64_decode(text: &str) -> Vec<u8> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let mut bits = 0u32;
+    let mut held = 0;
+    for character in text.bytes().filter(|character| *character != b'=') {
+        let sextet = ALPHABET
+            .iter()
+            .position(|letter| *letter == character)
+            .unwrap();
+        bits = bits << 6 | sextet as u32;
+        held += 6;
+        if held >= 8 {
+            held -= 8;
+            out.push((bits >> held) as u8);
+        }
+    }
+    out
+}
+
+#[test]
+fn an_imported_cover_is_the_one_the_reader_shows_and_a_deleted_one_is_gone() {
+    let old = solid(OLD);
+    let other = solid(OTHER);
+    let in_comment = base64_encode(&picture_block(FRONT, "image/png", &old));
+    let cases: Vec<(&str, Vec<u8>, bool)> = vec![
+        (
+            "blocks.flac",
+            flac_with_pictures(&[(BACK, &other), (FRONT, &old)]),
+            true,
+        ),
+        (
+            "comment.flac",
+            flac_pcm16_tagged(
+                RATE,
+                2,
+                &sine_pcm(),
+                &[("TITLE", "Tone"), ("METADATA_BLOCK_PICTURE", &in_comment)],
+            ),
+            false,
+        ),
+        (
+            "id3.flac",
+            [
+                id3v23_pictures(&[(FRONT, &old)]),
+                flac_pcm16(RATE, 2, &sine_pcm()),
+            ]
+            .concat(),
+            false,
+        ),
+        (
+            "tagged.mp3",
+            [
+                id3v23_pictures(&[(BACK, &other), (FRONT, &old)]),
+                silent_mp3(20),
+            ]
+            .concat(),
+            true,
+        ),
+        ("plain.mp3", silent_mp3(20), false),
+        (
+            "tagged.aiff",
+            aiff_with_id3(&id3v23_pictures(&[(FRONT, &old)])),
+            false,
+        ),
+        ("plain.aiff", aiff_pcm16(RATE, 2, &sine_pcm()), false),
+    ];
+    for (name, bytes, keeps_other) in cases {
+        let folder = folder(&format!("cover-{name}"));
+        let path = file(&folder, name, &bytes);
+        let before = probe_file(&path).unwrap();
+
+        write_tags(&path, &cover_edit(Some(new_cover()))).unwrap();
+        assert_eq!(shown(&path), Some(NEW), "{name}");
+        let written = fs::read(&path).unwrap();
+        assert_eq!(
+            count(&written, &old),
+            0,
+            "{name}: the old front cover is left"
+        );
+        assert!(
+            !String::from_utf8_lossy(&written).contains("METADATA_BLOCK_PICTURE"),
+            "{name}: the old picture comment is left"
+        );
+        assert_eq!(count(&written, &other) > 0, keeps_other, "{name}");
+
+        // A second import replaces the first: one front cover.
+        write_tags(&path, &cover_edit(Some(new_cover()))).unwrap();
+        assert_eq!(count(&fs::read(&path).unwrap(), &solid(NEW)), 1, "{name}");
+
+        write_tags(&path, &cover_edit(None)).unwrap();
+        assert_eq!(shown(&path), None, "{name}");
+        let written = fs::read(&path).unwrap();
+        assert_eq!(count(&written, &other), 0, "{name}: a picture is left");
+        let after = probe_file(&path).unwrap();
+        assert_eq!(
+            (after.container, after.sample_rate, after.channels),
+            (before.container, before.sample_rate, before.channels),
+            "{name}"
+        );
+        assert_no_copy_left(&folder);
+    }
+}
+
+#[test]
+fn deleting_the_cover_of_a_file_without_pictures_changes_no_tag() {
+    let folder = folder("cover-none");
+    let bytes = silent_mp3(20);
+    let path = file(&folder, "plain.mp3", &bytes);
+    write_tags(&path, &cover_edit(None)).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+fn a_cover_goes_into_the_comment_of_ogg_vorbis() {
+    let folder = folder("cover-ogg");
+    let old = base64_encode(&picture_block(BACK, "image/png", &solid(OTHER)));
+    let path = file(
+        &folder,
+        "tone.ogg",
+        &ogg_vorbis(&[
+            ("TITLE", "Tone"),
+            ("METADATA_BLOCK_PICTURE", &old),
+            ("COVERART", "AAAA"),
+        ]),
+    );
+    write_tags(&path, &cover_edit(Some(new_cover()))).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    probe_file(&path).unwrap();
+    let fields = vorbis_fields(&ogg_packets(&bytes)[1][7..]);
+    let pictures: Vec<&str> = fields
+        .iter()
+        .filter_map(|field| field.strip_prefix("METADATA_BLOCK_PICTURE="))
+        .collect();
+    // The back cover stays; the new front cover comes first; the untyped picture goes.
+    assert_eq!(pictures.len(), 2, "{fields:?}");
+    assert_eq!(pictures[1], old);
+    assert!(!fields.iter().any(|field| field.starts_with("COVERART=")));
+    let block = base64_decode(pictures[0]);
+    let mime = b"image/png";
+    assert_eq!(block[..4], [0, 0, 0, FRONT]);
+    assert_eq!(block[4..8], (mime.len() as u32).to_be_bytes());
+    assert_eq!(&block[8..17], mime);
+    let after_mime = 17;
+    // No description; width, height, depth, no colour table.
+    assert_eq!(block[after_mime..after_mime + 4], [0; 4]);
+    assert_eq!(block[after_mime + 4..after_mime + 8], 4u32.to_be_bytes());
+    assert_eq!(block[after_mime + 8..after_mime + 12], 4u32.to_be_bytes());
+    assert_eq!(block[after_mime + 12..after_mime + 16], 32u32.to_be_bytes());
+    assert_eq!(block[after_mime + 16..after_mime + 20], [0; 4]);
+    let picture = solid(NEW);
+    assert_eq!(
+        block[after_mime + 20..after_mime + 24],
+        (picture.len() as u32).to_be_bytes()
+    );
+    assert_eq!(&block[after_mime + 24..], picture);
+
+    write_tags(&path, &cover_edit(None)).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    let fields = vorbis_fields(&ogg_packets(&bytes)[1][7..]);
+    assert_eq!(fields, ["TITLE=Tone"]);
+}
+
+#[test]
+fn a_cover_goes_into_the_covr_item_of_m4a() {
+    let folder = folder("cover-m4a");
+    let path = file(&folder, "tone.m4a", &m4a());
+    write_tags(&path, &cover_edit(Some(new_cover()))).unwrap();
+    probe_file(&path).unwrap();
+    let items = mp4_items(&fs::read(&path).unwrap());
+    let covers: Vec<&Vec<u8>> = items
+        .iter()
+        .filter(|(kind, _)| kind == b"covr")
+        .map(|(_, item)| item)
+        .collect();
+    assert_eq!(covers.len(), 1);
+    let data = mp4_boxes(&covers[0][8..])
+        .into_iter()
+        .find(|(kind, _)| kind == b"data")
+        .unwrap()
+        .1;
+    // Type 14 is PNG.
+    assert_eq!(data[8..12], [0, 0, 0, 14]);
+    assert_eq!(mp4_value(covers[0]), solid(NEW));
+
+    write_tags(&path, &cover_edit(None)).unwrap();
+    probe_file(&path).unwrap();
+    let items = mp4_items(&fs::read(&path).unwrap());
+    assert!(!items.iter().any(|(kind, _)| kind == b"covr"));
+}
+
+#[test]
+fn a_picture_to_import_must_be_one_the_reader_shows() {
+    let picture = CoverPicture::from_bytes(rgba_png(3, 2, |_, _| NEW)).unwrap();
+    assert_eq!(
+        (
+            picture.format(),
+            picture.width(),
+            picture.height(),
+            picture.depth()
+        ),
+        (PictureFormat::Png, 3, 2, 32)
+    );
+    assert_eq!(picture.format().mime(), "image/png");
+
+    let refused = CoverPicture::from_bytes(b"not a picture".to_vec());
+    assert!(
+        matches!(refused, Err(CoverError::Unsupported(_))),
+        "{refused:?}"
+    );
+    let mut damaged = solid(NEW);
+    damaged.truncate(40);
+    let refused = CoverPicture::from_bytes(damaged);
+    assert!(
+        matches!(refused, Err(CoverError::Damaged(_))),
+        "{refused:?}"
+    );
+    let mut huge = solid(NEW);
+    huge.resize(MAX_COVER_IMPORT_BYTES + 1, 0);
+    let refused = CoverPicture::from_bytes(huge);
+    assert!(
+        matches!(refused, Err(CoverError::TooLargeToImport)),
+        "{refused:?}"
+    );
 }

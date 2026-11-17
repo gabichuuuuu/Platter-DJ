@@ -209,7 +209,7 @@ fn edit_comment(packet: &[u8], changes: &Changes) -> Result<Vec<u8>, TagWriteErr
     if body.get(len).is_none_or(|framing| framing & 1 == 0) {
         return Err(corrupt("the Vorbis comment header has no framing bit"));
     }
-    comments.apply(changes);
+    comments.apply(changes, true);
     Ok([&[3][..], VORBIS, &comments.to_bytes()?, &[1]].concat())
 }
 

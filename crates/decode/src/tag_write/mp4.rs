@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use super::{
     Changes, Field, Source, TagWriteError, be_u32, corrupt, put, slice, to_usize, unsupported,
 };
+use crate::PictureFormat;
 
 /// Boxes read inside one parent, or at the top of the file, before the file is refused.
 const MAX_BOXES: usize = 4096;
@@ -21,6 +22,8 @@ const HANDLER: [u8; 25] = [
 ];
 /// Data type of the value of an item: UTF-8 text, and a big-endian signed integer.
 const UTF8: u8 = 1;
+const JPEG: u8 = 13;
+const PNG: u8 = 14;
 const SIGNED: u8 = 21;
 const ITUNES: &[u8] = b"com.apple.iTunes";
 const KEY_NAME: &[u8] = b"initialkey";
@@ -264,6 +267,17 @@ fn apply(items: &mut Vec<Vec<u8>>, changes: &Changes) {
             |item| is_freeform(item, PLATTER_MEAN, PLATTER_NAME),
             new,
         );
+    }
+    // Every picture of `covr` is a front cover to the reader, so an import replaces them all.
+    if let Some(cover) = changes.cover() {
+        let new = cover.map(|picture| {
+            let kind = match picture.format() {
+                PictureFormat::Jpeg => JPEG,
+                PictureFormat::Png => PNG,
+            };
+            make_box(b"covr", &data(kind, picture.data()))
+        });
+        set(items, |item| kind(item) == Some(b"covr".as_slice()), new);
     }
     // The tempo item holds a 16-bit integer; a freeform tempo with decimals would show the
     // old value to software that prefers it, so it goes too.

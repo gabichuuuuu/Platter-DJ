@@ -333,7 +333,8 @@ pub(super) fn write_wav(
         }
         layout.chunks.push(new_chunk(b"LIST", &list, false)?);
     }
-    let needs_id3 = changes.sets(Field::Key)
+    let needs_id3 = changes.imports_cover()
+        || changes.sets(Field::Key)
         || changes.sets(Field::Platter)
         || matches!(changes.bpm, Some(Some(_)));
     layout.edit_id3(source, changes, b"id3 ", needs_id3, &seed)?;
@@ -363,9 +364,10 @@ pub(super) fn write_aiff(
             layout.set_chunk(id, change.map(str::as_bytes))?;
         }
     }
-    let needs_id3 = [Field::Album, Field::Genre, Field::Key, Field::Platter]
-        .into_iter()
-        .any(|field| changes.sets(field))
+    let needs_id3 = changes.imports_cover()
+        || [Field::Album, Field::Genre, Field::Key, Field::Platter]
+            .into_iter()
+            .any(|field| changes.sets(field))
         || matches!(changes.bpm, Some(Some(_)));
     layout.edit_id3(source, changes, b"ID3 ", needs_id3, &seed)?;
     layout.write(source, out, b"FORM", &form)
