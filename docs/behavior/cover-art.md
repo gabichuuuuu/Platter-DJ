@@ -6,7 +6,7 @@ for the browser. Nothing in the window shows it yet: the panel that does comes l
 
 ## What the public manual says
 
-Sections of the reference manual, read on 15 November 2026:
+Sections of the public manual, read on 15 November 2026:
 
 - *Managing Your Track Collection*, section *Editing Track Cover Artwork*
 - *Overview*, section *Browser*
