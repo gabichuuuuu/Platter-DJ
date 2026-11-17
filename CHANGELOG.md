@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.2.0...v0.3.0) - 2026-11-17
+
+### Added
+
+- M3 playlists, covers, tag editing, preferences and deck controls ([#37](https://github.com/gabichuuuuu/Platter-DJ/pull/37))
+- *(ui-egui)* search and sort the browser list, and show the MIDI controllers ([#31](https://github.com/gabichuuuuu/Platter-DJ/pull/31))
+- M3 engine, mixer, MIDI input and the collection in the browser ([#30](https://github.com/gabichuuuuu/Platter-DJ/pull/30))
+- *(engine)* add decks C and D ([#39](https://github.com/gabichuuuuu/Platter-DJ/pull/39))
+- *(decode)* read covers and write tags and covers into track files ([#36](https://github.com/gabichuuuuu/Platter-DJ/pull/36))
+- *(ui-egui)* redraw the Platter mark for the header size ([#33](https://github.com/gabichuuuuu/Platter-DJ/pull/33))
+
 ## [0.2.0](https://github.com/gabichuuuuu/Platter-DJ/releases/tag/v0.2.0) - 2026-11-15
 
 ### Added
