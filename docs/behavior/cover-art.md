@@ -45,8 +45,9 @@ in memory) and returns it decoded, or nothing when the file carries no picture.
 
 ## Differences
 
-- Platter only reads covers. Importing a cover into a file and deleting it are not
-  implemented; they belong to the editing of tags, planned for later in M3.
+- Importing a cover into a file and deleting it are written by the writer of tags
+  (`docs/behavior/tag-writing.md`, *Covers*); no menu offers them yet. They come with the
+  editing of tags in the browser, later in M3.
 - PNG pictures are read as well as JPEG.
 - The decoding library does not read the ID3 chunk of a WAV file, so a WAV file shows no
   cover, even with a picture in that chunk.
