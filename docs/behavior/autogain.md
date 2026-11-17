@@ -69,9 +69,9 @@ it aims at.
 ## Differences
 
 - The documented application keeps the autogain value of each track in its collection and restores
-  it from a playlist. Platter has no collection on this branch yet: the value lives with the
-  loaded track, is measured again on each load, and is restored per channel. Storing it with
-  the track and the restore from the browser come with the collection.
+  it from a playlist. Platter keeps the loudness the analysis finds with each track of its
+  collection, but the gain is still measured again on each load and restored per channel;
+  setting it from the kept value, and a restore from the browser, are not there yet.
 - The analysis does not yet offer to measure the gain alone, nor to replace the value of a
   locked track: the value is always measured on load, and the grid lock does not keep it.
 - The method and the level, -10 LUFS, are Platter's: the manual names neither.

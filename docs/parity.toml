@@ -96,7 +96,7 @@ title = "Beatgrid"
 features = [
   { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "in_progress" },
   { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-ui-egui --test panels" },
-  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
+  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; the tempo field is typed after a double click or Enter, see docs/behavior/beatgrid.md" },
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test panels" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; the lock keeps the grid, not the key, which cannot be edited, see docs/behavior/analysis.md" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beat_tick; cargo test -p platter-ui-egui --test panels; not heard on a device with four outputs, see ROADMAP.md" },

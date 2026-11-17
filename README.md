@@ -34,10 +34,11 @@ its own code, graphics and sounds.
 ## Status
 
 > [!IMPORTANT]
-> **Milestone M2 is complete; M3 has the beatgrid, the loops, the cues and sync.** The
-> desktop application opens, loads tracks and plays them through a sound card, its tests
-> pass, and the maintainer has listened to it. It is not yet a tool to play a set with: the
-> tempo is not detected and there is no library.
+> **Milestone M2 is complete; M3 has the beatgrid, the loops, the cues, sync, key lock, the
+> library and the browser.** The desktop application opens, loads tracks and plays them
+> through a sound card, its tests pass, and the maintainer has listened to M2. It is not yet a
+> tool to play a set with: the detection of tempo and key is not reliable enough yet, and
+> much of M3 has not been listened to (see below).
 
 ### What exists today
 
@@ -47,7 +48,8 @@ its own code, graphics and sounds.
 | Mixer | Gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three curves, meters and a master with a safety limiter; pre-listening on a second output pair |
 | Loops and cues | Loops of a preset size or between an in and an out point, beatjumps and the moves of a loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them |
 | Sync | SYNC, MASTER and a phase meter per deck, and a master clock with Snap and Quantize |
-| Application | A file selector; audio and general preferences; keyboard shortcuts in a file the user edits; English and Spanish |
+| Library | A collection with playlists, folders, favourites, a preparation list and the history of each session; tags of one or several tracks edited and written into the files; covers; tempo, grid, key and loudness analysed in the background |
+| Application | A browser with the collection and a file explorer; preferences for audio, general settings, decks, mixer, library and MIDI controllers; keyboard shortcuts in a file the user edits; English and Spanish |
 | Command line | `platter-cli info <file>` prints file information; `platter-cli render --script <mix.toml> --out <mix.wav>` renders a scripted mix to a WAV file without a sound card |
 | Gate | `cargo xtask ci` runs formatting, lints, tests, the layer rules, the licence and advisory checks, the clean-room check and the feature inventory check |
 
@@ -98,47 +100,44 @@ Everything known to be missing, unfinished or not yet listened to.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)
   and Ogg Vorbis were checked by hand against a WAV of the same signal; their tests cover
   damaged input only, as the project has no encoder for them.
-- A loaded track is analysed in the background and its grid gets the tempo and the first beat
-  found; the detection has only been measured on synthesised signals, not on real tracks. The
-  key found is not shown yet, the GRID page has no reset keys yet, the tempo field cannot be
-  typed into, and edits of the grid are lost when the track is loaded again.
+- The tracks of the collection are analysed in the background, and a loaded track gets the
+  tempo and the first beat found. Measured on 2,248 annotated loops of a public dataset, a
+  tempo is given for 43 % of them and is right for 73 % of those, and the key is exact for
+  36 %: the detection is not reliable enough yet, and it has not been measured on full tracks
+  (`docs/decisions/0020-own-analysis.md`). The key found cannot be edited. The grid and the
+  stored cues of a track are kept in the collection and come back when it is loaded again.
 - Nobody has listened to loops or jumps yet.
-- Stored cues are lost when the track is loaded again, the fade and load types are labels
-  only, and the window cannot rename a cue yet. Nobody has listened to the hotcues yet.
+- The fade-in and fade-out types of a cue are labels only: automatic mixing comes in M4.
+  Nobody has listened to the hotcues yet.
 - Nobody has listened to sync yet. A deck syncs once its grid has a tempo, found by the
-  analysis or tapped or stepped in by hand; the tempo of the clock cannot be typed, and the
-  sync mode has no control in the window.
-- The metronome of the master clock has no key in the window yet: `clock.metronome.toggle`
-  switches it from the command line. It clicks on the headphones only, so a device with two
+  analysis or tapped, typed or stepped in by hand.
+- The metronome of the master clock clicks on the headphones only, so a device with two
   outputs does not play it, and nobody has listened to it.
-- Key lock exists in the engine only: the window has no key for it yet. It softens the
-  attack of kicks, the first milliseconds after a jump play with the pitch following the
-  speed, a track below 32 kHz plays without it, and nobody has listened to it; only
-  synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`).
-  Transposition by semitones, locking the current key and the resulting key exist in the
-  engine only too: the bridge after a jump plays 32 ms at the untransposed pitch, and nobody
-  has listened to a transposed deck (`docs/decisions/0031-transposition.md`).
-- The beat tick exists in the engine only: the GRID page has no key for it yet. It plays in
-  the headphones, so a device with two channels does not play it, and nobody has listened to
-  it against a real track (`docs/behavior/beatgrid.md`).
+- Key lock softens the attack of kicks, the first milliseconds after a jump play with the
+  pitch following the speed, a track below 32 kHz plays without it, and nobody has listened to
+  it; only synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`). The
+  same holds for transposition by semitones, locking the current key and the resulting key:
+  the bridge after a jump plays 32 ms at the untransposed pitch, and nobody has listened to a
+  transposed deck (`docs/decisions/0031-transposition.md`).
+- The beat tick plays in the headphones, so a device with two channels does not play it, and
+  nobody has listened to it against a real track (`docs/behavior/beatgrid.md`).
 - Autogain is on and sets the gain of a channel when a track is analysed. It is switched off
   on the Mixer page of the preferences; the mixer has no key to restore it yet, the value is
   measured again on each load, and nobody has listened to its level, -10 LUFS
   (`docs/decisions/0029-autogain-level.md`).
-- The assignment of a channel to a side of the crossfader, its steps and its automatic fade
-  have no controls in the mixer yet; the length of the fade is set on the Mixer page of the
+- The length of the automatic fade of the crossfader is set on the Mixer page of the
   preferences. Nobody has listened to a fade (`docs/behavior/mixer.md`).
 - External mixer mode, each deck on its own pair of outputs, is chosen on the Mixer page of
   the preferences. Deck A takes the master outputs of the routing and deck B the headphone
-  ones, the mixer panel does not collapse to the controls that still act, and it has not run
-  on a device with four outputs feeding a hardware mixer
+  ones, and it has not run on a device with four outputs feeding a hardware mixer
   (`docs/behavior/external-mixer.md`).
-- Flux and reverse exist in the engine only: the window has no buttons and no marker for
-  them yet, they are reached through the shortcut file, and nobody has listened to them
-  (`docs/behavior/flux.md`).
+- Nobody has listened to flux or reverse yet (`docs/behavior/flux.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
   header and the cover each track carries, with a colour tag and a rating the menu of a track
-  sets and a dialog that edits title, artist, album, genre, comment and rating in the library, searches it as the user types and sorts it by a column. It lists the playlists of the
+  sets, a dialog that edits title, artist, album, genre, comment and rating of one track or
+  of several at once and writes the text fields into the files unless the preferences say
+  otherwise, and menu entries that import or delete the cover of the selected tracks. It
+  searches the collection as the user types and sorts it by a column. It lists the playlists of the
   library and shows their tracks; their menus create, rename, empty and delete them, make
   folders, remove repeated tracks, take a track out and export or import playlists as M3U files
   in the folder the explorer shows, and a track dragged onto a playlist is added to it. One playlist can be the preparation list, which the menu of a track appends
@@ -149,13 +148,14 @@ Everything known to be missing, unfinished or not yet listened to.
   tree shows with the histories of earlier sessions, dated in UTC. A track can be deleted from
   the collection after a question, and the Library page of the preferences opens the
   maintenance of the collection, which checks for missing files, relocates them by name in a
-  folder and removes them. The preview player is not in the window yet, and nobody has imported
-  a real music collection (`docs/behavior/browser.md`).
-- MIDI controllers are named by hand in the settings file, each with a mapping file
-  (`docs/behavior/controllers.md`); the status header shows how many are open and lights on
-  their messages, but there is no controller page, no learn mode and no lights on the
-  controllers yet. No real controller has been tried: the path from a MIDI input to the engine is tested
-  with invented messages only.
+  folder and removes them. The preview player plays a track in the headphones without loading
+  it, and is silent in external mixer mode. Nobody has imported a real music collection
+  (`docs/behavior/browser.md`).
+- MIDI controllers are added on the Controllers page of the preferences, each with a mapping
+  file and a learn mode (`docs/behavior/controllers.md`); the status header shows how many are
+  open and lights on their messages. There are no lights on the controllers yet. No real
+  controller has been tried: the path from a MIDI input to the engine is tested with invented
+  messages only.
 
 </details>
 
