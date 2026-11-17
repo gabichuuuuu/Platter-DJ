@@ -53,7 +53,7 @@ licence again and read the documentation of the version obtained.
 | Stems | ort | 2.0.0-rc.15 | MIT OR Apache-2.0 | M4 | ONNX runtime |
 | HID | hidapi | 2.6.7 | MIT | M5 | Access to the HID devices of the system |
 | Cover art | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify |
-| Cover art | zune-png | 0.5.2 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify; PNG comes from the same family of decoders |
+| Cover art | zune-png | 0.5.2 | MIT OR Apache-2.0 OR Zlib | M3 | PNG decoding needs an inflate as well, a large piece to write and verify; it comes from the same family of decoders as zune-jpeg |
 
 Notes:
 
