@@ -248,6 +248,16 @@ impl Processor {
                 self.crossfader_position = position;
                 self.retarget_crossfader();
             }
+            RtCommand::EqModel { model } => {
+                for channel in &mut self.channels {
+                    channel.strip.set_eq_model(model);
+                }
+            }
+            RtCommand::FilterModel { model } => {
+                for channel in &mut self.channels {
+                    channel.strip.set_filter_model(model);
+                }
+            }
             RtCommand::CrossfaderCurve { curve } => {
                 self.crossfader_curve = curve;
                 self.retarget_crossfader();

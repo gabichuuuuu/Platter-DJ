@@ -31,7 +31,8 @@ use platter_core::{
 };
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
-use platter_dsp::eq::Band;
+use platter_dsp::eq::{Band, EqModel};
+use platter_dsp::filter::FilterModel;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 pub use lock::Stretcher;
@@ -242,6 +243,12 @@ pub enum RtCommand {
     },
     CrossfaderCurve {
         curve: CrossfaderCurve,
+    },
+    EqModel {
+        model: EqModel,
+    },
+    FilterModel {
+        model: FilterModel,
     },
     CrossfaderAssign {
         deck: DeckId,

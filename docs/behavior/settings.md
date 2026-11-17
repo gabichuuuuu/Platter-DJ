@@ -116,6 +116,8 @@ shortcuts of the decks and the mixer rest.
 | --- | --- | --- |
 | Mixing mode | `mixer.mode.set` | Internal, or external with each deck on its own outputs (`docs/behavior/external-mixer.md`) |
 | Autogain | `mixer.autogain.toggle` | A key, lit while autogain is on (`docs/behavior/autogain.md`) |
+| Equaliser | `mixer.eq.model.set` | Smooth, soft, isolator or steep (`docs/behavior/mixer.md`, *Equaliser and filter models*) |
+| Filter | `mixer.filter.model.set` | Gentle, steep or ladder; one help line under both rows |
 | Gain and equaliser | `mixer.external.eq_gain.toggle` | A key, lit while they act in external mode |
 | Main volume | `mixer.external.master_volume.toggle` | A key, lit while it acts in external mode |
 | Automatic fade | `mixer.crossfader.fade_beats.set` | 1, 2, 4, 8, 16, 32 or 64 beats of the master clock (`docs/behavior/mixer.md`) |

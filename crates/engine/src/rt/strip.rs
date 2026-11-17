@@ -4,8 +4,8 @@
 use platter_core::SampleRate;
 use platter_dsp::Frame;
 use platter_dsp::balance::balance_gains;
-use platter_dsp::eq::{Band, ThreeBandEq};
-use platter_dsp::filter::OneKnobFilter;
+use platter_dsp::eq::{Band, EqModel, ThreeBandEq};
+use platter_dsp::filter::{FilterModel, OneKnobFilter};
 use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
 
@@ -75,6 +75,14 @@ impl ChannelStrip {
             self.eq_knobs[index]
         };
         self.eq_gains[index].set(gain);
+    }
+
+    pub(super) fn set_eq_model(&mut self, model: EqModel) {
+        self.eq.set_model(model);
+    }
+
+    pub(super) fn set_filter_model(&mut self, model: FilterModel) {
+        self.filter.set_model(model);
     }
 
     pub(super) fn set_filter(&mut self, position: f32) {

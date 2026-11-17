@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::eq::Band;
+use platter_dsp::eq::EqModel;
+use platter_dsp::filter::FilterModel;
 
 pub use crate::rt::MAX_KEY_SHIFT;
 use crate::rt::Output;
@@ -271,6 +273,14 @@ pub enum Command {
     MixerCrossfaderCurveSet {
         curve: CrossfaderCurve,
     },
+    /// The model of the equaliser of every channel: `docs/behavior/mixer.md`.
+    MixerEqModelSet {
+        model: EqModel,
+    },
+    /// The model of the filter of every channel.
+    MixerFilterModelSet {
+        model: FilterModel,
+    },
     /// Puts the channel on a side of the crossfader, or past it.
     MixerCrossfaderAssign {
         deck: DeckId,
@@ -427,6 +437,8 @@ const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
+const EQ_MODELS: &[&str] = &["smooth", "soft", "isolator", "steep"];
+const FILTER_MODELS: &[&str] = &["gentle", "steep", "ladder"];
 /// The part of the travel of the crossfader one step moves it.
 pub const CROSSFADER_STEP: f64 = 0.1;
 pub const MIN_FADE_BEATS: f64 = 1.0;
@@ -972,6 +984,22 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[ParamSpec {
             name: "curve",
             kind: ParamKind::Choice(CURVES),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.eq.model.set",
+        label: "Set equaliser model",
+        params: &[ParamSpec {
+            name: "model",
+            kind: ParamKind::Choice(EQ_MODELS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.filter.model.set",
+        label: "Set filter model",
+        params: &[ParamSpec {
+            name: "model",
+            kind: ParamKind::Choice(FILTER_MODELS),
         }],
     },
     CommandSpec {
@@ -1658,6 +1686,12 @@ impl Command {
             "mixer.crossfader.curve.set" => Self::MixerCrossfaderCurveSet {
                 curve: CrossfaderCurve::parse(read.text("curve")?)?,
             },
+            "mixer.eq.model.set" => Self::MixerEqModelSet {
+                model: EqModel::parse(read.text("model")?)?,
+            },
+            "mixer.filter.model.set" => Self::MixerFilterModelSet {
+                model: FilterModel::parse(read.text("model")?)?,
+            },
             "mixer.crossfader.step" => Self::MixerCrossfaderStep {
                 direction: read.crossfader_direction()?,
             },
@@ -1745,6 +1779,8 @@ impl Command {
             Self::MixerFaderSet { .. } => "mixer.fader.set",
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
+            Self::MixerEqModelSet { .. } => "mixer.eq.model.set",
+            Self::MixerFilterModelSet { .. } => "mixer.filter.model.set",
             Self::MixerCrossfaderAssign { .. } => "mixer.xfader_assign.set",
             Self::MixerCrossfaderStep { .. } => "mixer.crossfader.step",
             Self::MixerCrossfaderAutoFade { .. } => "mixer.crossfader.auto_fade",

@@ -30,7 +30,8 @@ pub use control::{
 pub use peaks::WaveformPeaks;
 pub use platter_analysis::{Key, Mode, TempoRange, Transposed};
 pub use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
-pub use platter_dsp::eq::Band;
+pub use platter_dsp::eq::{Band, EqModel};
+pub use platter_dsp::filter::FilterModel;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{LoopState, Output, Processor};
 pub use wav::WavWriter;

@@ -17,7 +17,8 @@ use platter_core::{
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
-use platter_dsp::eq::{Band, band_gain};
+use platter_dsp::eq::{Band, EqModel, band_gain};
+use platter_dsp::filter::FilterModel;
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
@@ -150,6 +151,10 @@ impl Default for DeckControls {
 pub struct MixerControls {
     pub crossfader: f64,
     pub crossfader_curve: CrossfaderCurve,
+    /// The model of the equaliser of every channel.
+    pub eq_model: EqModel,
+    /// The model of the filter of every channel.
+    pub filter_model: FilterModel,
     /// The side of the crossfader each channel is on, deck A first.
     pub crossfader_sides: [CrossfaderSide; DeckId::COUNT],
     /// Beats of the master clock an automatic fade across the whole travel takes.
@@ -175,6 +180,8 @@ impl Default for MixerControls {
         Self {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
+            eq_model: EqModel::default(),
+            filter_model: FilterModel::default(),
             crossfader_sides: CROSSFADER_SIDES,
             fade_beats: 8.0,
             master_gain_db: 0.0,
@@ -969,6 +976,14 @@ impl Engine {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
                 self.mixer.crossfader_curve = curve;
             }
+            Command::MixerEqModelSet { model } => {
+                self.send(RtCommand::EqModel { model })?;
+                self.mixer.eq_model = model;
+            }
+            Command::MixerFilterModelSet { model } => {
+                self.send(RtCommand::FilterModel { model })?;
+                self.mixer.filter_model = model;
+            }
             Command::MixerModeSet { mode } => self.set_external(MixerControls {
                 mode,
                 ..self.mixer.clone()
@@ -1476,6 +1491,12 @@ impl MixerControls {
             },
             RtCommand::CrossfaderCurve {
                 curve: self.crossfader_curve,
+            },
+            RtCommand::EqModel {
+                model: self.eq_model,
+            },
+            RtCommand::FilterModel {
+                model: self.filter_model,
             },
             RtCommand::MasterGain {
                 linear: linear(self.master_gain_db),

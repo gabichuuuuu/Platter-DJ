@@ -877,6 +877,12 @@ impl PlatterApp {
             Command::MixerCrossfaderFadeBeatsSet {
                 beats: f64::from(settings.fade_beats),
             },
+            Command::MixerEqModelSet {
+                model: settings.eq_model,
+            },
+            Command::MixerFilterModelSet {
+                model: settings.filter_model,
+            },
             Command::GlobalSyncModeSet {
                 mode: settings.sync_mode,
             },
@@ -924,6 +930,8 @@ impl PlatterApp {
         let kept = Settings {
             sync_mode: snapshot.clock.sync_mode,
             mixer_mode: mixer.mode,
+            eq_model: mixer.eq_model,
+            filter_model: mixer.filter_model,
             autogain: mixer.autogain,
             external_eq_gain: mixer.external_eq_gain,
             external_master_volume: mixer.external_master_volume,
@@ -971,6 +979,8 @@ impl PlatterApp {
                 | Command::MixerExternalEqGainToggle
                 | Command::MixerExternalMasterVolumeToggle
                 | Command::MixerCrossfaderFadeBeatsSet { .. }
+                | Command::MixerEqModelSet { .. }
+                | Command::MixerFilterModelSet { .. }
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
         );

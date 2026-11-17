@@ -9,7 +9,7 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, MixerMode, MoveMode, Output, SizeStep, SyncMode,
+    CueStep, Direction, EqModel, FilterModel, MixerMode, MoveMode, Output, SizeStep, SyncMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -35,6 +35,17 @@ fn commands() -> Vec<Command> {
         Command::MixerAutogainToggle,
         Command::MixerGainRestore { deck: A },
         Command::MixerAutogainToggle,
+        // A change of each model fades the outgoing one out: both run for a while.
+        Command::MixerEqModelSet {
+            model: EqModel::Steep,
+        },
+        Command::MixerFilterModelSet {
+            model: FilterModel::Ladder,
+        },
+        Command::MixerFilterSet {
+            deck: B,
+            position: -0.4,
+        },
         // External mode runs the routed path beside the mix, which always runs.
         Command::MixerModeSet {
             mode: MixerMode::External,

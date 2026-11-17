@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
 use platter_engine::{
-    CrossfaderCurve, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, SyncMode, TempoRange,
+    CrossfaderCurve, EqModel, FilterModel, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, SyncMode,
+    TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
 use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
@@ -83,6 +84,10 @@ pub struct Settings {
     pub buffer_frames: u32,
     pub routing: Routing,
     pub crossfader_curve: CrossfaderCurve,
+    /// The model of the equaliser of every channel.
+    pub eq_model: EqModel,
+    /// The model of the filter of every channel.
+    pub filter_model: FilterModel,
     /// The keys show their tooltips.
     pub tooltips: bool,
     /// The window goes to the whole screen as Platter starts.
@@ -142,6 +147,8 @@ impl Default for Settings {
             buffer_frames: 256,
             routing: Routing::default(),
             crossfader_curve: CrossfaderCurve::default(),
+            eq_model: EqModel::default(),
+            filter_model: FilterModel::default(),
             tooltips: true,
             fullscreen_at_start: false,
             tempo_range: 8,
@@ -235,6 +242,12 @@ impl Settings {
             crossfader_curve: text(table("mixer"), "crossfader_curve")
                 .and_then(|name| CrossfaderCurve::parse(&name).ok())
                 .unwrap_or(defaults.crossfader_curve),
+            eq_model: text(table("mixer"), "eq_model")
+                .and_then(|name| EqModel::parse(&name).ok())
+                .unwrap_or(defaults.eq_model),
+            filter_model: text(table("mixer"), "filter_model")
+                .and_then(|name| FilterModel::parse(&name).ok())
+                .unwrap_or(defaults.filter_model),
             mixer_mode: text(table("mixer"), "mode")
                 .and_then(|name| MixerMode::ALL.into_iter().find(|mode| mode.name() == name))
                 .unwrap_or(defaults.mixer_mode),
@@ -363,6 +376,14 @@ impl Settings {
         mixer.insert(
             "crossfader_curve".to_owned(),
             toml::Value::String(self.crossfader_curve.name().to_owned()),
+        );
+        mixer.insert(
+            "eq_model".to_owned(),
+            toml::Value::String(self.eq_model.name().to_owned()),
+        );
+        mixer.insert(
+            "filter_model".to_owned(),
+            toml::Value::String(self.filter_model.name().to_owned()),
         );
         mixer.insert(
             "mode".to_owned(),
@@ -519,7 +540,7 @@ mod tests {
     use std::path::PathBuf;
 
     use platter_audio_io::Routing;
-    use platter_engine::{CrossfaderCurve, MixerMode, SyncMode, TempoRange};
+    use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
     use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn};
     use platter_ui_egui::i18n::Language;
@@ -539,6 +560,8 @@ mod tests {
                 headphones: [0, 1],
             },
             crossfader_curve: CrossfaderCurve::Sharp,
+            eq_model: EqModel::Steep,
+            filter_model: FilterModel::Ladder,
             tooltips: false,
             fullscreen_at_start: true,
             tempo_range: 16,
@@ -585,7 +608,8 @@ mod tests {
         let source = "language = \"fr\"\n[audio]\ndevice = \"\"\nsample_rate = 12345\n\
                       buffer_frames = 512\n[audio.routing]\nmaster_left = 900\nmaster_right = 5\n\
                       [mixer]\ncrossfader_curve = 7\nmode = \"hardware\"\nautogain = \"no\"\n\
-                      external_eq_gain = true\nfade_beats = 65\n";
+                      external_eq_gain = true\nfade_beats = 65\neq_model = \"loud\"\n\
+                      filter_model = 3\n";
         let settings = Settings::parse(source);
         let defaults = Settings::default();
         assert_eq!(settings.language, defaults.language);
@@ -596,6 +620,8 @@ mod tests {
         assert_eq!(settings.routing.master, [0, 5]);
         assert_eq!(settings.routing.headphones, [2, 3]);
         assert_eq!(settings.crossfader_curve, defaults.crossfader_curve);
+        assert_eq!(settings.eq_model, defaults.eq_model);
+        assert_eq!(settings.filter_model, defaults.filter_model);
         assert_eq!(settings.mixer_mode, defaults.mixer_mode);
         assert_eq!(settings.autogain, defaults.autogain);
         assert!(settings.external_eq_gain);

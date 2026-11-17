@@ -8,7 +8,7 @@
 use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
 use platter_core::DeckId;
 use platter_engine::command::{CommandSpec, ParamKind, SPECS};
-use platter_engine::{Command, CrossfaderCurve, MixerMode, Output, SyncMode};
+use platter_engine::{Command, CrossfaderCurve, EqModel, FilterModel, MixerMode, Output, SyncMode};
 
 use crate::collection::TagWriting;
 use crate::command::{Action, AppCommand, DeckLayout, DeckSize, RouteSlot, SettingsPage};
@@ -1603,7 +1603,73 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         },
     );
 
-    let top = section(cx, page, 175.0, "settings.external_section");
+    // The models of the equaliser and of the filter: one help line serves both rows.
+    let control = setting(cx, page, top + 100.0, "settings.eq_model");
+    let eq_labels = EqModel::ALL.map(|model| {
+        texts.get(match model {
+            EqModel::Smooth => "settings.eq_smooth",
+            EqModel::Soft => "settings.eq_soft",
+            EqModel::Isolator => "settings.eq_isolator",
+            EqModel::Steep => "settings.eq_steep",
+        })
+    });
+    let eq_choices: Vec<Choice<'_>> = eq_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    choice::segmented(
+        cx,
+        control,
+        id("settings-eq-model"),
+        &eq_choices,
+        EqModel::ALL
+            .iter()
+            .position(|model| *model == mixer.eq_model),
+        |index| {
+            Action::Engine(Command::MixerEqModelSet {
+                model: EqModel::ALL[index],
+            })
+        },
+    );
+    let control = setting(cx, page, top + 140.0, "settings.filter_model");
+    let filter_labels = FilterModel::ALL.map(|model| {
+        texts.get(match model {
+            FilterModel::Gentle => "settings.filter_gentle",
+            FilterModel::Steep => "settings.filter_steep",
+            FilterModel::Ladder => "settings.filter_ladder",
+        })
+    });
+    let filter_choices: Vec<Choice<'_>> = filter_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-filter-model"),
+        &filter_choices,
+        FilterModel::ALL
+            .iter()
+            .position(|model| *model == mixer.filter_model),
+        |index| {
+            Action::Engine(Command::MixerFilterModelSet {
+                model: FilterModel::ALL[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.models_help"),
+    );
+
+    let top = section(cx, page, 265.0, "settings.external_section");
     switch(
         cx,
         page,
@@ -1627,7 +1693,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         },
     );
 
-    let top = section(cx, page, 330.0, "settings.crossfader_section");
+    let top = section(cx, page, 420.0, "settings.crossfader_section");
     let control = setting(cx, page, top, "settings.fade_length");
     let fade_labels = FADE_BEATS.map(|beats| beats.to_string());
     let fade_choices: Vec<Choice<'_>> = fade_labels
@@ -1658,7 +1724,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     );
 
     // The curve of the crossfader, which M2 had on the General page.
-    let control = setting(cx, page, top + 56.0, "settings.crossfader_curve");
+    let control = setting(cx, page, top + 50.0, "settings.crossfader_curve");
     let curve_labels = CrossfaderCurve::ALL.map(|curve| {
         texts.get(match curve {
             CrossfaderCurve::Smooth => "settings.curve_smooth",

@@ -157,8 +157,8 @@ features = [
   { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test external_mixer; cargo test -p platter-ui-egui --test external_mixer; not tried with a device of four outputs, see ROADMAP.md" },
   { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
   { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },
-  { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "planned" },
-  { id = "filter-models-rest", name = "Remaining two filter models", milestone = "M4", status = "planned" },
+  { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp eq; cargo test -p platter-engine --test mixer_models" },
+  { id = "filter-models-rest", name = "Remaining two filter models", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp filter; cargo test -p platter-engine --test mixer_models" },
 ]
 
 [[area]]
