@@ -5,6 +5,7 @@
 pub mod choice;
 pub mod field;
 pub mod key;
+pub mod menu;
 pub mod meter;
 pub mod tooltip;
 pub mod value;

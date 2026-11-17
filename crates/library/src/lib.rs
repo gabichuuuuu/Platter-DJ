@@ -7,6 +7,7 @@
 //! Every call does its work at once, on the thread that makes it, and may touch the disk:
 //! callers run the library on a worker thread, never on the audio or the interface thread.
 
+mod backup;
 mod error;
 mod folder;
 mod m3u;
@@ -15,10 +16,14 @@ mod text;
 
 use std::path::{Path, PathBuf};
 
-use platter_core::DeckId;
+use platter_core::{DeckId, TrackMemory};
 
+pub use backup::{BACKUPS_KEPT, back_up};
 pub use error::{LibraryError, StoreError};
-pub use folder::{ImportReport, MAX_DEPTH, MAX_ENTRIES, Reading, TagReader, import_folder};
+pub use folder::{
+    ImportReport, MAX_DEPTH, MAX_ENTRIES, MAX_RELOCATE_FILES, Reading, RelocateReport, TagReader,
+    import_file, import_folder, relocate_missing,
+};
 pub use m3u::{
     M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u,
 };
@@ -35,6 +40,39 @@ pub const MAX_PAGE: usize = 1000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timestamp(pub i64);
 
+impl Timestamp {
+    /// Year, month, day, hour, minute and second in UTC. The date comes from the count of days
+    /// with the algorithm `civil_from_days` of Howard Hinnant,
+    /// <https://howardhinnant.github.io/date_algorithms.html>.
+    pub fn utc(self) -> (i64, i64, i64, i64, i64, i64) {
+        let days = self.0.div_euclid(86_400);
+        let seconds = self.0.rem_euclid(86_400);
+        // Days since 1 March of the year 0, so the leap day comes last in a year.
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let day_of_era = z - era * 146_097;
+        let year_of_era =
+            (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let month_index = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+        let month = if month_index < 10 {
+            month_index + 3
+        } else {
+            month_index - 9
+        };
+        let year = year_of_era + era * 400 + i64::from(month <= 2);
+        (
+            year,
+            month,
+            day,
+            seconds / 3600,
+            seconds % 3600 / 60,
+            seconds % 60,
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrackId(i64);
 
@@ -42,12 +80,29 @@ pub struct TrackId(i64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(i64);
 
+impl NodeId {
+    /// The node with the identifier the library file gives it, as a command names it. The
+    /// library answers [`LibraryError::NoSuchNode`] when there is none.
+    pub fn new(raw: i64) -> Self {
+        Self(raw)
+    }
+}
+
 /// One place of a track in a playlist; a track in a playlist twice has two entries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntryId(i64);
 
+/// A session of the application, which holds the tracks played in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SessionId(i64);
+
+impl SessionId {
+    /// The session with the identifier the library file gives it, as a command names it. A
+    /// search of a session the library does not have finds nothing.
+    pub fn new(raw: i64) -> Self {
+        Self(raw)
+    }
+}
 
 /// What the importer read from a file. Values that make no sense are stored as none.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -73,7 +128,25 @@ pub struct Track {
     pub last_played: Option<Timestamp>,
     /// The file was not there at the last consistency check.
     pub missing: bool,
+    /// The colour tag, 1 to [`MAX_COLOUR`], or 0 for none.
+    pub colour: u8,
+    /// The rating, 0 to [`MAX_RATING`].
+    pub rating: u8,
+    pub comment: Option<String>,
+    /// The key the analysis found: the pitch class of the tonic, 0 for C up to 11 for B, plus
+    /// 12 for a minor key.
+    pub key: Option<u8>,
+    /// The loudness the analysis measured, in LUFS.
+    pub loudness: Option<f64>,
 }
+
+/// The highest number of a key, B minor.
+pub const MAX_KEY: u8 = 23;
+
+/// The colours a track can be tagged with, numbered from 1.
+pub const MAX_COLOUR: u8 = 8;
+/// The highest rating of a track.
+pub const MAX_RATING: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
@@ -100,6 +173,8 @@ pub struct Entry {
 pub struct Session {
     pub id: SessionId,
     pub opened: Timestamp,
+    /// Tracks played in it that are still in the collection.
+    pub played: usize,
 }
 
 /// A track played in a session, as it was when it was played.
@@ -132,18 +207,36 @@ pub enum Column {
     Genre,
     Tempo,
     Duration,
+    /// By Open Key number, then major before minor.
+    Key,
     Imported,
     PlayCount,
-    /// The own order of a playlist; in the collection, the path.
+    /// From one star to five; none last.
+    Rating,
+    /// From the first colour to the eighth; none last.
+    Colour,
+    /// The own order of a playlist; in a history, the order the tracks started playing; in
+    /// the collection, the path.
     Order,
+}
+
+/// Where a search looks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Source {
+    /// The whole collection.
+    #[default]
+    Collection,
+    Playlist(NodeId),
+    /// The tracks played in a session that are still in the collection, once per time they
+    /// were played.
+    History(SessionId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Query {
     /// Words that all have to be found in the title, artist, album or genre.
     pub text: String,
-    /// A playlist to search in; `None` for the whole collection.
-    pub playlist: Option<NodeId>,
+    pub source: Source,
     pub column: Column,
     pub descending: bool,
     pub offset: usize,
@@ -155,7 +248,7 @@ impl Default for Query {
     fn default() -> Self {
         Self {
             text: String::new(),
-            playlist: None,
+            source: Source::Collection,
             column: Column::Order,
             descending: false,
             offset: 0,
@@ -164,7 +257,8 @@ impl Default for Query {
     }
 }
 
-/// One track found, with its entry when the search ran in a playlist.
+/// One track found, with its entry when the search ran in a playlist. A history gives a track
+/// once per time it was played.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hit {
     pub track: Track,
@@ -199,6 +293,35 @@ pub trait Library: Send {
     fn remove_track(&mut self, id: TrackId) -> Result<(), LibraryError>;
     /// Marks the tracks whose file is gone as missing, and those whose file is back as not.
     fn check_files(&mut self) -> Result<CheckReport, LibraryError>;
+    /// Tags a track with a colour, 1 to [`MAX_COLOUR`], or none with 0.
+    fn set_colour(&mut self, track: TrackId, colour: u8) -> Result<(), LibraryError>;
+    /// Rates a track, 0 to [`MAX_RATING`].
+    fn set_rating(&mut self, track: TrackId, rating: u8) -> Result<(), LibraryError>;
+    /// The comment of a track, cut as tags are; `None` or an empty one clears it.
+    fn set_comment(&mut self, track: TrackId, comment: Option<&str>) -> Result<(), LibraryError>;
+    /// The beatgrid and the cues kept for the track at `path`. A track without them, a path
+    /// the collection does not hold and a kept text this version cannot read give `None`.
+    fn memory_at(&self, path: &Path) -> Result<Option<TrackMemory>, LibraryError>;
+    /// Whether a text is kept for the track at `path`, read or not.
+    fn has_memory(&self, path: &Path) -> Result<bool, LibraryError>;
+    /// Keeps the beatgrid and the cues of a track; its tempo becomes that of the grid when
+    /// the grid has one.
+    fn set_memory(&mut self, track: TrackId, memory: &TrackMemory) -> Result<(), LibraryError>;
+    /// Keeps the key, 0 to [`MAX_KEY`], and the loudness the analysis found, and counts the
+    /// track as analysed, even with nothing found.
+    fn set_analysis(
+        &mut self,
+        track: TrackId,
+        key: Option<u8>,
+        loudness: Option<f64>,
+    ) -> Result<(), LibraryError>;
+    /// Up to `limit` tracks never analysed whose file was there at the last consistency
+    /// check, the most recently imported first.
+    fn unanalysed(&self, limit: usize) -> Result<Vec<Track>, LibraryError>;
+    /// How many tracks [`Self::unanalysed`] would give without a limit.
+    fn count_unanalysed(&self) -> Result<usize, LibraryError>;
+    /// The tracks marked missing at the last consistency check, by path.
+    fn missing(&self) -> Result<Vec<Track>, LibraryError>;
     /// Points a track at another file, keeping everything else.
     fn relocate(&mut self, id: TrackId, path: &Path) -> Result<(), LibraryError>;
 
@@ -236,6 +359,17 @@ pub trait Library: Send {
     /// Removes the repeats of each track, keeping its first entry.
     fn remove_repeats(&mut self, playlist: NodeId) -> Result<(), LibraryError>;
     fn clear(&mut self, playlist: NodeId) -> Result<(), LibraryError>;
+    /// The playlist used as the preparation list, if there is one.
+    fn preparation(&self) -> Result<Option<NodeId>, LibraryError>;
+    /// Makes `playlist` the preparation list, in place of the one before.
+    fn set_preparation(&mut self, playlist: NodeId) -> Result<(), LibraryError>;
+    /// The favourite playlists, each with its place, by place.
+    fn favourites(&self) -> Result<Vec<(usize, NodeId)>, LibraryError>;
+    /// Puts `playlist` in the favourite place `place`, taking it out of any other place and
+    /// putting out the playlist that was there.
+    fn set_favourite(&mut self, place: usize, playlist: NodeId) -> Result<(), LibraryError>;
+    /// Empties a favourite place.
+    fn clear_favourite(&mut self, place: usize) -> Result<(), LibraryError>;
 
     fn open_session(&mut self, at: Timestamp) -> Result<SessionId, LibraryError>;
     /// The sessions, the latest first.
@@ -251,6 +385,8 @@ pub trait Library: Send {
     ) -> Result<(), LibraryError>;
     /// The tracks played in a session, in order.
     fn history(&self, session: SessionId) -> Result<Vec<Played>, LibraryError>;
+    /// Forgets a session and what was played in it; the tracks and their play counts stay.
+    fn delete_session(&mut self, session: SessionId) -> Result<(), LibraryError>;
     /// Sets the play count of a track to zero and forgets when it was last played.
     fn reset_played(&mut self, track: TrackId) -> Result<(), LibraryError>;
 

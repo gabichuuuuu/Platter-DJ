@@ -16,7 +16,8 @@ mod tap;
 mod wav;
 
 pub use analyser::{
-    AUTOGAIN_LUFS, AnalysedTempo, Analyser, MAX_AUTOGAIN_DB, PlatterAnalyser, TrackAnalysis,
+    AUTOGAIN_LUFS, AnalysedTempo, Analyser, MAX_AUTOGAIN_DB, PlatterAnalyser, SharedRange,
+    TrackAnalysis, analyse_file,
 };
 pub use command::{
     BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
@@ -24,7 +25,7 @@ pub use command::{
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
-    FINE_MOVE_SECONDS, MixerControls, Snapshot, TEMPO_RANGES, TrackInfo,
+    FINE_MOVE_SECONDS, MixerControls, PreviewSnapshot, Recall, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use peaks::WaveformPeaks;
 pub use platter_analysis::{Key, Mode, TempoRange, Transposed};

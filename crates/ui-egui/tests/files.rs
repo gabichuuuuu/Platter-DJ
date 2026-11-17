@@ -186,3 +186,82 @@ fn a_renamed_root_shows_its_new_name_in_the_tree_and_the_crumbs() {
     assert_eq!(view.tree[0].name, "Biblioteca");
     assert_eq!(view.crumbs, ["Biblioteca"]);
 }
+
+/// The selected rows and the current one. Behaviour note: `docs/behavior/browser.md`,
+/// *Selecting several tracks*.
+fn selection(browser: &FileBrowser) -> (Vec<usize>, Option<usize>) {
+    let view = browser.view();
+    (view.marked, view.selected)
+}
+
+#[test]
+fn several_rows_are_selected_with_control_shift_and_select_all() {
+    let root = library("files-select");
+    let mut browser = browser(&root);
+    browser.navigate(root.clone());
+    wait(&mut browser, all_probed);
+    // A folder, two tracks and a damaged file.
+    assert_eq!(browser.view().rows.len(), 4);
+
+    browser.apply(&AppCommand::BrowserSelect { index: 1 });
+    browser.apply(&AppCommand::BrowserSelectToggle { index: 3 });
+    assert_eq!(selection(&browser), (vec![1, 3], Some(3)));
+    // Taking the current row out leaves another selected row current.
+    browser.apply(&AppCommand::BrowserSelectToggle { index: 3 });
+    assert_eq!(selection(&browser), (vec![1], Some(1)));
+    // The last selected row stays.
+    browser.apply(&AppCommand::BrowserSelectToggle { index: 1 });
+    assert_eq!(selection(&browser), (vec![1], Some(1)));
+
+    browser.apply(&AppCommand::BrowserSelectExtend { index: 3 });
+    assert_eq!(selection(&browser), (vec![1, 2, 3], Some(1)));
+    browser.apply(&AppCommand::BrowserSelectExtend { index: 0 });
+    assert_eq!(selection(&browser), (vec![0, 1], Some(1)));
+    // A row past the end changes nothing.
+    browser.apply(&AppCommand::BrowserSelectExtend { index: 9 });
+    browser.apply(&AppCommand::BrowserSelectToggle { index: 9 });
+    assert_eq!(selection(&browser), (vec![0, 1], Some(1)));
+
+    browser.apply(&AppCommand::BrowserSelectAll);
+    assert_eq!(selection(&browser), (vec![0, 1, 2, 3], Some(1)));
+    // An arrow leaves the current row alone, and so does a plain click.
+    browser.apply(&AppCommand::BrowserMove { delta: 1 });
+    assert_eq!(selection(&browser), (vec![2], Some(2)));
+    browser.apply(&AppCommand::BrowserSelectAll);
+    browser.apply(&AppCommand::BrowserSelect { index: 2 });
+    assert_eq!(selection(&browser), (vec![2], Some(2)));
+}
+
+#[test]
+fn a_change_of_the_list_ends_a_selection() {
+    let root = library("files-select-change");
+    let mut browser = browser(&root);
+    browser.navigate(root.clone());
+    wait(&mut browser, all_probed);
+    browser.apply(&AppCommand::BrowserSelectAll);
+    browser.apply(&AppCommand::BrowserSearchSet {
+        text: "side".to_owned(),
+    });
+    assert_eq!(selection(&browser), (vec![0], Some(0)));
+
+    browser.apply(&AppCommand::BrowserSearchSet {
+        text: String::new(),
+    });
+    browser.apply(&AppCommand::BrowserSelectAll);
+    browser.navigate(root.join("sets"));
+    wait(&mut browser, all_probed);
+    assert_eq!(selection(&browser), (vec![0], Some(0)));
+}
+
+#[test]
+fn an_empty_list_has_no_selection_to_extend() {
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("files-select-empty");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let mut browser = browser(&root);
+    browser.navigate(root.clone());
+    wait(&mut browser, all_probed);
+    browser.apply(&AppCommand::BrowserSelectAll);
+    browser.apply(&AppCommand::BrowserSelectExtend { index: 0 });
+    assert_eq!(selection(&browser), (Vec::new(), None));
+}

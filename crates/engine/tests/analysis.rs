@@ -13,7 +13,10 @@ use std::sync::{Arc, Mutex};
 
 use common::{RATE, Rig, sine_file};
 use platter_core::{BeatGrid, Bpm, DeckId, SampleRate};
-use platter_engine::{Analyser, Command, Engine, Event, Key, Mode, PlatterAnalyser, TrackAnalysis};
+use platter_engine::{
+    Analyser, Command, Engine, Event, Key, Mode, PlatterAnalyser, SharedRange, TempoRange,
+    TrackAnalysis, analyse_file,
+};
 use platter_testkit::files::wav_pcm16;
 use platter_testkit::signal::{stereo, to_i16};
 
@@ -334,4 +337,23 @@ fn the_key_of_the_track_is_published_with_the_deck() {
             mode: Mode::Minor
         })
     );
+}
+
+#[test]
+fn a_new_range_of_tempos_applies_to_the_next_analysis() {
+    let file = drums_file("range.wav", 90.0, 0.25, 20.0);
+    let range = SharedRange::default();
+    let analyser = PlatterAnalyser::with_range(range.clone());
+    let bpm = |analyser: &PlatterAnalyser| {
+        analyse_file(analyser, &file)
+            .unwrap()
+            .tempo
+            .map(|tempo| tempo.bpm.value())
+    };
+    assert_eq!(bpm(&analyser), Some(90.0));
+    // 90 BPM is out of this range: its double is found.
+    range.set(TempoRange::new(120.0, 240.0).unwrap());
+    assert_eq!(bpm(&analyser), Some(180.0));
+    range.set(TempoRange::default());
+    assert_eq!(bpm(&analyser), Some(90.0));
 }

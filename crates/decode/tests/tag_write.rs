@@ -877,7 +877,7 @@ fn full_edit() -> TagEdit {
 #[derive(Clone, Copy, PartialEq)]
 enum Shows {
     Nothing,
-    /// Title, artist, album and tempo, the tempo as the format holds it.
+    /// Title, artist, album, genre and tempo, the tempo as the format holds it.
     Fields(f64),
 }
 
@@ -897,6 +897,7 @@ fn round_trip(name: &str, bytes: &[u8], read: Reader, shows: Shows) -> PathBuf {
         assert_eq!(after.tags.title.as_deref(), Some("Night Drive"), "{name}");
         assert_eq!(after.tags.artist.as_deref(), Some("The Testers"), "{name}");
         assert_eq!(after.tags.album.as_deref(), Some("Signals"), "{name}");
+        assert_eq!(after.tags.genre.as_deref(), Some("Techno"), "{name}");
         assert_eq!(after.tags.bpm, Some(tempo), "{name}");
     }
     check_full_edit(name, &path, read);

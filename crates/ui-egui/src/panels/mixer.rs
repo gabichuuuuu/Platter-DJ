@@ -5,10 +5,10 @@
 //! placement from `docs/design/screens/M2-main.html`. Behaviour notes:
 //! `docs/behavior/mixer.md` and `docs/behavior/master.md`.
 
-use egui::{Align2, CornerRadius, Id, Rect, Role, Sense, WidgetInfo};
+use egui::{Align2, Color32, CornerRadius, Id, Rect, Role, Sense, WidgetInfo};
 use platter_core::DeckId;
 use platter_dsp::eq::band_gain;
-use platter_engine::{Band, Command, FADER_UNITY};
+use platter_engine::{Band, Command, CrossfaderDirection, CrossfaderSide, FADER_UNITY, MixerMode};
 
 use crate::command::{Action, AppCommand, MeterId};
 use crate::cx::{ControlKind, Cx, id};
@@ -18,9 +18,12 @@ use crate::model::View;
 use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::shell::ViewState;
+use crate::tokens::TextStyle;
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec, scale_position};
-use crate::widgets::value::{self, FADER_WIDTH, FaderSpec, KnobSpec, Steps, ValueSpec};
+use crate::widgets::value::{
+    self, CHANNEL_FADER, CHANNEL_FADER_WIDTH, FaderSpec, KnobSpec, Steps, ValueSpec,
+};
 
 /// Gain at the bottom of a gain knob, just above silence, and at its top.
 const KNOB_FLOOR_DB: f64 = -36.0;
@@ -57,16 +60,39 @@ struct KnobCell<'a> {
     size: f32,
 }
 
-/// A knob with its name below. `origin` is the top left corner of the knob.
-fn knob_cell(
+/// What goes under a knob: its name, or its value while it is touched or has the keyboard.
+struct KnobLabel {
+    in_use: bool,
+    text: String,
+    style: TextStyle,
+    ink: Color32,
+    /// The row under the knob, centred on it.
+    rect: Rect,
+}
+
+impl KnobLabel {
+    fn paint(&self, cx: &Cx<'_>, rect: Rect) {
+        paint::text(
+            cx.painter(),
+            cx.theme,
+            rect,
+            Align2::CENTER_CENTER,
+            &self.text,
+            self.style,
+            self.ink,
+        );
+    }
+}
+
+/// A knob without its label. `origin` is the top left corner of the knob.
+fn knob(
     cx: &mut Cx<'_>,
     origin: egui::Pos2,
     id: Id,
     cell: KnobCell<'_>,
     make: impl FnOnce(f64) -> Action,
-) {
-    let theme = cx.theme;
-    let tokens = &theme.tokens;
+) -> KnobLabel {
+    let tokens = &cx.theme.tokens;
     let color = &tokens.color;
     let name = cx.texts.get(cell.name);
     let spoken = format!("{name}, {}", cell.reading);
@@ -89,32 +115,36 @@ fn knob_cell(
         },
         make,
     );
-    // The name, or the value while the knob is touched or has the keyboard.
     let in_use = cell.enabled && (response.hovered() || response.dragged() || response.has_focus());
     let (text, style, ink) = if in_use {
-        (
-            cell.reading.as_str(),
-            tokens.text.readout,
-            color.text_primary,
-        )
+        (cell.reading, tokens.text.readout, color.text_primary)
     } else if cell.enabled {
-        (name, tokens.text.label, color.text_secondary)
+        (name.to_owned(), tokens.text.label, color.text_secondary)
     } else {
-        (name, tokens.text.label, color.text_disabled)
+        (name.to_owned(), tokens.text.label, color.text_disabled)
     };
-    let label = Rect::from_min_size(
-        egui::pos2(rect.center().x - 40.0, rect.bottom() + 1.0),
-        egui::vec2(80.0, 14.0),
-    );
-    paint::text(
-        cx.painter(),
-        theme,
-        label,
-        Align2::CENTER_CENTER,
+    KnobLabel {
+        in_use,
         text,
         style,
         ink,
-    );
+        rect: Rect::from_min_size(
+            egui::pos2(rect.center().x - 40.0, rect.bottom() + 1.0),
+            egui::vec2(80.0, 14.0),
+        ),
+    }
+}
+
+/// A knob with its label below.
+fn knob_cell(
+    cx: &mut Cx<'_>,
+    origin: egui::Pos2,
+    id: Id,
+    cell: KnobCell<'_>,
+    make: impl FnOnce(f64) -> Action,
+) {
+    let label = knob(cx, origin, id, cell, make);
+    label.paint(cx, label.rect);
 }
 
 fn db_reading(cx: &Cx<'_>, db: f64) -> String {
@@ -126,7 +156,7 @@ fn db_reading(cx: &Cx<'_>, db: f64) -> String {
     }
 }
 
-/// A meter with its clip indicator above and, while it shows, the word below or beside it.
+/// A meter with its clip indicator above and, while it shows, the CLIP word in `label_at`.
 fn meter_with_clip(cx: &mut Cx<'_>, rect: Rect, which: MeterId, spec: MeterSpec, label_at: Rect) {
     let theme = cx.theme;
     let tokens = &theme.tokens;
@@ -176,54 +206,39 @@ fn meter_with_clip(cx: &mut Cx<'_>, rect: Rect, which: MeterId, spec: MeterSpec,
     }
 }
 
-/// Where the parts of a channel sit, as offsets from the left of the mixer panel. Channel B
-/// is the mirror image of channel A.
-struct ChannelLayout {
-    /// Left of the gain and equaliser knobs, and of their kill keys.
-    knobs: f32,
-    kills: f32,
-    /// Left of the filter and pan knobs and of the pre-listen key.
-    side: f32,
-    fader: f32,
-    meter: f32,
-    badge: f32,
-}
-
-const CHANNEL_A: ChannelLayout = ChannelLayout {
-    knobs: 16.0,
-    kills: 64.0,
-    side: 108.0,
-    fader: 103.0,
-    meter: 143.0,
-    badge: 45.0,
-};
-
-const CHANNEL_B: ChannelLayout = ChannelLayout {
-    knobs: 310.0,
-    kills: 358.0,
-    side: 253.0,
-    fader: 248.0,
-    meter: 288.0,
-    badge: 281.0,
-};
+/// Distance between the left edges of channel A and channel B. Both channels have the same
+/// layout, side by side, with the master and the headphones in a column to their right.
+const CHANNEL_STEP: f32 = 156.0;
+/// Left edge of the master column, where its divider runs, and the centre of its controls.
+const MASTER_LEFT: f32 = 324.0;
+const MASTER_CENTRE: f32 = 356.0;
+/// Sizes the reference screen gives the knobs that are not gain or equaliser knobs.
+const FILTER_KNOB: f32 = 44.0;
+const SMALL_KNOB: f32 = 24.0;
+const MASTER_KNOB: f32 = 36.0;
+/// Tops of the high, mid and low knobs; their kill keys and the channel meter follow them.
+const EQ_TOPS: [f32; 3] = [95.0, 153.0, 211.0];
+/// The two assign keys of a channel, under its fader.
+const ASSIGN_WIDTH: f32 = 26.0;
+const ASSIGN_STEP: f32 = 28.0;
+/// The keys beside the crossfader.
+const FADE_STEP_WIDTH: f32 = 24.0;
+const FADE_AUTO_WIDTH: f32 = 44.0;
 
 fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
     let color = &tokens.color;
-    let layout = match deck {
-        DeckId::A => CHANNEL_A,
-        DeckId::B => CHANNEL_B,
-    };
-    let at = |x: f32, y: f32| panel.min + egui::vec2(x, y);
+    let left = panel.left() + deck.index() as f32 * CHANNEL_STEP;
+    let at = |x: f32, y: f32| egui::pos2(left + x, panel.top() + y);
     let snapshot = &view.engine.decks[deck.index()];
     let controls = &snapshot.controls;
     let letter = deck.letter().to_string();
     let knob = tokens.size.knob;
     let index = deck.index();
 
-    let badge = Rect::from_min_size(at(layout.badge, 12.0), egui::vec2(18.0, 18.0));
+    let badge = Rect::from_min_size(at(50.0, 12.0), egui::vec2(18.0, 18.0));
     paint::badge(
         cx.painter(),
         theme,
@@ -232,7 +247,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         deck_color(theme, deck),
     );
     let title = texts.format("mixer.channel", &[("deck", &letter)]);
-    let title_rect = Rect::from_min_size(at(layout.badge + 24.0, 12.0), egui::vec2(90.0, 18.0));
+    let title_rect = Rect::from_min_size(at(74.0, 12.0), egui::vec2(90.0, 18.0));
     paint::text(
         cx.painter(),
         theme,
@@ -245,7 +260,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
 
     knob_cell(
         cx,
-        at(layout.knobs, 36.0),
+        at(16.0, 35.0),
         id(("mixer-gain", index)),
         KnobCell {
             name: "mixer.gain",
@@ -265,10 +280,65 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             .into()
         },
     );
+    let headphones = view.audio.has_headphones();
+    let name = texts.format("mixer.pre_listen", &[("deck", &letter)]);
+    let spec = KeySpec {
+        face: Face::Icon(Glyph::Headphones, 16.0),
+        name: &name,
+        lit: controls.pre_listen.then_some(deck_color(theme, deck)),
+        held: None,
+        enabled: headphones,
+        keeps_led: false,
+        text: None,
+    };
+    key::key(
+        cx,
+        Rect::from_min_size(at(108.0, 143.0), egui::vec2(54.0, 22.0)),
+        id(("mixer-pre-listen", index)),
+        spec,
+        Press::Click(Command::MixerCueToggle { deck }.into()),
+    );
+
+    // The key of the deck in semitones, ±12; turning it turns key lock on.
+    let shift = snapshot.key_shift;
+    let reading = if shift.abs() < 0.5 {
+        "0".to_owned()
+    } else {
+        format!("{shift:+.0}")
+    };
+    knob_cell(
+        cx,
+        at(24.0, 272.0),
+        id(("mixer-key", index)),
+        KnobCell {
+            name: "mixer.key",
+            reading,
+            position: (shift + 12.0) / 24.0,
+            default: 0.5,
+            centre_detent: true,
+            hide_arc: false,
+            enabled: snapshot.track.is_some(),
+            size: SMALL_KNOB,
+        },
+        |position| {
+            Command::DeckKeySet {
+                deck,
+                semitones: (position * 24.0 - 12.0).round(),
+            }
+            .into()
+        },
+    );
+
+    // In external mixer mode the hardware mixer does the rest: the channel keeps its gain,
+    // its key and its pre-listen, as the design system collapses it.
+    if view.engine.mixer.mode == MixerMode::External {
+        return;
+    }
+
     let bands = [
-        (Band::High, "mixer.high", 97.0),
-        (Band::Mid, "mixer.mid", 158.0),
-        (Band::Low, "mixer.low", 219.0),
+        (Band::High, "mixer.high", EQ_TOPS[0]),
+        (Band::Mid, "mixer.mid", EQ_TOPS[1]),
+        (Band::Low, "mixer.low", EQ_TOPS[2]),
     ];
     for (band, name, top) in bands {
         let position = controls.eq[band as usize];
@@ -280,7 +350,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         };
         knob_cell(
             cx,
-            at(layout.knobs, top),
+            at(16.0, top),
             id(("mixer-eq", index, band as usize)),
             KnobCell {
                 name,
@@ -302,8 +372,8 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             },
         );
         let kill = texts.get("mixer.kill");
-        let width = key::width_for(cx, kill, 28.0).clamp(28.0, 34.0);
-        let rect = Rect::from_min_size(at(layout.kills, top + 19.0), egui::vec2(width, 18.0));
+        let width = key::width_for(cx, kill, 28.0).clamp(28.0, 30.0);
+        let rect = Rect::from_min_size(at(63.0, top + 19.0), egui::vec2(width, 18.0));
         let name = texts.format(
             "mixer.kill_name",
             &[("band", texts.get(name)), ("deck", &letter)],
@@ -326,6 +396,29 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         );
     }
 
+    // The channel meter runs beside the equaliser, from the top of the high knob to the
+    // name of the low one; its clip cell takes the first 6px.
+    let meter_rect = Rect::from_min_max(
+        at(94.0, EQ_TOPS[0] + 6.0),
+        at(104.0, EQ_TOPS[2] + knob + 15.0),
+    );
+    let label = Rect::from_center_size(
+        egui::pos2(meter_rect.center().x, meter_rect.bottom() + 9.0),
+        egui::vec2(28.0, 14.0),
+    );
+    meter_with_clip(
+        cx,
+        meter_rect,
+        MeterId::Deck(deck),
+        MeterSpec {
+            levels: snapshot.levels,
+            memory: state.meters[index],
+            segments: CHANNEL_SEGMENTS,
+            vertical: true,
+        },
+        label,
+    );
+
     let filter = controls.filter;
     let reading = if filter.abs() < 0.005 {
         texts.get("mixer.filter_off").to_owned()
@@ -339,7 +432,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     knob_cell(
         cx,
-        at(layout.side, 36.0),
+        at(113.0, 35.0),
         id(("mixer-filter", index)),
         KnobCell {
             name: "mixer.filter",
@@ -349,7 +442,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             centre_detent: true,
             hide_arc: false,
             enabled: true,
-            size: knob,
+            size: FILTER_KNOB,
         },
         |position| {
             Command::MixerFilterSet {
@@ -372,7 +465,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     knob_cell(
         cx,
-        at(layout.side, 99.0),
+        at(123.0, 99.0),
         id(("mixer-pan", index)),
         KnobCell {
             name: "mixer.pan",
@@ -382,7 +475,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             centre_detent: true,
             hide_arc: false,
             enabled: true,
-            size: knob,
+            size: SMALL_KNOB,
         },
         |position| {
             Command::MixerPanSet {
@@ -393,27 +486,56 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         },
     );
 
-    let headphones = view.audio.has_headphones();
-    let name = texts.format("mixer.pre_listen", &[("deck", &letter)]);
-    let spec = KeySpec {
-        face: Face::Icon(Glyph::Headphones, 16.0),
-        name: &name,
-        lit: controls.pre_listen.then_some(deck_color(theme, deck)),
-        held: None,
-        enabled: headphones,
-        keeps_led: false,
-        text: None,
-    };
-    key::key(
-        cx,
-        Rect::from_min_size(at(layout.side, 162.0), egui::vec2(40.0, 24.0)),
-        id(("mixer-pre-listen", index)),
-        spec,
-        Press::Click(Command::MixerCueToggle { deck }.into()),
-    );
+    // The side of the crossfader the channel goes to: L, R, or neither (thru).
+    let side = view.engine.mixer.crossfader_sides[index];
+    let sides = [
+        (
+            CrossfaderSide::Left,
+            "mixer.assign_left",
+            "mixer.assign_left_name",
+        ),
+        (
+            CrossfaderSide::Right,
+            "mixer.assign_right",
+            "mixer.assign_right_name",
+        ),
+    ];
+    for (place, (this, label, name)) in sides.into_iter().enumerate() {
+        let label = texts.get(label);
+        let name = texts.format(name, &[("deck", &letter)]);
+        let rect = Rect::from_min_size(
+            at(108.0 + place as f32 * ASSIGN_STEP, 294.0),
+            egui::vec2(ASSIGN_WIDTH, 18.0),
+        );
+        let spec = KeySpec {
+            face: Face::Text(label),
+            name: &name,
+            lit: (side == this).then_some(color.text_primary),
+            held: None,
+            enabled: true,
+            keeps_led: false,
+            text: Some(tokens.text.label),
+        };
+        // A lit side goes back to neither.
+        let next = if side == this {
+            CrossfaderSide::Thru
+        } else {
+            this
+        };
+        key::key(
+            cx,
+            rect,
+            id(("mixer-assign", index, place)),
+            spec,
+            Press::Click(Command::MixerCrossfaderAssign { deck, side: next }.into()),
+        );
+    }
 
     let name = texts.format("mixer.fader", &[("deck", &letter)]);
-    let track = Rect::from_min_size(at(layout.fader, 196.0), egui::vec2(FADER_WIDTH, 108.0));
+    let track = Rect::from_min_size(
+        at(112.0, 170.0),
+        egui::vec2(CHANNEL_FADER_WIDTH, tokens.size.fader_track),
+    );
     value::fader(
         cx,
         track,
@@ -427,25 +549,9 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
                 enabled: true,
             },
             mark: FADER_UNITY,
+            look: CHANNEL_FADER,
         },
         |position| Command::MixerFaderSet { deck, position }.into(),
-    );
-    let meter_rect = Rect::from_min_size(at(layout.meter, 196.0), egui::vec2(10.0, 108.0));
-    let label = Rect::from_center_size(
-        egui::pos2(meter_rect.center().x, meter_rect.bottom() + 9.0),
-        egui::vec2(40.0, 14.0),
-    );
-    meter_with_clip(
-        cx,
-        meter_rect,
-        MeterId::Deck(deck),
-        MeterSpec {
-            levels: snapshot.levels,
-            memory: state.meters[index],
-            segments: CHANNEL_SEGMENTS,
-            vertical: true,
-        },
-        label,
     );
 }
 
@@ -456,23 +562,38 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     let color = &tokens.color;
     let at = |x: f32, y: f32| panel.min + egui::vec2(x, y);
     let mixer = &view.engine.mixer;
-    let centre = 200.0;
+    let centre = MASTER_CENTRE;
     let painter = cx.painter();
-    let heading = Rect::from_center_size(at(centre, 19.0), egui::vec2(88.0, 14.0));
-    paint::text(
-        painter,
-        theme,
-        heading,
-        Align2::CENTER_CENTER,
-        texts.get("mixer.master"),
-        tokens.text.label,
-        color.text_secondary,
+    painter.vline(
+        panel.left() + MASTER_LEFT,
+        panel.top() + 12.0..=panel.top() + 306.0,
+        paint::hairline(theme, color.line_divider),
     );
+    // While the master clips, the CLIP word takes the place of the heading, right above
+    // the clip cell: the column has no other room for it.
+    let heading = Rect::from_center_size(at(centre, 19.0), egui::vec2(60.0, 14.0));
+    if !state.meters[2].is_clipped() {
+        paint::text(
+            painter,
+            theme,
+            heading,
+            Align2::CENTER_CENTER,
+            texts.get("mixer.master"),
+            tokens.text.label,
+            color.text_secondary,
+        );
+    }
 
-    let meter_rect = Rect::from_min_size(at(205.0, 36.0), egui::vec2(12.0, 124.0));
+    let meter_rect = Rect::from_min_size(at(361.0, 38.0), egui::vec2(12.0, 118.0));
+    // 0 and 6 dB sit closer than a line of text on this short meter: each figure keeps at
+    // least a line below the one above it.
+    let mut below = f32::NEG_INFINITY;
     for mark in SCALE_MARKS {
         let y = meter_rect.bottom() - scale_position(-mark) * meter_rect.height();
-        let y = y.clamp(meter_rect.top() + 6.0, meter_rect.bottom() - 6.0);
+        let y = y
+            .clamp(meter_rect.top() + 6.0, meter_rect.bottom() - 6.0)
+            .max(below);
+        below = y + tokens.text.readout.line_height - 3.0;
         let label = Rect::from_min_max(
             egui::pos2(meter_rect.left() - 30.0, y - 7.0),
             egui::pos2(meter_rect.left() - tokens.space.s2 - 2.0, y + 7.0),
@@ -487,7 +608,6 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             color.text_secondary,
         );
     }
-    let clip_label = Rect::from_min_size(at(219.0, 28.0), egui::vec2(28.0, 14.0));
     meter_with_clip(
         cx,
         meter_rect,
@@ -498,12 +618,12 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             segments: MASTER_SEGMENTS,
             vertical: true,
         },
-        clip_label,
+        heading,
     );
 
     knob_cell(
         cx,
-        at(centre - 20.0, 170.0),
+        at(centre - MASTER_KNOB / 2.0, 162.0),
         id("mixer-master-level"),
         KnobCell {
             name: "mixer.level",
@@ -513,7 +633,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             centre_detent: false,
             hide_arc: false,
             enabled: true,
-            size: tokens.size.knob,
+            size: MASTER_KNOB,
         },
         |position| {
             Command::MasterGainSet {
@@ -525,8 +645,8 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
 
     let painter = cx.painter();
     painter.hline(
-        panel.left() + centre - 20.0..=panel.left() + centre + 20.0,
-        panel.top() + 235.0,
+        panel.left() + centre - 22.0..=panel.left() + centre + 22.0,
+        panel.top() + 221.0,
         paint::hairline(theme, color.line_divider),
     );
     let headphones = view.audio.has_headphones();
@@ -537,15 +657,15 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     };
     let phones = texts.get("mixer.phones");
     let width =
-        14.0 + tokens.space.s2 + paint::text_width(painter, theme, phones, tokens.text.label);
+        14.0 + tokens.space.s1 + paint::text_width(painter, theme, phones, tokens.text.label);
     let left = panel.left() + centre - width / 2.0;
     let icon = Rect::from_min_size(
-        egui::pos2(left, panel.top() + 246.0),
+        egui::pos2(left, panel.top() + 230.0),
         egui::vec2(14.0, 14.0),
     );
     theme.icons.paint(painter, Glyph::Headphones, icon, ink);
     let label = Rect::from_min_size(
-        egui::pos2(icon.right() + tokens.space.s2, icon.top()),
+        egui::pos2(icon.right() + tokens.space.s1, icon.top()),
         egui::vec2(80.0, 14.0),
     );
     paint::text(
@@ -569,10 +689,9 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             &[("value", &format!("{:.0}", mix * 100.0))],
         )
     };
-    let small = 36.0;
-    knob_cell(
+    let mix_label = knob(
         cx,
-        at(centre - 40.0, 270.0),
+        at(330.0, 250.0),
         id("mixer-phones-mix"),
         KnobCell {
             name: "mixer.mix",
@@ -582,13 +701,13 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             centre_detent: false,
             hide_arc: false,
             enabled: headphones,
-            size: small,
+            size: SMALL_KNOB,
         },
         |position| Command::MixerCueMixSet { position }.into(),
     );
-    knob_cell(
+    let vol_label = knob(
         cx,
-        at(centre + 4.0, 270.0),
+        at(359.0, 250.0),
         id("mixer-phones-volume"),
         KnobCell {
             name: "mixer.vol",
@@ -598,7 +717,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             centre_detent: false,
             hide_arc: false,
             enabled: headphones,
-            size: small,
+            size: SMALL_KNOB,
         },
         |position| {
             Command::MixerCueVolumeSet {
@@ -607,6 +726,21 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             .into()
         },
     );
+    // The two knobs sit closer than their values are wide: the value of the one in use
+    // takes the whole row of the column, right of its divider, and hides both names.
+    let row = Rect::from_x_y_ranges(
+        panel.left() + MASTER_LEFT + 1.0..=panel.right() - tokens.space.s1,
+        mix_label.rect.y_range(),
+    );
+    if let Some(label) = [&mix_label, &vol_label]
+        .into_iter()
+        .find(|label| label.in_use)
+    {
+        label.paint(cx, row);
+    } else {
+        mix_label.paint(cx, mix_label.rect);
+        vol_label.paint(cx, vol_label.rect);
+    }
 }
 
 pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
@@ -619,13 +753,16 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
     }
     master(cx, rect, view, state);
 
+    if view.engine.mixer.mode == MixerMode::External {
+        return;
+    }
     let at = |x: f32, y: f32| rect.min + egui::vec2(x, y);
     let track = Rect::from_min_size(
-        at(118.0, 329.0),
+        at(118.0, 315.0),
         egui::vec2(tokens.size.crossfader_track, 28.0),
     );
     for (deck, x) in [(DeckId::A, 88.0), (DeckId::B, 290.0)] {
-        let badge = Rect::from_min_size(at(x, 334.0), egui::vec2(18.0, 18.0));
+        let badge = Rect::from_min_size(at(x, 320.0), egui::vec2(18.0, 18.0));
         paint::badge(
             cx.painter(),
             theme,
@@ -648,6 +785,50 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         },
         |position| Command::MixerCrossfaderSet { position }.into(),
     );
+
+    // Outside each badge: a step towards that side, then a fade to it by itself.
+    let texts = cx.texts;
+    let fades = [
+        (
+            CrossfaderDirection::Left,
+            Glyph::ChevronLeft,
+            "mixer.fade_step_a",
+            at(8.0, 317.0),
+            at(36.0, 317.0),
+            "mixer.fade_auto_a",
+        ),
+        (
+            CrossfaderDirection::Right,
+            Glyph::ChevronRight,
+            "mixer.fade_step_b",
+            at(364.0, 317.0),
+            at(314.0, 317.0),
+            "mixer.fade_auto_b",
+        ),
+    ];
+    for (place, (direction, glyph, step_name, step_at, auto_at, auto_name)) in
+        fades.into_iter().enumerate()
+    {
+        let name = texts.get(step_name);
+        key::key(
+            cx,
+            Rect::from_min_size(step_at, egui::vec2(FADE_STEP_WIDTH, 24.0)),
+            id(("mixer-fade-step", place)),
+            KeySpec::icon(glyph, 14.0, name),
+            Press::Click(Command::MixerCrossfaderStep { direction }.into()),
+        );
+        let label = texts.get("mixer.fade_auto");
+        let mut spec = KeySpec::text(label);
+        spec.name = texts.get(auto_name);
+        spec.text = Some(tokens.text.label);
+        key::key(
+            cx,
+            Rect::from_min_size(auto_at, egui::vec2(FADE_AUTO_WIDTH, 24.0)),
+            id(("mixer-fade-auto", place)),
+            spec,
+            Press::Click(Command::MixerCrossfaderAutoFade { direction }.into()),
+        );
+    }
 }
 
 #[cfg(test)]

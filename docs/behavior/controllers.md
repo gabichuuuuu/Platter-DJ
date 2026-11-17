@@ -3,8 +3,8 @@
 A MIDI controller sends a message when a button, fader, knob or encoder moves. A mapping says
 which command each message triggers. This note covers the mapping file and how messages become
 commands, in `platter-control`, the MIDI inputs that receive them, in `platter-device-io`, and
-how the application joins the two, named in its settings file. The controller manager of the
-preferences, learn mode and the lights of the controller come later in M3, on top of them. The
+how the application joins the two, and the controller manager of the preferences with its
+learn mode. The lights of the controller come later, on top of them. The
 choices behind them are in `docs/decisions/0024-midi-mappings.md`,
 `docs/decisions/0025-midi-ports.md` and `docs/decisions/0026-midi-in-the-application.md`. No
 real controller has been tried yet (`ROADMAP.md`, checks waiting for equipment).
@@ -174,6 +174,49 @@ mapping = "example-controller.toml"
   the queue of an input was full, or left out because they were too long, are written in the
   log at most once every 10 seconds, with their count.
 
+### The controller manager
+
+Sections of the public manual read on 17 November 2026: *Configuring a MIDI controller*,
+*Controller Manager overview* (*Device Setup*, *Assignment Table*, *Device Mapping*) and
+*Assigning MIDI controls*.
+
+The manual chooses a device and its mapping, imports and exports mappings, lists the
+assignments of the mapping in a table, adds an assignment from a menu of functions and assigns
+it to a control with Learn: Learn stays on until it is pressed again, so several controls can
+be assigned in one go, each time to the selected assignment.
+
+The Controllers page of the preferences, as the design system draws it:
+
+| Command | Effect |
+| --- | --- |
+| `midi.controller.add` | A new controller on the first input no controller uses, with an empty mapping file of its own |
+| `midi.controller.remove` | `index`: the controller leaves the settings; its mapping file stays on disk |
+| `midi.controller.select` | `index`: the controller the page shows |
+| `midi.input.set` | `index`, `input`: the input the controller listens to |
+| `midi.mapping.import` | `index`, `path`: the mapping file at `path` is copied into the folder of the settings and becomes the mapping of the controller |
+| `midi.mapping.export` | `index`, `folder`: the mapping is written into `folder` under the name of its file, never over a file that is there |
+| `midi.binding.select` | `index`: the assignment Learn, Duplicate and Delete act on |
+| `midi.binding.add` | `command`: a new assignment of that function, on the deck the page targets, waiting for Learn |
+| `midi.binding.duplicate` | Copies the selected assignment, without its control |
+| `midi.binding.delete` | Deletes the selected assignment |
+| `midi.learn.toggle` | Learn on or off |
+
+- The table lists each assignment of the mapping: its function and its deck, or Global; the
+  kind of control (button, button held, fader, encoder); its condition on the modifiers, or the
+  modifier a button sets; and its message, as `Note C2, ch 1`, `CC 14, ch 1` or `Pitch, ch 1`,
+  middle C being C4. An assignment still without a control says so.
+- While Learn is on, the next message from the input of the controller, a note, a control
+  change or a pitch bend, becomes the control of the selected assignment; Learn stays on for
+  the next one. The messages do not act on the engine while Learn is on.
+- *Add* offers the functions a control can drive: those without parameters but the deck, as
+  buttons, and those with one number, as faders over its range. The deck is the one the page
+  targets, A or B.
+- Every change is written into the mapping file at once, and the controller is opened again
+  with it; a mapping with a mistake is not written and the page says why. An assignment
+  without a control is not written until Learn gives it one.
+- Import and export choose their file in the folder the explorer of the browser shows, as the
+  playlist files do: import offers its `.toml` files.
+
 ## Differences
 
 - Relative faders, soft takeover, the sensitivity and acceleration of encoders, and the
@@ -187,14 +230,16 @@ mapping = "example-controller.toml"
 - The public manual has a toggle mode and a mode that sets a fixed value. Platter has toggle
   commands and fixed parameters instead, so a button needs no state of its own beyond being
   down or up.
-- The focus deck as a target comes with the controller manager.
+- The focus deck as a target is not there: an assignment names deck A or B, or none.
 - Mappings are TOML files of Platter. Mapping files of other applications are not read.
 - Output ports, the choice of all ports for a mapping, virtual ports and noticing a device
   plugged in or out come with the controller manager. An input whose device is unplugged
   stops sending; it is not reported yet, and a device plugged in after the start is not
   opened until the application starts again.
-- Choosing the controllers in the settings file by hand is a stand-in for the controller
-  manager, as the folders of the file selector are.
+- The parameters of a function other than its deck and one number are edited in the
+  mapping file; the page adds and learns assignments, it does not edit those.
+- Mappings are imported one at a time as files; the documented application imports categories
+  from a file of several.
 - The messages are carried out by the frames of the window. Whether a minimised window still
   runs frames on each system, and the delay from a message to its command, have not been
   measured: they need a controller.

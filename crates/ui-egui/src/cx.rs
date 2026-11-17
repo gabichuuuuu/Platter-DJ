@@ -55,6 +55,11 @@ impl FrameOutput {
         self.claimed.extend_from_slice(keys);
     }
 
+    /// Whether the focused control takes typed text: it keeps the letters for itself.
+    pub fn takes_text(&self) -> bool {
+        self.claimed.contains(&Key::A)
+    }
+
     /// Whether the focused control keeps `key` for itself. A chord with Control or Alt is
     /// never kept: controls only use plain keys and Shift.
     pub fn is_claimed(&self, key: Key, modifiers: &Modifiers) -> bool {

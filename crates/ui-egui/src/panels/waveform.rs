@@ -26,6 +26,8 @@ pub const ZOOM_SECONDS: [f64; 5] = [4.0, 8.0, 16.0, 32.0, 64.0];
 /// The zoom step a deck starts with.
 pub const DEFAULT_ZOOM: usize = 1;
 /// How much of the background shows through the veil over the played part of an overview.
+/// How dim the line of the timeline of flux is against the playhead.
+const TIMELINE_DIM: f32 = 0.45;
 const PLAYED_VEIL: f32 = 0.55;
 const GUTTER_WIDTH: f32 = 32.0;
 /// How much of the loop colour covers the waveform inside a loop.
@@ -240,6 +242,35 @@ fn peak_over(columns: &[[u8; 3]], from: usize, to: usize) -> [u8; 3] {
 }
 
 /// The line that marks the play position, with a small triangle at each end.
+/// With flux on, a dimmed playhead where the track would be had the detour not happened:
+/// `docs/behavior/flux.md`.
+fn timeline(
+    cx: &Cx<'_>,
+    painter: &egui::Painter,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    x_of: impl Fn(f64) -> f32,
+) {
+    let Some(seconds) = snapshot
+        .timeline_seconds
+        .filter(|seconds| seconds.is_finite())
+    else {
+        return;
+    };
+    let tokens = &cx.theme.tokens;
+    let x = x_of(seconds);
+    if (lane.left()..=lane.right()).contains(&x) {
+        painter.vline(
+            x,
+            lane.y_range(),
+            Stroke::new(
+                tokens.stroke.playhead,
+                tokens.color.playhead.gamma_multiply(TIMELINE_DIM),
+            ),
+        );
+    }
+}
+
 fn playhead(cx: &Cx<'_>, lane: Rect, x: f32) {
     let tokens = &cx.theme.tokens;
     let ink = tokens.color.playhead;
@@ -326,6 +357,7 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
     }
     loop_overlay(cx, &painter, lane, snapshot, x_of, true);
     cue_overlay(cx, &painter, lane, snapshot, x_of, true);
+    timeline(cx, &painter, lane, snapshot, x_of);
     playhead(cx, lane, lane.center().x);
 }
 
@@ -448,6 +480,7 @@ pub fn overview(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapsh
     let clipped = painter.with_clip_rect(rect);
     loop_overlay(cx, &clipped, rect, snapshot, x_of, false);
     cue_overlay(cx, &clipped, rect, snapshot, x_of, false);
+    timeline(cx, &clipped, rect, snapshot, x_of);
     playhead(cx, rect, x.clamp(rect.left() + 1.0, rect.right() - 1.0));
     if response.has_focus() {
         paint::focus_ring(painter, theme, rect, tokens.radius.sm);

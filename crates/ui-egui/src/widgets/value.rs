@@ -18,6 +18,7 @@ use egui::{
 use crate::command::Action;
 use crate::cx::{ControlKind, Cx};
 use crate::paint;
+use crate::widgets::tooltip;
 
 /// Pixels of drag that take a knob across its whole travel.
 const KNOB_DRAG_TRAVEL: f32 = 160.0;
@@ -80,6 +81,10 @@ fn interact(
     response.widget_info(|| WidgetInfo::slider(spec.enabled, spec.position, spec.name));
     if !spec.enabled || !cx.interactive {
         return (response, None);
+    }
+    // While it is dragged the box would cover the scale under it.
+    if !response.dragged() {
+        tooltip::tooltip(cx, &response, spec.name, None);
     }
     // A click or the start of a drag gives the control the keyboard, so the keys that
     // adjust it work right after the pointer touched it.
@@ -203,9 +208,11 @@ pub fn knob(
     let tokens = &cx.theme.tokens;
     let color = &tokens.color;
     let painter = cx.painter();
-    // The arc sits on the edge of the control and the cap 7px inside it.
-    let arc_radius = spec.size / 2.0 - 1.0;
-    let cap_radius = arc_radius - 7.0;
+    // Arc and cap keep the proportions of the reference screens at every size, so the small
+    // knobs of the mixer still have a cap to grab: in a 56-unit square the arc has a radius
+    // of 24 and the cap of 17.
+    let arc_radius = spec.size * 24.0 / 56.0;
+    let cap_radius = spec.size * 17.0 / 56.0;
     let arc_stroke = |ink| Stroke::new(2.0, ink);
     let ink = if spec.value.enabled {
         color.text_primary
@@ -231,7 +238,7 @@ pub fn knob(
     if spec.centre_detent {
         let top = centre - egui::vec2(0.0, arc_radius);
         painter.line_segment(
-            [top - egui::vec2(0.0, 2.0), top + egui::vec2(0.0, 3.0)],
+            [top - egui::vec2(0.0, 3.0), top + egui::vec2(0.0, 1.0)],
             paint::hairline(cx.theme, color.line_control),
         );
     }
@@ -252,8 +259,8 @@ pub fn knob(
     let direction = egui::vec2(angle.cos(), angle.sin());
     painter.line_segment(
         [
-            centre + direction * (cap_radius * 0.45),
-            centre + direction * (cap_radius - 2.0),
+            centre + direction * (cap_radius * 0.41),
+            centre + direction * (cap_radius * 0.88),
         ],
         Stroke::new(2.0, ink),
     );
@@ -324,14 +331,41 @@ pub struct FaderSpec<'a> {
     /// Position of the longer tick beside the track: unity for a channel fader, the centre
     /// for a tempo fader.
     pub mark: f64,
+    pub look: FaderLook,
 }
 
-/// Size of the cap of a vertical fader.
-const CAP: egui::Vec2 = egui::vec2(26.0, 16.0);
+/// The proportions of a vertical fader, which differ between the tempo fader of a deck and
+/// the channel fader of the mixer in the reference screens.
+#[derive(Clone, Copy, Debug)]
+pub struct FaderLook {
+    pub cap: egui::Vec2,
+    /// Distance from the left of the fader to the left of its cap; the slot runs under the
+    /// centre of the cap.
+    pub cap_left: f32,
+    pub tick_spacing: f32,
+    /// Longer ticks at the ends and the middle of the scale.
+    pub scale_ticks: bool,
+}
+
+pub const TEMPO_FADER: FaderLook = FaderLook {
+    cap: egui::vec2(26.0, 16.0),
+    cap_left: 3.0,
+    tick_spacing: 12.0,
+    scale_ticks: false,
+};
+
+pub const CHANNEL_FADER: FaderLook = FaderLook {
+    cap: egui::vec2(30.0, 16.0),
+    cap_left: 6.0,
+    tick_spacing: 15.0,
+    scale_ticks: true,
+};
+
 /// Size of the cap of the crossfader.
 const CROSS_CAP: egui::Vec2 = egui::vec2(16.0, 26.0);
 const SLOT_WIDTH: f32 = 4.0;
-const TICK_SPACING: f32 = 12.0;
+const SHORT_TICK: f32 = 6.0;
+const LONG_TICK: f32 = 10.0;
 
 fn paint_cap(cx: &Cx<'_>, cap: Rect, vertical: bool, enabled: bool) {
     let tokens = &cx.theme.tokens;
@@ -366,8 +400,9 @@ pub fn fader(
     spec: FaderSpec<'_>,
     make: impl FnOnce(f64) -> Action,
 ) -> Response {
+    let look = spec.look;
     // The centre of the cap travels along this line, so the cap stays inside `rect`.
-    let travel = rect.shrink2(egui::vec2(0.0, CAP.y / 2.0));
+    let travel = rect.shrink2(egui::vec2(0.0, look.cap.y / 2.0));
     let (response, moved) = interact(cx, rect, travel, id, &spec.value, Axis::Vertical);
     let action = make(moved.unwrap_or(spec.value.position));
     cx.record(action.id(), rect, ControlKind::Value, spec.value.enabled);
@@ -378,7 +413,7 @@ pub fn fader(
     let tokens = &cx.theme.tokens;
     let color = &tokens.color;
     let painter = cx.painter();
-    let slot_x = rect.left() + CAP.x / 2.0;
+    let slot_x = rect.left() + look.cap_left + look.cap.x / 2.0;
     let slot = Rect::from_min_max(
         egui::pos2(slot_x - SLOT_WIDTH / 2.0, rect.top()),
         egui::pos2(slot_x + SLOT_WIDTH / 2.0, rect.bottom()),
@@ -390,23 +425,28 @@ pub fn fader(
         paint::hairline(cx.theme, color.line_key),
         StrokeKind::Inside,
     );
-    let ticks_x = slot.right() + 10.0;
+    // The ticks hang from the right edge; the longer ones reach further left.
+    let tick = |y: f32, length: f32, ink| {
+        painter.hline(
+            rect.right() - length..=rect.right(),
+            y,
+            paint::hairline(cx.theme, ink),
+        );
+    };
+    let spacing = look.tick_spacing.max(1.0);
     let mut y = rect.top();
     while y <= rect.bottom() + 0.5 {
-        painter.hline(
-            ticks_x..=ticks_x + 6.0,
-            y,
-            paint::hairline(cx.theme, color.line_key),
-        );
-        y += TICK_SPACING;
+        tick(y, SHORT_TICK, color.line_key);
+        y += spacing;
+    }
+    if look.scale_ticks {
+        for y in [rect.top(), rect.center().y, rect.bottom()] {
+            tick(y, LONG_TICK, color.line_key);
+        }
     }
     let y_of = |position: f64| travel.bottom() - position.clamp(0.0, 1.0) as f32 * travel.height();
-    painter.hline(
-        ticks_x - 4.0..=ticks_x + 6.0,
-        y_of(spec.mark),
-        paint::hairline(cx.theme, color.line_control),
-    );
-    let cap = Rect::from_center_size(egui::pos2(slot_x, y_of(spec.value.position)), CAP);
+    tick(y_of(spec.mark), LONG_TICK, color.line_control);
+    let cap = Rect::from_center_size(egui::pos2(slot_x, y_of(spec.value.position)), look.cap);
     paint_cap(cx, cap, true, spec.value.enabled);
     if response.has_focus() {
         paint::focus_ring(painter, cx.theme, cap, tokens.radius.md);
@@ -416,6 +456,7 @@ pub fn fader(
 
 /// Width a vertical fader needs: the cap, a gap and the ticks.
 pub const FADER_WIDTH: f32 = 34.0;
+pub const CHANNEL_FADER_WIDTH: f32 = 46.0;
 
 /// Draws the crossfader along `rect` and emits `make(position)` when it is moved.
 pub fn crossfader(

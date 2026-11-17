@@ -89,9 +89,10 @@ while there is one, for the marker of the waveform.
   Platter's reading of "released with its hotcue button".
 - The public manual does not say what reverse does at the start of the track nor how it
   sounds with key lock. Both are Platter's choices.
-- The FLUX and REVERSE buttons, the marker of the timeline in the waveform and the indicator of
-  the deck header are not in the window yet: the commands work from the keyboard file, mappings
-  and scripts.
+- FLUX, lit while on, and REVERSE, lit while held, sit beside play in the transport row of
+  each deck, with the LED of the design system. While a deck has a timeline, a dimmed playhead
+  shows where it is, in the scrolling waveform and in the overview. The design system gives
+  the deck header no indicator of flux; the lit key and the dimmed line say it.
 - Nobody has listened to flux or reverse yet (`ROADMAP.md`, listening with real tracks).
 
 ## Edge cases

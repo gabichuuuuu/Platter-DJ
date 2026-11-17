@@ -14,6 +14,8 @@ Sections of the public manual, read on 14 November 2026:
   *Storing loops*
 - *Basic usage tutorials*, section *Working with hotcue buttons and flux mode*
 - *Overview*, section *Advanced panel*, the CUE page
+- *Global concepts*, section *Beatgrid*, and *Advanced usage tutorials*, sections *Changing
+  the cue point type* and *Adjusting beatgrids*, read on 17 November 2026 for the grid markers
 
 Cue points are stored with each track and come back in later sessions. A stored cue has a
 type, picked in a menu: cue, to jump to; fade in and fade out, for automatic mixing; load,
@@ -114,15 +116,16 @@ is selected: the commands of the CUE page act on it.
 
 - The documented application keeps a list of cues and maps some of them to the eight hotcue
   buttons. In Platter the eight slots are the list: a stored cue always has a slot.
-- The types `fade_in`, `fade_out` and `load` are a label and a colour for now. Automatic
-  mixing is M4, and a cue cannot act when its track is loaded while cues are lost on a load:
-  see the next point.
-- The cues live with the loaded track and are lost when another track is loaded or the same
-  one again, which a change of sample rate of the audio device also does, until the
-  collection stores them later in M3.
-- The design system lists a sixth type, grid. The grid markers of Platter live in the beatgrid
-  (`docs/behavior/beatgrid.md`) and the public manual does not list the type in its menu,
-  so it is left out until the maintainer decides how a cue and a marker would stay one thing.
+- The types `fade_in` and `fade_out` are a label and a colour: automatic mixing is M4. The
+  type `load` acts through the loading rules of the Decks page of the preferences
+  (`docs/behavior/settings.md`).
+- The cues are kept in the collection with their track and come back when it is loaded again
+  (`docs/behavior/library.md`, *Cues, grid and analysis*).
+- The design system lists a sixth type, grid. The menu of types of the public manual lists
+  five, the five of Platter. Its grid markers are not cues: they are set and deleted on the
+  GRID page, they define the beatgrid, and deleting cues leaves them as they are. Platter
+  does the same: its markers live in the beatgrid (`docs/behavior/beatgrid.md`), and the type
+  menu has no grid.
 - The public manual does not say what MAP does to a button that already holds a cue.
   Platter swaps the two, so no cue is lost.
 - The nudge buttons of the selected cue are left out: a cue is moved by deleting it and
@@ -130,8 +133,9 @@ is selected: the commands of the CUE page act on it.
 - Cues are stored at the play position as it is unless Snap is on, and a playing deck goes
   to a cue as it is unless Quantize is on (`docs/behavior/sync.md`).
 - A deleted cue is gone: there is no undo yet.
-- The window cannot rename a cue yet: `deck.cue.rename` has no control until the text field
-  of the browser search exists, later in M3, as with the tempo field of the grid.
+- The name of the selected cue is typed after a double click or Enter on it; Enter keeps it,
+  Escape leaves it as it was. A name is not cleared from the window: an empty name leaves the
+  old one.
 - The hotcues have no default shortcuts. The design system gives the keys 1 to 8 to the deck
   with the focus; Platter has no such deck and those keys are taken, so the pads are
   reached with the pointer, with Tab, or with shortcuts the user adds.

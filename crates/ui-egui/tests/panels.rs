@@ -12,12 +12,15 @@ use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{ClockMode, Command};
+use platter_library::{NodeId, SessionId};
+use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::DeckNotice;
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
+use platter_ui_egui::{BrowserMenu, MenuTarget, Naming};
 
 const OPEN: char = '\u{27e6}';
 const CLOSE: char = '\u{27e7}';
@@ -34,6 +37,19 @@ struct State {
     pages: [DeckPage; 2],
     /// The hotcues of each deck are in the mapping mode.
     mapping: [bool; 2],
+    /// The context menu of the browser that is open.
+    menu: Option<BrowserMenu>,
+    /// The field of the tree that names a playlist or a folder.
+    naming: Option<Naming>,
+    /// How far the tree is scrolled, so the folders of the explorer below the library show.
+    tree_scroll: f32,
+    /// The maintenance of the collection is open, and asks before removing.
+    maintenance: (bool, bool),
+    /// The dialog of the details of the selected track is open.
+    details: bool,
+    /// Controls the state draws at least, so a state that failed to draw is caught: more than
+    /// five for the window or the preferences, the keys of a small dialog over them.
+    min_controls: usize,
 }
 
 /// The four states of the reference screens, plus one with everything that only shows
@@ -48,6 +64,12 @@ fn states() -> Vec<State> {
         // so both are operated.
         pages: [DeckPage::Grid, DeckPage::Move],
         mapping: [false; 2],
+        menu: None,
+        naming: None,
+        tree_scroll: 0.0,
+        maintenance: (false, false),
+        details: false,
+        min_controls: 6,
     };
     let mut trouble = sample::playing();
     trouble.engine.master_levels = [1.4, 0.2];
@@ -65,6 +87,125 @@ fn states() -> Vec<State> {
     clock.engine.clock.master = None;
     clock.engine.clock.quantize = true;
     let clock = state("clock", clock, None);
+    // The menus of a playlist of the tree and of a row of the playlist shown.
+    let mut playlist_menu = state("playlist-menu", sample::playlist(), None);
+    playlist_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Playlist(NodeId::new(1)),
+        at: egui::pos2(120.0, 760.0),
+    });
+    let mut entry_menu = state("entry-menu", sample::playlist(), None);
+    // Opened right of the mixer: with the entries of the covers it is tall enough to rise
+    // over the controls of the mixer, which another test counts.
+    entry_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Entry,
+        at: egui::pos2(1000.0, 760.0),
+    });
+    let mut move_menu = state("move-menu", sample::playing(), None);
+    move_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::MoveTo(NodeId::new(1)),
+        at: egui::pos2(120.0, 760.0),
+    });
+    // The field that names a new playlist, and the one that renames *Friday warm-up*.
+    let mut new_playlist = state("new-playlist", sample::playing(), None);
+    new_playlist.naming = Some(Naming::New {
+        folder: None,
+        item: NewItem::Playlist,
+    });
+    // The question before the selected track of a playlist is deleted.
+    let mut delete_menu = state("delete-menu", sample::playlist(), None);
+    delete_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::ConfirmDelete,
+        at: egui::pos2(600.0, 760.0),
+    });
+    // The menu of a favourite that holds a playlist.
+    let mut favourite_menu = state("favourite-menu", sample::playing(), None);
+    favourite_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Favourite(4),
+        at: egui::pos2(120.0, 660.0),
+    });
+    // The tree scrolled past the playlists, to History and its earlier sessions.
+    let mut sessions = state("sessions", sample::playing(), None);
+    sessions.tree_scroll = 6.0 * 27.0;
+    // The maintenance of the collection over the Library page, and its question.
+    let mut maintenance = state(
+        "maintenance",
+        sample::playing(),
+        Some(SettingsPage::Library),
+    );
+    maintenance.maintenance = (true, false);
+    // Close, Remove missing, Relocate and Check consistency.
+    maintenance.min_controls = 4;
+    let mut remove_asked = state(
+        "remove-asked",
+        sample::playing(),
+        Some(SettingsPage::Library),
+    );
+    remove_asked.maintenance = (true, true);
+    // Close, Keep them and Remove.
+    remove_asked.min_controls = 3;
+    // The details of the selected track of a playlist.
+    let mut details = state("details", sample::playlist(), None);
+    details.details = true;
+    // The details of two selected tracks: the tick keys and Previous, the position and Next.
+    let mut two = sample::playlist();
+    two.browser.marked = vec![1, 2];
+    two.browser.selected = Some(1);
+    let mut details_several = state("details-several", two, None);
+    details_several.details = true;
+    // The colours and the ratings the selected track of a playlist can take.
+    let mut colour_menu = state("colour-menu", sample::playlist(), None);
+    colour_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Colour,
+        at: egui::pos2(600.0, 640.0),
+    });
+    // The pictures of the folder of the explorer, for the cover of the selected track.
+    let mut pictures_menu = state("pictures-menu", sample::playlist(), None);
+    pictures_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Pictures,
+        at: egui::pos2(600.0, 640.0),
+    });
+    let mut rating_menu = state("rating-menu", sample::playlist(), None);
+    rating_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Rating,
+        at: egui::pos2(600.0, 640.0),
+    });
+    // The menu of the header of the list, which shows and hides the columns.
+    let mut columns_menu = state("columns-menu", sample::playing(), None);
+    columns_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Columns,
+        at: egui::pos2(600.0, 560.0),
+    });
+    // The menu of an earlier history, and the question before it is deleted.
+    let mut session_menu = state("session-menu", sample::playing(), None);
+    session_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Session(SessionId::new(7)),
+        at: egui::pos2(120.0, 660.0),
+    });
+    let mut confirm_session = state("confirm-session", sample::playing(), None);
+    confirm_session.menu = Some(BrowserMenu {
+        target: MenuTarget::ConfirmSessionDelete(SessionId::new(7)),
+        at: egui::pos2(120.0, 660.0),
+    });
+    // An import runs: its key stops it.
+    let mut importing = state("importing", sample::playing(), None);
+    if let Some(collection) = importing.scene.browser.collection.as_mut() {
+        collection.importing = true;
+    }
+    // The menu of the heading Playlists, which imports playlist files.
+    let mut playlists_menu = state("playlists-menu", sample::playing(), None);
+    playlists_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Playlists,
+        at: egui::pos2(120.0, 760.0),
+    });
+    // The tree scrolled to its end, where the folders of the explorer are.
+    let mut explorer = state("explorer", sample::playing(), None);
+    explorer.tree_scroll = 10_000.0;
+    // The preview player holds a track other than the selected one: its key loads the
+    // selected one.
+    let mut other_preview = state("preview-other", sample::playing(), None);
+    other_preview.scene.engine.preview.track = other_preview.scene.engine.decks[0].track.clone();
+    let mut rename = state("rename-playlist", sample::playing(), None);
+    rename.naming = Some(Naming::Rename(NodeId::new(1)));
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -81,6 +222,54 @@ fn states() -> Vec<State> {
         trouble,
         cues,
         clock,
+        playlist_menu,
+        entry_menu,
+        new_playlist,
+        rename,
+        move_menu,
+        state("history", sample::history(), None),
+        explorer,
+        favourite_menu,
+        sessions,
+        delete_menu,
+        maintenance,
+        remove_asked,
+        playlists_menu,
+        colour_menu,
+        pictures_menu,
+        rating_menu,
+        columns_menu,
+        session_menu,
+        confirm_session,
+        importing,
+        details,
+        details_several,
+        state(
+            "preferences-library",
+            sample::playing(),
+            Some(SettingsPage::Library),
+        ),
+        state(
+            "preferences-decks",
+            sample::playing(),
+            Some(SettingsPage::Decks),
+        ),
+        other_preview,
+        state(
+            "preferences-controllers",
+            sample::playing(),
+            Some(SettingsPage::Controllers),
+        ),
+        state(
+            "preferences-keyboard",
+            sample::playing(),
+            Some(SettingsPage::Keyboard),
+        ),
+        state(
+            "preferences-mixer",
+            sample::playing(),
+            Some(SettingsPage::Mixer),
+        ),
     ]
 }
 
@@ -105,6 +294,11 @@ impl Stage {
         shell.state.settings_page = state.page;
         shell.state.deck_page = state.pages;
         shell.state.cue_map = state.mapping;
+        shell.state.browser.menu = state.menu;
+        shell.state.browser.naming = state.naming;
+        shell.state.browser.tree_scroll = state.tree_scroll;
+        (shell.state.maintenance, shell.state.remove_asked) = state.maintenance;
+        shell.state.details_wanted = state.details;
         let ctx = egui::Context::default();
         shell.install(&ctx);
         let mut stage = Self {
@@ -251,34 +445,47 @@ fn operate(stage: &mut Stage, control: &Control) -> Vec<Action> {
 
 #[test]
 fn every_control_emits_its_command() {
-    let mut operated = 0;
-    for state in states() {
-        let controls = Stage::new(&state).controls();
+    let states = states();
+    let mut jobs = Vec::new();
+    for state in &states {
+        let controls = Stage::new(state).controls();
         assert!(
-            controls.len() > 5,
+            controls.len() >= state.min_controls,
             "{}: {} controls",
             state.name,
             controls.len()
         );
-        for control in controls {
-            if !control.enabled || control.kind == ControlKind::Keys {
-                continue;
-            }
-            // A fresh stage for each control, so none sees what another one left behind.
-            let mut stage = Stage::new(&state);
-            let actions = operate(&mut stage, &control);
-            assert!(
-                ids(&actions).contains(&control.command),
-                "{}: the control at {:?} should emit {} and emitted {:?}",
-                state.name,
-                control.rect,
-                control.command,
-                ids(&actions),
-            );
-            operated += 1;
-        }
+        jobs.extend(
+            controls
+                .into_iter()
+                .filter(|control| control.enabled && control.kind != ControlKind::Keys)
+                .map(|control| (state, control)),
+        );
     }
-    assert!(operated > 150, "{operated} controls operated");
+    // A fresh stage for each control, so none sees what another one left behind. Each stage
+    // builds its own window and fonts, so the controls are shared out among the cores; the
+    // checks are the same as one after another.
+    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    std::thread::scope(|scope| {
+        for worker in 0..workers {
+            let jobs = &jobs;
+            scope.spawn(move || {
+                for (state, control) in jobs.iter().skip(worker).step_by(workers) {
+                    let mut stage = Stage::new(state);
+                    let actions = operate(&mut stage, control);
+                    assert!(
+                        ids(&actions).contains(&control.command),
+                        "{}: the control at {:?} should emit {} and emitted {:?}",
+                        state.name,
+                        control.rect,
+                        control.command,
+                        ids(&actions),
+                    );
+                }
+            });
+        }
+    });
+    assert!(jobs.len() > 150, "{} controls operated", jobs.len());
 }
 
 #[test]
@@ -289,8 +496,12 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
             [DeckPage::Move, DeckPage::Grid],
             [DeckPage::Cue, DeckPage::Cue],
         ] {
-            // The states with the preferences open have the decks behind the dialog.
-            for state in states().into_iter().filter(|state| state.page.is_none()) {
+            // The states with the preferences or the details open have the decks behind the
+            // dialog.
+            for state in states()
+                .into_iter()
+                .filter(|state| state.page.is_none() && !state.details)
+            {
                 let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
                 stage.shell.state.deck_page = pages;
                 stage.frame(Vec::new());
@@ -323,7 +534,10 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
 #[test]
 fn the_controls_of_the_header_do_not_overlap_in_either_language() {
     for language in Language::ALL {
-        for state in states().into_iter().filter(|state| state.page.is_none()) {
+        for state in states()
+            .into_iter()
+            .filter(|state| state.page.is_none() && !state.details)
+        {
             let stage = Stage::with_texts(&state, Texts::load(language).unwrap());
             let controls: Vec<Control> = stage
                 .controls()
@@ -333,6 +547,58 @@ fn the_controls_of_the_header_do_not_overlap_in_either_language() {
             assert!(controls.len() > 10, "{}", controls.len());
             for (index, first) in controls.iter().enumerate() {
                 assert!(first.rect.left() >= 0.0 && first.rect.right() <= DESIGN_WIDTH);
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{}, {language:?}: {} at {:?} overlaps {} at {:?}",
+                        state.name,
+                        first.command,
+                        first.rect,
+                        second.command,
+                        second.rect,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The mixer packs two channels and the master column into the space between the decks;
+/// no control may cover another or reach into a deck.
+#[test]
+fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
+    for language in Language::ALL {
+        for state in states()
+            .into_iter()
+            .filter(|state| state.page.is_none() && !state.details)
+        {
+            let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+            stage.frame(Vec::new());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| {
+                    control.command.starts_with("mixer.") || control.command == "master.gain.set"
+                })
+                .collect();
+            assert!(
+                controls.len() > 25,
+                "{}, {language:?}: {}",
+                state.name,
+                controls.len()
+            );
+            // The mixer sits between the decks, which are 520 wide in a 1440 window; its top
+            // moves with the notice band, so only the sides are checked.
+            let panel = Rect::from_x_y_ranges(522.0..=918.0, 0.0..=DESIGN_HEIGHT);
+            for (index, first) in controls.iter().enumerate() {
+                assert!(
+                    panel.contains_rect(first.rect),
+                    "{}, {language:?}: {} at {:?} reaches into a deck",
+                    state.name,
+                    first.command,
+                    first.rect,
+                );
                 for second in &controls[index + 1..] {
                     let shared = first.rect.intersect(second.rect);
                     assert!(
@@ -479,6 +745,54 @@ fn the_phase_meter_grows_from_its_centre_by_the_offset_of_the_beat() {
     assert!((ahead[0].width() - width).abs() < 0.01, "{ahead:?}");
     // Both start at the centre of the slot: one ends there, the other begins there.
     assert!((behind[0].right() - ahead[0].left()).abs() < 0.01);
+}
+
+/// The headphone knobs sit closer than their values are wide: the value of the one under
+/// the pointer must show alone on its row and stay inside the master column.
+#[test]
+fn the_value_of_a_headphone_knob_shows_alone_in_the_master_column() {
+    fn texts(shape: &Shape, out: &mut Vec<(String, Rect)>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| texts(shape, out)),
+            Shape::Text(text) if !text.galley.job.text.trim().is_empty() => {
+                out.push((text.galley.job.text.clone(), text.visual_bounding_rect()));
+            }
+            _ => {}
+        }
+    }
+    // Right of the divider of the master column, to the edge of the mixer.
+    let column = 522.0 + 324.0..=918.0;
+    for language in Language::ALL {
+        for command in ["mixer.cue.mix.set", "mixer.cue.volume.set"] {
+            let state = &states()[0];
+            let mut stage = Stage::with_texts(state, Texts::load(language).unwrap());
+            stage.frame(Vec::new());
+            let knob = stage
+                .controls()
+                .into_iter()
+                .find(|control| control.command == command)
+                .unwrap();
+            stage.pointer(knob.rect.center(), None);
+            let (_, shapes) = stage.frame(Vec::new());
+            let mut painted = Vec::new();
+            for clipped in &shapes {
+                texts(&clipped.shape, &mut painted);
+            }
+            let row = knob.rect.bottom()..=knob.rect.bottom() + 15.0;
+            let on_row: Vec<_> = painted
+                .iter()
+                .filter(|(_, rect)| {
+                    row.contains(&rect.center().y) && column.contains(&rect.center().x)
+                })
+                .collect();
+            assert_eq!(on_row.len(), 1, "{language:?}, {command}: {on_row:?}");
+            let (text, rect) = on_row[0];
+            assert!(
+                rect.left() >= *column.start() && rect.right() <= *column.end(),
+                "{language:?}, {command}: {text} at {rect:?} leaves the column"
+            );
+        }
+    }
 }
 
 /// The first hotcue of deck A, which holds a cue in the sample scene.
@@ -831,6 +1145,10 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     for row in &scene.browser.rows {
         data.insert(row.name.clone());
+        // The folder of a file, as the details of a track name it.
+        if let Some(folder) = row.path.parent() {
+            data.insert(folder.to_string_lossy().into_owned());
+        }
         if let platter_ui_egui::model::RowKind::Track(track) = &row.kind {
             data.extend(
                 [
@@ -844,6 +1162,46 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
         }
     }
     data.extend(scene.browser.tree.iter().map(|row| row.name.clone()));
+    // The pictures a cover can be imported from, by their names.
+    data.extend(
+        scene
+            .browser
+            .pictures
+            .iter()
+            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
+    );
+    // The controllers of the settings: their inputs, mapping files and conditions.
+    let manager = &scene.settings.controllers;
+    data.extend(manager.inputs.iter().cloned());
+    data.extend(
+        manager
+            .importable
+            .iter()
+            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
+    );
+    for controller in &manager.controllers {
+        data.insert(controller.input.clone());
+        data.insert(controller.mapping.clone());
+        for binding in &controller.bindings {
+            let when: Vec<String> = binding
+                .when
+                .iter()
+                .map(|(modifier, value)| format!("M{modifier} = {value}"))
+                .collect();
+            data.insert(when.join(", "));
+        }
+    }
+    if let Some(collection) = &scene.browser.collection {
+        data.extend(collection.playlists.iter().map(|row| row.name.clone()));
+        data.extend(
+            collection
+                .session
+                .iter()
+                .chain(&collection.sessions)
+                .map(|row| row.label.clone()),
+        );
+        data.extend(collection.missing.iter().cloned());
+    }
     data.extend(scene.browser.crumbs.iter().cloned());
     data.extend(scene.audio.devices.iter().map(|device| device.name.clone()));
     data

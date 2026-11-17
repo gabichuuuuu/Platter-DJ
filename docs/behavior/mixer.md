@@ -101,12 +101,12 @@ pre-listened channel after its filter and before its fader.
 - The fader adds up to 5 dB above its unity mark.
 - The public manual names a left and a right assign button and does not say what a
   channel assigned to neither does. Platter makes that state, `thru`, explicit: the channel
-  bypasses the crossfader. The design system draws it as a three-way control under each
-  fader; the window has no such control yet, it comes with the next change to the mixer
-  panel.
+  bypasses the crossfader. Under each fader the window has L and R: a click on the side that
+  is off sends the channel there, a click on the side that is lit sends it to neither.
 - A step is a tenth of the travel and the time of an automatic fade is counted in beats of
   the master clock, so a fade ends on the beat count the DJ chose at any tempo; the manual
-  says neither. The keys for steps and fades come with the next change to the mixer panel.
+  says neither. Outside each badge of the crossfader, a key steps it towards that side and an
+  *Auto* key fades it there by itself.
 - The Fade In and Fade Out markers that start an automatic crossfade in the documented application
   are not part of this: the fade and load cue types are labels only
   (`docs/behavior/cues.md`).

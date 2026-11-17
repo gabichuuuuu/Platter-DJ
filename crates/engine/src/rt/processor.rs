@@ -14,6 +14,7 @@ use rtrb::{Consumer, Producer};
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
 use super::metronome::Metronome;
+use super::preview::PreviewPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
@@ -57,6 +58,7 @@ pub struct Processor {
     headphone_limiter: Limiter,
     tone: TestTone,
     metronome: Metronome,
+    preview: PreviewPlayer,
     /// Zero mixes inside, one sends each deck to its own pair:
     /// `docs/behavior/external-mixer.md`.
     external: Smoothed,
@@ -102,6 +104,7 @@ impl Processor {
             headphone_limiter: Limiter::new(rate),
             tone: TestTone::new(rate),
             metronome: Metronome::new(rate),
+            preview: PreviewPlayer::new(rate),
             external: parameter(0.0),
             external_eq_gain: parameter(0.0),
             external_master_volume: parameter(0.0),
@@ -156,6 +159,11 @@ impl Processor {
 
     fn apply(&mut self, command: RtCommand) {
         match command {
+            RtCommand::PreviewSwap { track, play } => {
+                self.preview.swap(track, play, &mut self.retired);
+            }
+            RtCommand::PreviewToggle => self.preview.toggle(),
+            RtCommand::PreviewSeek { seconds } => self.preview.seek(seconds),
             RtCommand::Swap { deck, track } => {
                 let channel = &mut self.channels[deck.index()];
                 channel.player.swap(track, &mut self.retired);
@@ -361,8 +369,10 @@ impl Processor {
         let master = self
             .limiter
             .process([mix[0] * gain + tone, mix[1] * gain + tone]);
+        // The preview plays on, heard or not, so its position moves as it would.
+        let preview = self.preview.next();
         let headphones = if two_pairs {
-            self.headphones(pre_listened, master, click, ticks[0] + ticks[1])
+            self.headphones(pre_listened, master, click + ticks[0] + ticks[1], preview)
         } else {
             [0.0; 2]
         };
@@ -394,15 +404,24 @@ impl Processor {
     }
 
     /// The headphones: the pre-listened decks and the master, weighted by the mix knob, the
-    /// metronome and the beat ticks, through their own limiter.
-    fn headphones(&mut self, pre_listened: Frame, master: Frame, click: f32, tick: f32) -> Frame {
+    /// metronome, the beat ticks and the preview player, through their own limiter.
+    fn headphones(
+        &mut self,
+        pre_listened: Frame,
+        master: Frame,
+        clicks: f32,
+        preview: Frame,
+    ) -> Frame {
         let balance = self.headphone_mix.advance();
         let gain = self.headphone_gain.advance();
         let tone = self.tone.next(Output::Headphones);
-        // The beat tick and the metronome are heard whatever the mix, and follow the
-        // volume, which sets their level.
+        // The beat tick, the metronome and the preview are heard whatever the mix, and
+        // follow the volume, which sets their level.
         let blend = |index: usize| {
-            pre_listened[index] * (1.0 - balance) + master[index] * balance + click + tick
+            pre_listened[index] * (1.0 - balance)
+                + master[index] * balance
+                + clicks
+                + preview[index]
         };
         self.headphone_limiter
             .process([blend(0) * gain + tone, blend(1) * gain + tone])
@@ -459,6 +478,10 @@ impl Processor {
             shared.levels[0].set(levels[0]);
             shared.levels[1].set(levels[1]);
         }
+        self.shared.preview_playing.set(self.preview.is_playing());
+        self.shared
+            .preview_position
+            .set(self.preview.position_seconds());
         let levels = self.master_meter.levels();
         self.shared.master_levels[0].set(levels[0]);
         self.shared.master_levels[1].set(levels[1]);

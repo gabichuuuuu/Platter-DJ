@@ -3,7 +3,9 @@
 
 pub mod browser;
 pub mod deck;
+pub mod details;
 pub mod header;
+pub mod maintenance;
 pub mod mixer;
 pub mod settings;
 pub mod waveform;

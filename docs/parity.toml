@@ -16,13 +16,13 @@ id = "interface"
 title = "Interface"
 features = [
   { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the clock waits for the local time zone, see docs/behavior/interface.md" },
-  { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "in_progress" },
+  { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test midi_indicator; no real MIDI controller tried yet, see ROADMAP.md" },
   { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
-  { id = "fullscreen", name = "Full screen", milestone = "M3", status = "in_progress" },
-  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "in_progress" },
-  { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "planned" },
-  { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "planned" },
+  { id = "fullscreen", name = "Full screen", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the real window has not been looked at in full screen, see ROADMAP.md" },
+  { id = "tooltips", name = "Tooltips", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tooltips; a disabled control shows no reason yet, see docs/behavior/interface.md" },
+  { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test deck_size --test settings_mixer; two sizes, not five, see docs/behavior/interface.md" },
+  { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; each lane keeps its own zoom, see docs/behavior/waveform.md" },
   { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "planned" },
   { id = "custom-layouts", name = "Custom layouts", milestone = "M4", status = "planned" },
 ]
@@ -46,7 +46,7 @@ features = [
   { id = "track-info", name = "Title, artist and album", milestone = "M2", status = "done", evidence = "cargo test -p platter-decode --test decode tags_carry; cargo test -p platter-ui-egui --test panels" },
   { id = "time", name = "Elapsed and remaining time", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels readouts_keep_their_width" },
   { id = "tempo-readouts", name = "Current tempo, tempo fader offset and base tempo", milestone = "M2", status = "done", evidence = "cargo test -p platter-decode --test decode tags_carry; cargo test -p platter-ui-egui --test panels" },
-  { id = "cover-art", name = "Cover art", milestone = "M3", status = "planned" },
+  { id = "cover-art", name = "Cover art", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test covers; cargo test -p platter-ui-egui --test panels" },
 ]
 
 [[area]]
@@ -58,8 +58,8 @@ features = [
   { id = "cup", name = "CUP: jump to the cue point and play on release", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport cue_play_button" },
   { id = "tempo-fader", name = "Tempo fader with ranges", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test mixer tempo_range; cargo test -p platter-ui-egui --test panels" },
   { id = "tempo-bend", name = "Tempo bend (nudge)", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test transport nudge; cargo test -p platter-ui-egui --test panels" },
-  { id = "flux", name = "Flux mode", milestone = "M3", status = "in_progress" },
-  { id = "reverse", name = "Reverse", milestone = "M3", status = "in_progress" },
+  { id = "flux", name = "Flux mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test flux; cargo test -p platter-ui-egui --test flux_marker; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "reverse", name = "Reverse", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test flux; cargo test -p platter-ui-egui --test panels; nobody has listened to it with real tracks yet, see ROADMAP.md" },
 ]
 
 [[area]]
@@ -69,7 +69,7 @@ features = [
   { id = "scrolling", name = "Scrolling waveform coloured by frequency", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --lib peaks; cargo test -p platter-ui-egui --test panels" },
   { id = "overview", name = "Overview with click to seek", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels the_controls_carry_the_values" },
   { id = "zoom", name = "Waveform zoom", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels every_control_emits_its_command" },
-  { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "in_progress" },
+  { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-ui-egui --test flux_marker" },
   { id = "colour-mode-first", name = "First waveform colour mode", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels no_panel_paints_a_colour_outside_the_design_tokens" },
   { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "planned" },
 ]
@@ -81,9 +81,9 @@ features = [
   { id = "deck-sync", name = "SYNC per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels" },
   { id = "deck-master", name = "MASTER per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels master_only" },
   { id = "phase-meter", name = "Phase meter per deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test panels the_phase_meter" },
-  { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "in_progress" },
-  { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "in_progress" },
-  { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "in_progress" },
+  { id = "master-clock", name = "Master clock: tempo, tap, bend, step up and down, metronome, AUTO and MASTER", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-engine --test metronome; cargo test -p platter-ui-egui --test typing; the metronome not heard on a device with four outputs, see ROADMAP.md" },
+  { id = "tempo-sync-mode", name = "Tempo Sync mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test settings_mixer; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test settings_mixer; nobody has listened to it with real tracks yet, see ROADMAP.md" },
   { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
@@ -96,10 +96,10 @@ title = "Beatgrid"
 features = [
   { id = "detection", name = "Tempo and beatgrid detection", milestone = "M3", status = "in_progress" },
   { id = "grid-page", name = "GRID page: set, move, select and delete markers", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-ui-egui --test panels" },
-  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; typing into the tempo field comes with the browser search, see docs/behavior/beatgrid.md" },
-  { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "in_progress" },
-  { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "in_progress" },
-  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "in_progress" },
+  { id = "tempo-edit", name = "Editable tempo, tap, double, halve, step up and down", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beatgrid; cargo test -p platter-engine tap; cargo test -p platter-ui-egui --test panels; the tempo field is typed after a double click or Enter, see docs/behavior/beatgrid.md" },
+  { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test panels" },
+  { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; the lock keeps the grid, not the key, which cannot be edited, see docs/behavior/analysis.md" },
+  { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beat_tick; cargo test -p platter-ui-egui --test panels; not heard on a device with four outputs, see ROADMAP.md" },
   { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
 ]
 
@@ -108,8 +108,8 @@ id = "cues"
 title = "Cues"
 features = [
   { id = "hotcues", name = "Eight hotcues", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test cues; cargo test -p platter-ui-egui --test panels" },
-  { id = "cue-page", name = "CUE page: previous and next, list, position, type, delete, rename, MAP and STORE", milestone = "M3", status = "in_progress" },
-  { id = "cue-types", name = "Cue types: cue, fade-in, fade-out, load, grid and loop", milestone = "M3", status = "in_progress" },
+  { id = "cue-page", name = "CUE page: previous and next, list, position, type, delete, rename, MAP and STORE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test cues; cargo test -p platter-ui-egui --test typing; cargo test -p platter-ui-egui --test panels" },
+  { id = "cue-types", name = "Cue types: cue, fade-in, fade-out, load, grid and loop", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test cues; cargo test -p platter-ui-egui --test panels; grid markers are on the GRID page, as in the public manual, see docs/behavior/cues.md" },
 ]
 
 [[area]]
@@ -129,11 +129,11 @@ id = "key"
 title = "Key"
 features = [
   { id = "detection", name = "Key detection", milestone = "M3", status = "in_progress" },
-  { id = "key-lock", name = "Key lock", milestone = "M3", status = "in_progress" },
-  { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "in_progress" },
-  { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "in_progress" },
-  { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "in_progress" },
-  { id = "musical-notation", name = "Musical key notation with compatible keys highlighted in the browser", milestone = "M3", status = "planned" },
+  { id = "key-lock", name = "Key lock", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test keylock; cargo test -p platter-ui-egui --test keys; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "transposition", name = "Transposition by semitones", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test transposition; cargo test -p platter-ui-egui --test panels; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "set-key", name = "Set a key, show the resulting key and return to the original", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test transposition; cargo test -p platter-ui-egui --test keys; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "channel-key-knob", name = "Key knob in the mixer channel", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-engine --test keylock" },
+  { id = "musical-notation", name = "Musical key notation with compatible keys highlighted in the browser", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test keys; cargo test -p platter-ui-egui keys; the tooltip of a compatible key is not drawn yet, see docs/behavior/browser.md" },
 ]
 
 [[area]]
@@ -151,10 +151,10 @@ features = [
   { id = "cue-monitoring", name = "Channel cue monitoring", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test monitoring; cargo test -p platter-audio-io --test null_backend" },
   { id = "eq-model-first", name = "First EQ model", milestone = "M2", status = "done", evidence = "cargo test -p platter-dsp eq" },
   { id = "filter-model-first", name = "First filter model", milestone = "M2", status = "done", evidence = "cargo test -p platter-dsp filter" },
-  { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "in_progress" },
-  { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "in_progress" },
-  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "in_progress" },
-  { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "in_progress" },
+  { id = "crossfader-assign", name = "Channel assignment to the left or right side of the crossfader", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test crossfade; cargo test -p platter-ui-egui --test panels" },
+  { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test crossfade; cargo test -p platter-ui-egui --test panels; nobody has listened to it with real tracks yet, see ROADMAP.md" },
+  { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test autogain; cargo test -p platter-library --test store; the level by ear waits for real tracks, see ROADMAP.md" },
+  { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test external_mixer; cargo test -p platter-ui-egui --test external_mixer; not tried with a device of four outputs, see ROADMAP.md" },
   { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
   { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },
   { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "planned" },
@@ -206,27 +206,27 @@ features = [
 id = "browser"
 title = "Browser"
 features = [
-  { id = "collection", name = "Track collection", milestone = "M3", status = "in_progress" },
-  { id = "folder-import", name = "Folder import", milestone = "M3", status = "in_progress" },
-  { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "in_progress" },
-  { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "in_progress" },
+  { id = "collection", name = "Track collection", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test store; cargo test -p platter-ui-egui --test collection --test columns; cargo test -p platter-decode --test tag_write; tracks imported before the genre was read keep none until imported again, see docs/behavior/library.md" },
+  { id = "folder-import", name = "Folder import", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test folders; cargo test -p platter-ui-egui --test collection --test import_key --test settings_mixer; cargo test -p platter --bin platter starting; the progress is a count of files, not a share; no real large collection imported yet, see docs/behavior/browser.md" },
+  { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter background; cargo test -p platter-library --test store; the detection itself waits for the measurement on real tracks, see ROADMAP.md" },
+  { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tree_folders --test collection --test playlist_menu; which folders are closed is not kept between runs, see docs/behavior/browser.md" },
   { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
-  { id = "search", name = "Live search", milestone = "M3", status = "in_progress" },
-  { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "in_progress" },
-  { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "planned" },
-  { id = "preview-deck", name = "Preview deck", milestone = "M3", status = "planned" },
+  { id = "search", name = "Live search", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test search_field; cargo test -p platter-ui-egui --test collection; tags only, see docs/behavior/browser.md" },
+  { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test columns; cargo test -p platter-library --test store; columns are shown and hidden, not resized or reordered, and the comment is not sorted by, see docs/behavior/browser.md" },
+  { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test covers; cargo test -p platter-ui-egui --test panels; the cover is drawn in each row rather than in a window of its own, see docs/behavior/cover-art.md" },
+  { id = "preview-deck", name = "Preview deck", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test preview; cargo test -p platter-engine --test realtime_memory; cargo test -p platter-ui-egui --test panels; silent in external mixer mode, see docs/behavior/browser.md" },
 ]
 
 [[area]]
 id = "playlists"
 title = "Playlists"
 features = [
-  { id = "manage", name = "Create, add, sort, folders, rename, delete, remove duplicates and clear", milestone = "M3", status = "planned" },
-  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "in_progress" },
-  { id = "preparation-list", name = "Preparation list", milestone = "M3", status = "planned" },
-  { id = "history", name = "History", milestone = "M3", status = "planned" },
-  { id = "favourites", name = "Favourites", milestone = "M3", status = "planned" },
-  { id = "played-state", name = "Played state of a track", milestone = "M3", status = "planned" },
+  { id = "manage", name = "Create, add, sort, folders, rename, delete, remove duplicates and clear", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection --test playlist_menu; cargo test -p platter-library --test store --test playlist_model" },
+  { id = "m3u", name = "Import and export playlists as M3U", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test m3u; cargo test -p platter-ui-egui --test collection --test playlist_menu" },
+  { id = "preparation-list", name = "Preparation list", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection --test playlist_menu; cargo test -p platter-library --test store" },
+  { id = "history", name = "History", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; cargo test -p platter-library --test store; saved as a playlist, exported and deleted, not renamed; dates in UTC, see docs/behavior/browser.md" },
+  { id = "favourites", name = "Favourites", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection --test playlist_menu; cargo test -p platter-library --test store" },
+  { id = "played-state", name = "Played state of a track", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; cargo test -p platter-ui-egui --test settings_mixer" },
   { id = "smart-playlists", name = "Smart playlists", milestone = "M4", status = "planned" },
 ]
 
@@ -234,13 +234,13 @@ features = [
 id = "collection"
 title = "Collection"
 features = [
-  { id = "colour-rating-comments", name = "Colour labels, rating and comments", milestone = "M3", status = "planned" },
-  { id = "metadata-edit", name = "Metadata and cover editing", milestone = "M3", status = "planned" },
-  { id = "consistency-check", name = "Consistency check", milestone = "M3", status = "planned" },
-  { id = "relocate", name = "Relocate missing tracks", milestone = "M3", status = "planned" },
-  { id = "backups", name = "Automatic backups", milestone = "M3", status = "planned" },
-  { id = "delete-tracks", name = "Delete tracks", milestone = "M3", status = "planned" },
-  { id = "tag-writing", name = "Writing tempo, key and cues to file tags", milestone = "M3", status = "planned" },
+  { id = "colour-rating-comments", name = "Colour labels, rating and comments", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection --test columns; cargo test -p platter-library --test store; not searched by colour or rating, see docs/behavior/browser.md" },
+  { id = "metadata-edit", name = "Metadata and cover editing", milestone = "M3", status = "done", evidence = "cargo test -p platter-decode --test tag_write; cargo test -p platter-ui-egui --test collection --test covers --test playlist_menu --test files; no label, year or key fields and the picture comes from the explorer, see docs/behavior/browser.md and docs/behavior/cover-art.md" },
+  { id = "consistency-check", name = "Consistency check", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test store; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter starting; the check at start opens the maintenance dialog, see docs/behavior/settings.md" },
+  { id = "relocate", name = "Relocate missing tracks", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test folders; cargo test -p platter-ui-egui --test collection --test settings_mixer" },
+  { id = "backups", name = "Automatic backups", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test backup; no command takes a backup back yet, see docs/behavior/library.md" },
+  { id = "delete-tracks", name = "Delete tracks", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; the first of the three ways of the public manual, see docs/behavior/browser.md" },
+  { id = "tag-writing", name = "Writing tempo, key and cues to file tags", milestone = "M3", status = "done", evidence = "cargo test -p platter-decode --test tag_write; cargo test -p platter-ui-egui --test collection; cargo test -p platter --bin platter background; no real encoder files were written, see docs/behavior/tag-writing.md" },
   { id = "import-collections", name = "Import collections of other programs", milestone = "M4", status = "planned" },
 ]
 
@@ -249,9 +249,9 @@ id = "control"
 title = "Control"
 features = [
   { id = "keyboard-shortcuts", name = "Customisable keyboard shortcuts", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --lib keymap; cargo test -p platter-ui-egui --test panels" },
-  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "in_progress" },
-  { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "planned" },
-  { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "planned" },
+  { id = "controller-manager", name = "Controller manager: devices, assignment table, modifiers, control types (button, fader, encoder)", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter manager; cargo test -p platter-ui-egui --test panels; no real MIDI controller tried yet, see ROADMAP.md" },
+  { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter manager; no real MIDI controller tried yet, see ROADMAP.md" },
+  { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter manager; cargo test -p platter-ui-egui --test panels; one mapping per file, see docs/behavior/controllers.md" },
   { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "in_progress" },
   { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "planned" },
 ]
@@ -271,15 +271,15 @@ title = "Preferences"
 features = [
   { id = "audio", name = "Audio", milestone = "M2", status = "done", evidence = "cargo test -p platter-audio-io; cargo test -p platter-ui-egui --test panels; latency below the device period on Windows deferred, see docs/decisions/0010-audio-output.md" },
   { id = "language", name = "Language", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --lib i18n; cargo test -p platter-ui-egui --test panels no_panel_paints_a_text_that_is_not_translated" },
-  { id = "output-routing", name = "Output routing", milestone = "M3", status = "planned" },
-  { id = "loading", name = "Loading", milestone = "M3", status = "planned" },
-  { id = "transport", name = "Transport", milestone = "M3", status = "planned" },
-  { id = "mixer", name = "Mixer", milestone = "M3", status = "in_progress" },
-  { id = "global", name = "Global settings", milestone = "M3", status = "planned" },
-  { id = "browser", name = "Browser", milestone = "M3", status = "planned" },
-  { id = "file-management", name = "File management", milestone = "M3", status = "planned" },
-  { id = "analysis", name = "Analysis", milestone = "M3", status = "planned" },
-  { id = "controllers", name = "Controllers", milestone = "M3", status = "planned" },
+  { id = "output-routing", name = "Output routing", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-audio-io --test null_backend; on the Audio page, single outputs rather than pairs, see docs/behavior/settings.md" },
+  { id = "loading", name = "Loading", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test recall; cargo test -p platter-ui-egui --test panels; the rules Platter has, see docs/behavior/settings.md" },
+  { id = "transport", name = "Transport", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test mixer; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; the tempo range, the sync mode and the minimum play time, see docs/behavior/settings.md" },
+  { id = "mixer", name = "Mixer", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-ui-egui --test panels" },
+  { id = "global", name = "Global settings", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-ui-egui --test tooltips; tooltips and full screen at start; the start in full screen not yet seen in a real window, see docs/behavior/settings.md" },
+  { id = "browser", name = "Browser", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test keys --test covers; no settings of display: the browser shows its parts as the design system draws them, see docs/behavior/settings.md" },
+  { id = "file-management", name = "File management", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; on the Library page, a moved folder is removed and added again, see docs/behavior/settings.md" },
+  { id = "analysis", name = "Analysis", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; the range of tempos on the Decks page, no automatic range and no choice of markers, see docs/behavior/analysis.md" },
+  { id = "controllers", name = "Controllers", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the Controllers page, see docs/behavior/controllers.md" },
   { id = "effects", name = "Effects", milestone = "M4", status = "planned" },
   { id = "recorders", name = "Recorders", milestone = "M4", status = "planned" },
   { id = "layouts", name = "Layouts", milestone = "M4", status = "planned" },

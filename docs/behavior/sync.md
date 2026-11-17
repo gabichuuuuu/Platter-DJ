@@ -213,18 +213,16 @@ design draws it, which leaves room for the row.
   keeps the speed, so nothing is heard at that moment.
 - The public manual does not say how the phase is brought back. Platter moves the deck at
   once for an offset a DJ would hear as a flam and corrects the rest by speed, within 2 %.
-- A deck needs a tempo in its grid to sync, and until tempo detection arrives later in M3
-  that tempo is typed or tapped on the GRID page.
+- A deck needs a tempo in its grid to sync: the analysis of the load gives one, or it is
+  typed or tapped on the GRID page.
 - The public manual describes the metronome only by its key; where it is heard, its level
   and its sound are Platter's (see *Metronome*). Headphones only keeps the click off the
   master. It has no volume of its own: the headphone volume sets it.
-- The design system asks for a tempo of the clock typed after a double click. The interface
-  has no text entry yet: the field is dragged or stepped with its keys, and typing comes with
-  the rest of the interface in M3.
-- The design system lists a metronome key in the master clock. The window does not draw it
-  yet; until it does, `clock.metronome.toggle` is sent from the command line.
-- The sync mode is a preference of the Decks page, which comes with the rest of the
-  preferences; until then `global.sync.mode.set` is sent from the command line.
+- The tempo of the clock is typed after a double click, or Enter on its field, as the design
+  system asks, while the clock is the tempo master.
+- The metronome key sits after the tempo of the clock, lit while it clicks.
+- The sync mode is set on the Decks page of the preferences (`docs/behavior/settings.md`),
+  and kept in the settings file.
 - Synchronisation to an external clock is M5.
 - A synced deck changes pitch with its speed unless its key lock is on
   (`docs/behavior/keylock.md`).

@@ -171,6 +171,30 @@ impl Cue {
         self.kind
     }
 
+    /// A cue of `kind` at `position`, with the length of its loop when it is one. `None` for a
+    /// position that is not a finite place in a track, or a loop without a finite length.
+    pub fn of_kind(position: f64, kind: CueKind, length: f64, name: CueName) -> Option<Self> {
+        if !position.is_finite() || position < 0.0 {
+            return None;
+        }
+        let length = match kind {
+            CueKind::Loop if length.is_finite() && length > 0.0 => length,
+            CueKind::Loop => return None,
+            _ => 0.0,
+        };
+        Some(Self {
+            position,
+            kind,
+            length,
+            name,
+        })
+    }
+
+    /// Length of the loop of a cue of the kind [`CueKind::Loop`]; zero for the others.
+    pub fn length(&self) -> f64 {
+        self.length
+    }
+
     /// The loop a cue of the kind [`CueKind::Loop`] stores.
     pub fn region(&self) -> Option<LoopRegion> {
         (self.kind == CueKind::Loop).then_some(LoopRegion {
@@ -188,6 +212,14 @@ pub struct Cues {
 }
 
 impl Cues {
+    /// The cues of each slot, none selected.
+    pub fn from_slots(slots: [Option<Cue>; HotcueSlot::COUNT]) -> Self {
+        Self {
+            slots,
+            selected: None,
+        }
+    }
+
     pub fn get(&self, slot: HotcueSlot) -> Option<&Cue> {
         self.slots.get(slot.index()).and_then(Option::as_ref)
     }

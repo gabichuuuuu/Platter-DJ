@@ -33,6 +33,7 @@ while held, to correct the offset between two tracks by hand.
 | `deck.seek` | Jumps to a position in seconds; past the end lands on the end |
 | `deck.tempo.set` | Speed as a ratio of the original, 0 (full stop) to 2 |
 | `deck.tempo.range.cycle` | Moves the tempo fader to its next range: 8 %, 16 %, 50 % |
+| `deck.tempo.range.set` | `percent` 8, 16 or 50: gives the tempo fader that range; a tempo it cannot reach moves to its edge, as with the cycle. Any other percent is refused |
 | `deck.nudge` | Temporary speed offset as a fraction of the tempo, -0.5 to 0.5; 0 releases it |
 
 - Play, pause, seek, eject and a track change apply a 5 ms fade, so none of them cuts the

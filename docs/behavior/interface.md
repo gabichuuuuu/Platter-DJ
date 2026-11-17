@@ -67,7 +67,11 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   screen as it follows the size of a window. When the system takes the window out of full
   screen by itself, the key follows.
 - **Tooltips.** A key shows its name, and its keyboard shortcut when it has one, in a small
-  box 8 points under it, or above it when there is no room below. The box appears after
+  box 8 points under it, or above it when there is no room below. A knob, a fader, a number
+  field and a list show their name the same way, and each part of a segmented choice its
+  label with its shortcut. A control that sets a value shows no shortcut, since each of its
+  shortcuts sends a value of its own; it shows no tooltip while it is dragged, and a list none
+  while it is open. The box appears after
   the pointer has rested 600 ms on the key, or at once when the key gets the focus from the
   keyboard. It goes when the pointer and the focus leave, and Escape hides it until they
   do. Tooltips are on to begin with; `app.tooltips.toggle` turns them off and on, from the
@@ -96,9 +100,8 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   day needs the offset of the local time zone, which needs either a dependency outside the
   approved list or a call into the system. It is drawn when the application is given a time,
   as the capture mode does.
-- Only keys have tooltips. The knobs, the faders and the segmented choices get theirs with
-  the next change to their widgets. A disabled key shows none: the design system asks for
-  the reason it is disabled, which the keys do not know yet. The shortcut of a key that acts
+- A disabled control shows no tooltip: the design system asks for the reason it is disabled,
+  which the controls do not know yet. The shortcut of a key that acts
   while held is not shown.
 - Full screen has no zoom of its own and no setting to start in it; the layout scales as it
   does for a window.
@@ -128,3 +131,65 @@ code, every command can be reached with the keyboard, no colour comes from outsi
 tokens, and readouts keep their width while their digits change.
 `crates/ui-egui/tests/tooltips.rs` for the tooltips. `crates/ui-egui/tests/midi_indicator.rs`
 for the MIDI indicator; no real controller has lit it yet.
+
+## Deck sizes
+
+### What the public manual says
+
+Sections of the public manual, read on 17 November 2026:
+
+- *Setting up*, section *Switching Deck Layouts*
+- *Preferences*, section *Decks Layout*
+- *Overview*, section *Deck header*
+
+A deck can be drawn in several sizes, from a strip with play and a header of one row up to the
+full deck with its advanced panel. The smaller sizes show a header of one row, with the title,
+the remaining time and the tempo, and leave out the advanced panel; the full ones add the
+header with every detail of the track, and the largest adds the advanced panel. In the layout
+with the waveforms side by side above the decks there are two sizes: a slim one, with the
+one-row header, the stripe, transport, key lock, the tempo fader, the phase meter, SYNC and
+MASTER; and a full one, which adds the full header and the advanced panel. The size is chosen
+on the Decks Layout page of the preferences, one setting for decks A and B and one for C and
+D, and a double click on the header of a deck moves to the next size. The manual does not say
+whether a smaller deck gives room to the browser.
+
+### What Platter does
+
+- **Two sizes.** Full, as before, and compact (`app.deck_size.set`, `full` or `compact`). One
+  setting covers decks A and B, chosen on the General page of the preferences, kept in the
+  settings file; full to begin with. A double click on the header of a deck, left of the
+  tempo, sends the other size.
+- **The compact deck.** Its header is one row, as `docs/design/DESIGN.md` gives it: the letter,
+  the title, the current tempo and the large time; no cover, artist, album, tempo offset or
+  second times. The advanced panel (MOVE, CUE and GRID with its selector) is left out. The
+  overview stays, and so do SYNC, MASTER, the phase meter, the key controls, the hotcues, the
+  loop row, the transport and the tempo column.
+- **Room.** The decks share their band with the mixer, which keeps its size. With compact
+  decks the band shrinks to the height the mixer needs and the file list below gains those
+  rows; the overview of each deck takes what the deck has left over.
+- A deck that shows a notice shows it in the compact size too, in place of its hotcues.
+
+### Differences
+
+- Two sizes instead of five: the waveforms of Platter are always the lanes side by side above
+  the decks, so the sizes are those the manual gives that layout. The compact size keeps the
+  hotcues and the loop row, which the design system gives it.
+- The setting is on the General page: the Decks page has no room left, and the General page
+  holds the other settings of the window.
+- The compact header follows the large time: the time a click on it chose, remaining or
+  elapsed.
+- The commands of the advanced panel stay on the keyboard and on controllers while it is
+  hidden.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| A size other than `full` or `compact` in the settings file | Full |
+| The size changes while a cue is being mapped | The mapping mode stays; the hotcues show it |
+| A double click on the times | Swaps remaining and elapsed twice; the size does not change |
+
+### Tests
+
+`crates/ui-egui/tests/deck_size.rs`: the compact header, what it leaves out, the band and the
+double click. `crates/ui-egui/tests/settings_mixer.rs` for the setting.

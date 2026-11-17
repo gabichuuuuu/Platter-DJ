@@ -407,6 +407,23 @@ fn process_neither_allocates_nor_frees() {
     rig.send(Command::DeckEject { deck: DeckId::A });
     run(&mut rig, 5);
 
+    // The preview player takes a track, plays it, seeks, pauses and takes another: its old
+    // audio too goes back through the retired queue.
+    for (name, seconds) in [("memory-preview-a", 1.0), ("memory-preview-b", 0.2)] {
+        rig.send(Command::PreviewLoad {
+            path: sine_file(name, 330.0, seconds, 0.5, 44_100),
+        });
+        rig.engine.wait_for_loads();
+        run(&mut rig, 10);
+        rig.send(Command::PreviewSeek { position: 0.5 });
+        run(&mut rig, 5);
+        rig.send(Command::PreviewPlayPause);
+        run(&mut rig, 5);
+        rig.send(Command::PreviewPlayPause);
+        // Long enough to run past the end of the short track.
+        run(&mut rig, 30);
+    }
+
     // Key lock engaged for long enough to hold, with no jump: its pitch shows that the
     // stretch played what was counted.
     rig.load(DeckId::A, sine_file("memory-d", 440.0, 3.0, 0.5, RATE));

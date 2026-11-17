@@ -55,7 +55,9 @@ The default table:
 | Beatjump back, forward | E, R | U, I |
 
 Ctrl and comma opens the preferences. F11 shows the window on the whole screen, or as a
-window again.
+window again. Ctrl and F goes to the search field of the browser. Ctrl and A selects every
+row of the list (`docs/behavior/browser.md`, *Selecting several tracks*). Delete takes the
+selected track out of the playlist the list shows.
 
 ### Controls
 
@@ -68,8 +70,12 @@ Every control takes the keyboard focus with Tab and shows a focus ring.
 | Channel fader, tempo fader | Up and Down; Page Up and Page Down; Home. The tempo fader moves by 0.05 %, with Shift by 0.01 % |
 | Crossfader | Left and Right by 1 %; Page Up and Page Down by 10 %; Home returns to the centre |
 | Drop-down | Space, Enter or Alt and Down opens; Up and Down move; Enter picks; Escape closes |
-| File list | Up and Down move the selection; Enter opens a folder; Backspace shows the folder above |
+| File list | Up and Down move the selection; Enter opens a folder; Backspace shows the folder above; with a playlist shown, Shift+F10 opens the menu of the selected row |
 | Folder of the tree | Space or Enter shows it; Right opens it; Left closes it |
+| Playlist of the tree | Space or Enter shows it; Insert adds the track the list has selected; Shift+F10 opens its menu |
+| *Playlists* or a folder of playlists | Shift+F10 opens its menu |
+| Name field of the tree | Typing adds at the end; Backspace erases; Enter names; Escape closes without naming |
+| Context menu | Up and Down move; Enter or Space operates the item; Escape closes |
 
 A key the focused control uses does not trigger a shortcut: with a knob focused the arrows
 move the knob. A chord with Ctrl or Alt always reaches the shortcuts.

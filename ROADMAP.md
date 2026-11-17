@@ -57,7 +57,8 @@ Decisions already taken for this milestone:
 
 - Tempo, beatgrid and key analysis sits behind a project trait. The community crate first named
   for it failed its measurement, so Platter detects them with its own code
-  (`docs/decisions/0020-own-analysis.md`), measured against tracks with known tempo and key.
+  (`docs/decisions/0020-own-analysis.md`), measured against recordings with known tempo and
+  key.
 - Key lock sits behind a project trait. Two candidate time-stretching libraries are measured and
   the choice is recorded in an ADR before the milestone closes.
 - The library uses SQLite behind a project trait.
@@ -90,8 +91,10 @@ until it is done and its result is written in the note or the decision it names:
   against a real track (`docs/behavior/beatgrid.md`, `docs/behavior/sync.md`), and external
   mixer mode feeding a hardware mixer (`docs/behavior/external-mixer.md`).
 - **An audio device at 96 kHz.** Key lock in the callback at that rate.
-- **Tracks with known tempo and key.** The measurement of tempo, beatgrid and key detection
-  that the decisions of this milestone ask for, on a corpus kept outside the repository.
+- **Full tracks with known tempo and key.** The detection was measured on 2,248 annotated loops
+  of a public dataset (`docs/decisions/0020-own-analysis.md`, *Measurement on real
+  recordings*); the full-length tracks of a DJ collection, on a corpus kept outside the
+  repository, are still to be measured.
 - **A real music collection.** The time and the result of importing a large folder; links
   on Windows, which need a privilege to create and were checked by hand with a junction only
   (`docs/decisions/0023-folder-import.md`).

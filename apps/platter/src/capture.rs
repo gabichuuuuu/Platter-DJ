@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use eframe::egui;
-use platter_ui_egui::command::SettingsPage;
+use platter_ui_egui::command::{DeckSize, SettingsPage};
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
@@ -20,23 +20,50 @@ use crate::png;
 const SETTLE_FRAMES: u32 = 4;
 const GIVE_UP_FRAMES: u32 = 120;
 
-/// The states that can be captured: one per reference screen of M2, and the Mixer page of
-/// the preferences.
-pub const STATES: [&str; 5] = [
+/// The states that can be captured: one per reference screen of M2, the main window with compact
+/// decks, the Decks, Mixer and Library pages of the preferences with the maintenance of the
+/// collection, a playlist and a history shown in the browser, and the details of one track and
+/// of two.
+pub const STATES: [&str; 13] = [
     "main",
+    "compact",
+    "playlist",
+    "history",
     "startup",
     "preferences-audio",
     "preferences-general",
+    "preferences-decks",
     "preferences-mixer",
+    "preferences-library",
+    "maintenance",
+    "details",
+    "details-several",
 ];
 
 fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
     match state {
         "main" => Some((sample::playing(), None)),
+        "compact" => {
+            let mut scene = sample::playing();
+            scene.settings.deck_size = DeckSize::Compact;
+            Some((scene, None))
+        }
+        "playlist" | "details" => Some((sample::playlist(), None)),
+        "details-several" => {
+            let mut scene = sample::playlist();
+            scene.browser.marked = vec![1, 2];
+            scene.browser.selected = Some(1);
+            Some((scene, None))
+        }
+        "history" => Some((sample::history(), None)),
         "startup" => Some((sample::startup(), None)),
         "preferences-audio" => Some((sample::playing(), Some(SettingsPage::Audio))),
         "preferences-general" => Some((sample::playing(), Some(SettingsPage::General))),
+        "preferences-decks" => Some((sample::playing(), Some(SettingsPage::Decks))),
         "preferences-mixer" => Some((sample::playing(), Some(SettingsPage::Mixer))),
+        "preferences-library" | "maintenance" => {
+            Some((sample::playing(), Some(SettingsPage::Library)))
+        }
         _ => None,
     }
 }
@@ -122,6 +149,8 @@ pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
     })?;
     let mut shell = Shell::new(scene.settings.language).map_err(|error| error.to_string())?;
     shell.state.settings_page = page;
+    shell.state.maintenance = state == "maintenance";
+    shell.state.details_wanted = state.starts_with("details");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Platter DJ")

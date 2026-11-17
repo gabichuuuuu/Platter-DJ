@@ -5,7 +5,7 @@
 //! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`; for flux and reverse,
 //! `docs/behavior/flux.md`; for the beat tick, `docs/behavior/beatgrid.md`.
 
-use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo};
+use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo, TrackMemory};
 use platter_dsp::Frame;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
@@ -176,7 +176,7 @@ impl DeckPlayer {
     pub(super) fn swap(&mut self, track: Option<DeckTrack>, retired: &mut Producer<Retired>) {
         // A swap that never got applied still owes its item to the retired queue.
         if let Some(superseded) = self.pending_swap.take() {
-            retire(superseded, retired);
+            retire(superseded, None, retired);
         }
         self.playing = false;
         self.cue_preview = false;
@@ -184,9 +184,24 @@ impl DeckPlayer {
         self.cup_held = false;
         self.pending_seek = None;
         self.arriving_cue = None;
-        self.arriving_grid = None;
+        // Copied out of its box, which stays with the track until it is retired.
+        let memory = track
+            .as_ref()
+            .and_then(|track| track.memory.as_deref())
+            .copied()
+            .unwrap_or_default();
+        // A grid never kept stays as the deck had none, as before the collection kept them.
+        self.arriving_grid = (memory.grid != BeatGrid::default()).then_some(memory.grid);
         self.looper.clear();
-        self.set_cues(Cues::default());
+        self.set_cues(memory.cues);
+        if let Some((seconds, rate)) = track
+            .as_ref()
+            .and_then(|track| Some((track.start?, track.audio.rate().as_f64())))
+            .filter(|(seconds, _)| seconds.is_finite() && *seconds > 0.0)
+        {
+            self.pending_seek = Some(SeekTarget::Seconds(seconds));
+            self.arriving_cue = Some(seconds * rate);
+        }
         self.pending_swap = Some(track);
         self.drop_timeline();
     }
@@ -1144,15 +1159,19 @@ impl DeckPlayer {
 
     fn apply_pending(&mut self, retired: &mut Producer<Retired>) {
         if let Some(arriving) = self.pending_swap.take() {
-            let (audio, stretch) =
-                arriving.map_or((None, None), |track| (Some(track.audio), track.stretch));
+            let (audio, stretch, memory) = arriving.map_or((None, None, None), |track| {
+                (Some(track.audio), track.stretch, track.memory)
+            });
             let previous = std::mem::replace(&mut self.audio, audio);
             let previous_stretch = self.lock.replace(stretch);
             retire(
                 previous.map(|audio| DeckTrack {
                     audio,
                     stretch: previous_stretch,
+                    memory: None,
+                    start: None,
                 }),
+                memory,
                 retired,
             );
             self.position = 0.0;
@@ -1208,8 +1227,12 @@ fn read(audio: &TrackAudio, position: f64) -> Frame {
 /// Hands audio back to the control side. The queue is sized so that it cannot be full; if
 /// it ever were, leaking the buffer is the only option that keeps the audio thread from
 /// freeing memory.
-fn retire(track: Option<DeckTrack>, retired: &mut Producer<Retired>) {
-    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(track)) {
+fn retire(
+    track: Option<DeckTrack>,
+    memory: Option<Box<TrackMemory>>,
+    retired: &mut Producer<Retired>,
+) {
+    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(track, memory)) {
         std::mem::forget(item);
     }
 }

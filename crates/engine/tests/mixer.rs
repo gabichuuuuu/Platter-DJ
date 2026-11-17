@@ -340,6 +340,37 @@ fn the_tempo_range_cycles_and_pulls_the_tempo_inside() {
 }
 
 #[test]
+fn the_tempo_range_is_set_to_one_of_its_choices() {
+    let mut rig = playing_deck_a("mixer-range-set", 440.0);
+    let controls = |rig: &Rig| rig.engine.snapshot().decks[0].controls.clone();
+    rig.send(Command::DeckTempoRangeSet {
+        deck: A,
+        percent: 50,
+    });
+    assert_eq!(controls(&rig).tempo_range, 0.5);
+    rig.send(Command::DeckTempoSet {
+        deck: A,
+        ratio: 0.7,
+    });
+    rig.send(Command::DeckTempoRangeSet {
+        deck: A,
+        percent: 16,
+    });
+    assert_eq!(controls(&rig).tempo_range, 0.16);
+    assert_eq!(controls(&rig).tempo_ratio, 0.84);
+    // A range the fader does not have is refused and changes nothing.
+    assert!(
+        rig.engine
+            .dispatch(Command::DeckTempoRangeSet {
+                deck: A,
+                percent: 10,
+            })
+            .is_err()
+    );
+    assert_eq!(controls(&rig).tempo_range, 0.16);
+}
+
+#[test]
 fn the_snapshot_carries_where_every_control_stands() {
     let mut rig = Rig::new();
     rig.send(Command::MixerGainSet { deck: B, db: -4.5 });

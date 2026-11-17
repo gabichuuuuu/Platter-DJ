@@ -2,8 +2,10 @@
 //! selector, builds the view of each frame and carries out the commands the interface
 //! answers with.
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::ViewportCommand;
 use platter_audio_io::{
@@ -11,21 +13,32 @@ use platter_audio_io::{
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
-use platter_engine::{Command, Engine, EngineError, Event, Processor};
-use platter_library::{Library, LibraryError, SqliteLibrary};
+use platter_engine::command::SPECS;
+use platter_engine::{
+    Command, Engine, EngineError, Event, PlatterAnalyser, Processor, Recall, TempoRange,
+};
+use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_ui_egui::collection::Collection;
 use platter_ui_egui::command::{Action, AppCommand};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
 use platter_ui_egui::model::{
-    AudioProblem, AudioState, AudioView, DeckNotice, DeviceView, MidiView, OutputKind,
-    SettingsView, StreamView, View,
+    AnalysisStatus, AudioProblem, AudioState, AudioView, ControllerManager, ControllerRow,
+    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, StreamView, View,
 };
+use platter_ui_egui::played::{MAX_PLAYTIME, MIN_PLAYTIME, PlayClock};
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
-use crate::config::{self, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE, SETTINGS_FILE, Settings};
+use crate::background;
+use crate::config::{
+    self, BACKUP_FOLDER, Controller, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE, MAX_CONTROLLERS,
+    MAX_MUSIC_FOLDERS, SETTINGS_FILE, Settings, TEMPO_RANGE_PERCENTS,
+};
+use crate::keeping::{Keeping, SETTLE};
+use crate::manager::Document;
 use crate::midi;
+use crate::starting::{Next, Starting};
 
 /// How often the devices are looked for again while none is playing.
 const DEVICE_RETRY: Duration = Duration::from_secs(3);
@@ -33,6 +46,39 @@ const DEVICE_RETRY: Duration = Duration::from_secs(3);
 const IDLE_REPAINT: Duration = Duration::from_millis(100);
 /// How long the MIDI indicator lights after a message (`docs/behavior/interface.md`).
 const MIDI_LIGHT: Duration = Duration::from_millis(150);
+/// Most mapping files the Controllers page offers to import from one folder.
+const MAX_IMPORTABLE: usize = 64;
+
+/// What the controller manager of the preferences keeps between frames.
+struct Manager {
+    selected: Option<usize>,
+    binding: Option<usize>,
+    learning: bool,
+    target: DeckId,
+    /// The mapping of each controller of the settings, as the page edits it.
+    documents: Vec<Document>,
+    /// Why each controller of the settings is not open, if it is not.
+    problems: Vec<Option<String>>,
+    /// Learn gave an assignment its control: the mapping is written after the messages.
+    pending_write: bool,
+}
+
+impl Default for Manager {
+    fn default() -> Self {
+        Self {
+            selected: None,
+            binding: None,
+            learning: false,
+            target: DeckId::A,
+            documents: Vec::new(),
+            problems: Vec::new(),
+            pending_write: false,
+        }
+    }
+}
+
+/// Longest wait at closing for the collection to write what the decks learned last.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
 /// A level below this is silence for the purpose of deciding how often to draw.
 const QUIET_LEVEL: f32 = 1e-4;
 
@@ -61,6 +107,18 @@ fn rate_of(hz: u32) -> SampleRate {
 /// the project cannot make means asking for every letter in turn, and a letter that stands
 /// for a network share blocks for a long time when the share does not answer. A drive is
 /// reached by naming it in the settings file or by dropping a file from it on a deck.
+/// Reads what the collection in `file` kept for a track; it runs on the worker that loads
+/// the track. A library that cannot be read keeps nothing.
+fn recall_from(file: PathBuf) -> Recall {
+    Arc::new(move |path: &Path| {
+        SqliteLibrary::open(&file)
+            .ok()?
+            .memory_at(path)
+            .ok()
+            .flatten()
+    })
+}
+
 fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
     let mut roots = Vec::new();
     if let Some(home) = config::home_dir() {
@@ -105,9 +163,34 @@ pub struct PlatterApp {
     /// Full screen asked for by a command, sent to the window in the next frame.
     fullscreen_wanted: Option<bool>,
     /// The MIDI controllers of the settings file that could be opened.
-    controllers: Vec<midi::Controller>,
+    /// The controllers whose input is open, with their place in the settings.
+    controllers: Vec<(usize, midi::Controller)>,
+    /// The controller manager of the preferences.
+    manager: Manager,
+    /// The MIDI inputs of the system, as the last look found them.
+    midi_inputs: Vec<String>,
+    /// The mapping files in the folder the explorer shows, which the page offers to import.
+    importable: Vec<PathBuf>,
+    /// The context of the window, which the MIDI inputs wake.
+    context: eframe::egui::Context,
     /// When the last MIDI message came, from any controller.
     last_midi: Option<Instant>,
+    /// When each deck has played its track long enough for it to count as played.
+    play_clock: PlayClock,
+    last_play_check: Instant,
+    /// Why the backup of the library made when it opened failed, if it did.
+    backup_failure: std::sync::mpsc::Receiver<String>,
+    /// The track each deck had at the last frame, to tell the browser which one loaded last.
+    deck_tracks: [Option<PathBuf>; DeckId::COUNT],
+    /// What the decks learned of their tracks, on its way to the collection.
+    keeping: Keeping,
+    /// The music folder the Library page shows.
+    music_folder: Option<usize>,
+    /// What the library still does at start; `None` once it is done.
+    starting: Option<Starting>,
+    /// What the window shares with the analysis of the collection in the background.
+    background: background::Shared,
+    background_reports: std::sync::mpsc::Receiver<background::Report>,
 }
 
 impl PlatterApp {
@@ -124,10 +207,32 @@ impl PlatterApp {
         });
         let home_name = shell.texts().get("browser.home").to_owned();
         let mut browser = FileBrowser::new(roots(&home_name, &settings.roots));
+        browser.set_columns(&settings.columns);
         let library = folder.as_ref().map(|folder| folder.join(LIBRARY_FILE));
+        let recall = library.clone().map(recall_from);
+        let background = background::Shared::default();
+        background.range.set(settings.bpm_range);
+        let (background_sender, background_reports) = std::sync::mpsc::channel();
+        if let Some(file) = library.clone() {
+            // Without a worker the collection is simply not analysed in the background.
+            let _ = background::start(file, background.clone(), background_sender);
+        }
+        let (backup_sender, backup_failure) = std::sync::mpsc::channel();
         browser.attach(Collection::start(move || {
             let path = library
                 .ok_or_else(|| LibraryError::NotAFolder(std::io::ErrorKind::NotFound.into()))?;
+            // The file as the last run left it, before this run writes to it.
+            if let Some(backups) = path.parent().map(|folder| folder.join(BACKUP_FOLDER)) {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map_or(0, |since| {
+                        i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+                    });
+                if let Err(error) = back_up(&path, &backups, Timestamp(now)) {
+                    // The window may be gone already; then nobody is left to tell.
+                    let _ = backup_sender.send(error.to_string());
+                }
+            }
             Ok(Box::new(SqliteLibrary::open(&path)?) as Box<dyn Library>)
         }));
         // The folder shown last is not looked at here: if it is gone, or on a drive that
@@ -141,7 +246,14 @@ impl PlatterApp {
             browser.navigate(start);
         }
         let engine_rate = settings.sample_rate;
-        let (engine, processor) = Engine::new(rate_of(engine_rate));
+        let (mut engine, processor) = Engine::with_analyser(
+            rate_of(engine_rate),
+            Arc::new(PlatterAnalyser::with_range(background.range.clone())),
+        );
+        if let Some(recall) = recall {
+            engine.set_recall(recall);
+        }
+        let settings_min_playtime = settings.min_playtime;
         let mut app = Self {
             folder,
             logger,
@@ -159,15 +271,35 @@ impl PlatterApp {
             fullscreen: false,
             fullscreen_wanted: None,
             controllers: Vec::new(),
+            manager: Manager::default(),
+            midi_inputs: Vec::new(),
+            importable: Vec::new(),
+            context: context.clone(),
             last_midi: None,
+            play_clock: PlayClock::new(settings_min_playtime),
+            last_play_check: Instant::now(),
+            deck_tracks: Default::default(),
+            keeping: Keeping::default(),
+            background,
+            background_reports,
+            music_folder: None,
+            starting: None,
+            backup_failure,
         };
         app.log(
             Level::Info,
             &format!("Platter DJ {} started", env!("CARGO_PKG_VERSION")),
         );
         app.load_keymap();
+        app.apply_tag_writing();
+        app.fullscreen_wanted = app.settings.fullscreen_at_start.then_some(true);
+        app.starting = Some(Starting::new(
+            &app.settings.music_folders,
+            app.settings.import_at_start,
+            app.settings.check_at_start,
+        ));
         app.open_audio(Some(source_of(processor)));
-        app.open_controllers(&context);
+        app.open_controllers();
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
         app.apply_mixer_settings();
@@ -218,12 +350,17 @@ impl PlatterApp {
     /// Reads the mapping of each MIDI controller of the settings and opens its input. A
     /// controller whose mapping has a mistake, or whose input cannot be opened, is written in
     /// the log and left off.
-    fn open_controllers(&mut self, context: &eframe::egui::Context) {
-        for entry in self.settings.midi.clone() {
-            let path = match &self.folder {
-                Some(folder) if entry.mapping.is_relative() => folder.join(&entry.mapping),
-                _ => entry.mapping.clone(),
-            };
+    fn open_controllers(&mut self) {
+        // The old inputs close before the same ones open again.
+        self.controllers.clear();
+        let entries = self.settings.midi.clone();
+        self.manager.documents.clear();
+        self.manager.problems.clear();
+        for (index, entry) in entries.iter().enumerate() {
+            let path = self.mapping_path(&entry.mapping);
+            self.manager
+                .documents
+                .push(Document::read(&path).unwrap_or_default());
             let mapping = match midi::read(&path) {
                 Ok(mapping) => mapping,
                 Err(problem) => {
@@ -231,20 +368,329 @@ impl PlatterApp {
                         Level::Warning,
                         &format!("MIDI mapping {}: {problem}", entry.mapping.display()),
                     );
+                    self.manager.problems.push(Some(problem.to_string()));
                     continue;
                 }
             };
-            let context = context.clone();
+            let context = self.context.clone();
             match midi::Controller::open(&entry.input, mapping, move || context.request_repaint()) {
                 Ok(controller) => {
                     self.log(
                         Level::Info,
                         &format!("MIDI input `{}` opened", controller.name()),
                     );
-                    self.controllers.push(controller);
+                    self.controllers.push((index, controller));
+                    self.manager.problems.push(None);
                 }
-                Err(error) => self.log(Level::Warning, &format!("MIDI: {error}")),
+                Err(error) => {
+                    self.log(Level::Warning, &format!("MIDI: {error}"));
+                    self.manager.problems.push(Some(error.to_string()));
+                }
             }
+        }
+        self.manager.selected = self
+            .manager
+            .selected
+            .filter(|index| *index < entries.len())
+            .or((!entries.is_empty()).then_some(0));
+    }
+
+    /// What the library does when Platter starts, once it is open: the import of each music
+    /// folder in turn, then the check of the collection with the maintenance open.
+    fn start_library(&mut self) {
+        let Some(starting) = self.starting.as_mut() else {
+            return;
+        };
+        match starting.next(
+            self.browser.library_available(),
+            self.browser.collection_busy(),
+        ) {
+            Next::Wait => {}
+            Next::Done => self.starting = None,
+            Next::Send(commands) => {
+                for command in commands {
+                    self.dispatch_app(command);
+                }
+            }
+        }
+    }
+
+    /// Looks for the MIDI inputs of the system and the mapping files of the folder the
+    /// explorer shows, for the Controllers page.
+    fn scan_midi(&mut self) {
+        self.midi_inputs = platter_device_io::inputs().unwrap_or_default();
+        self.importable = self
+            .browser
+            .current()
+            .and_then(|folder| std::fs::read_dir(folder).ok())
+            .map(|entries| {
+                let mut files: Vec<PathBuf> = entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        path.extension()
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("toml"))
+                    })
+                    .take(MAX_IMPORTABLE)
+                    .collect();
+                files.sort();
+                files
+            })
+            .unwrap_or_default();
+    }
+
+    /// Where a mapping file named in the settings is: without a folder, in that of the
+    /// settings.
+    fn mapping_path(&self, mapping: &Path) -> PathBuf {
+        match &self.folder {
+            Some(folder) if mapping.is_relative() => folder.join(mapping),
+            _ => mapping.to_path_buf(),
+        }
+    }
+
+    /// Writes the mapping of the selected controller as the page left it, and opens the
+    /// controllers again with it; a mapping with a mistake is not written.
+    fn write_mapping(&mut self) {
+        let Some(index) = self.manager.selected else {
+            return;
+        };
+        let (Some(entry), Some(document)) = (
+            self.settings.midi.get(index).cloned(),
+            self.manager.documents.get(index).cloned(),
+        ) else {
+            return;
+        };
+        let path = self.mapping_path(&entry.mapping);
+        if let Err(problem) = document.write(&path) {
+            self.log(
+                Level::Warning,
+                &format!("MIDI mapping {}: {problem}", entry.mapping.display()),
+            );
+            if let Some(slot) = self.manager.problems.get_mut(index) {
+                *slot = Some(problem);
+            }
+            return;
+        }
+        let (selected, binding) = (self.manager.selected, self.manager.binding);
+        self.open_controllers();
+        // What the page was editing stays, unwritten assignments included.
+        if let Some(slot) = self.manager.documents.get_mut(index) {
+            *slot = document;
+        }
+        self.manager.selected = selected;
+        self.manager.binding = binding;
+    }
+
+    /// Carries out a command of the controller manager.
+    fn manage(&mut self, command: AppCommand) {
+        let selected = self.manager.selected;
+        let document = selected.and_then(|index| self.manager.documents.get_mut(index));
+        match command {
+            AppCommand::MidiControllerAdd => {
+                let used: Vec<&String> = self
+                    .settings
+                    .midi
+                    .iter()
+                    .map(|entry| &entry.input)
+                    .collect();
+                let Some(input) = self
+                    .midi_inputs
+                    .iter()
+                    .find(|input| !used.contains(input))
+                    .or_else(|| self.midi_inputs.first())
+                    .cloned()
+                else {
+                    return;
+                };
+                if self.settings.midi.len() >= MAX_CONTROLLERS {
+                    return;
+                }
+                let mapping = (1..)
+                    .map(|number| PathBuf::from(format!("controller-{number}.toml")))
+                    .find(|name| {
+                        !self.mapping_path(name).exists()
+                            && self
+                                .settings
+                                .midi
+                                .iter()
+                                .all(|entry| entry.mapping != *name)
+                    })
+                    .unwrap_or_else(|| PathBuf::from("controller.toml"));
+                if let Err(error) = std::fs::write(self.mapping_path(&mapping), "") {
+                    self.log(Level::Warning, &format!("MIDI mapping: {error}"));
+                    return;
+                }
+                self.settings.midi.push(Controller { input, mapping });
+                self.save_settings();
+                self.manager.selected = Some(self.settings.midi.len() - 1);
+                self.manager.binding = None;
+                self.open_controllers();
+            }
+            AppCommand::MidiControllerRemove { index } => {
+                if index < self.settings.midi.len() {
+                    self.settings.midi.remove(index);
+                    self.save_settings();
+                    self.manager.selected = None;
+                    self.manager.binding = None;
+                    self.manager.learning = false;
+                    self.open_controllers();
+                }
+            }
+            AppCommand::MidiControllerSelect { index } => {
+                if index < self.settings.midi.len() {
+                    self.manager.selected = Some(index);
+                    self.manager.binding = None;
+                    self.manager.learning = false;
+                }
+            }
+            AppCommand::MidiInputSet { index, input } => {
+                if let Some(entry) = self.settings.midi.get_mut(index) {
+                    entry.input = input;
+                    self.save_settings();
+                    self.open_controllers();
+                }
+            }
+            AppCommand::MidiMappingImport { index, path } => self.import_mapping(index, &path),
+            AppCommand::MidiMappingExport { index, folder } => self.export_mapping(index, &folder),
+            AppCommand::MidiBindingSelect { index } => {
+                if document.is_some_and(|document| index < document.len()) {
+                    self.manager.binding = Some(index);
+                }
+            }
+            AppCommand::MidiBindingAdd { command } => {
+                let spec = SPECS.iter().find(|spec| spec.id == command);
+                if let (Some(document), Some(spec)) = (document, spec)
+                    && let Some(added) = document.add(spec, self.manager.target)
+                {
+                    // It waits for its control: Learn gives it one.
+                    self.manager.binding = Some(added);
+                    self.manager.learning = true;
+                }
+            }
+            AppCommand::MidiBindingDuplicate => {
+                if let (Some(document), Some(binding)) = (document, self.manager.binding)
+                    && let Some(copy) = document.duplicate(binding)
+                {
+                    self.manager.binding = Some(copy);
+                }
+            }
+            AppCommand::MidiBindingDelete => {
+                if let (Some(document), Some(binding)) = (document, self.manager.binding)
+                    && document.delete(binding)
+                {
+                    self.manager.binding = None;
+                    self.write_mapping();
+                }
+            }
+            AppCommand::MidiLearnToggle => self.manager.learning = !self.manager.learning,
+            AppCommand::MidiTargetSet { deck } => self.manager.target = deck,
+            _ => {}
+        }
+    }
+
+    /// Copies the mapping file at `path` into the folder of the settings and gives it to the
+    /// controller at `index`; a mapping with a mistake is refused.
+    fn import_mapping(&mut self, index: usize, path: &Path) {
+        if index >= self.settings.midi.len() {
+            return;
+        }
+        let document = match Document::read(path).and_then(|document| {
+            document.mapping()?;
+            Ok(document)
+        }) {
+            Ok(document) => document,
+            Err(problem) => {
+                self.log(
+                    Level::Warning,
+                    &format!("MIDI mapping {}: {problem}", path.display()),
+                );
+                return;
+            }
+        };
+        let stem = path.file_stem().map_or_else(
+            || "mapping".to_owned(),
+            |stem| stem.to_string_lossy().into_owned(),
+        );
+        // A name of its own in the folder of the settings: a file there is never replaced.
+        let name = std::iter::once(format!("{stem}.toml"))
+            .chain((2..).map(|number| format!("{stem}-{number}.toml")))
+            .map(PathBuf::from)
+            .find(|name| !self.mapping_path(name).exists())
+            .unwrap_or_else(|| PathBuf::from("mapping.toml"));
+        if let Err(problem) = document.write(&self.mapping_path(&name)) {
+            self.log(Level::Warning, &format!("MIDI mapping: {problem}"));
+            return;
+        }
+        if let Some(entry) = self.settings.midi.get_mut(index) {
+            entry.mapping = name;
+        }
+        self.save_settings();
+        self.open_controllers();
+    }
+
+    /// Writes the mapping of the controller at `index` into `folder`, never over a file.
+    fn export_mapping(&mut self, index: usize, folder: &Path) {
+        let (Some(entry), Some(document)) = (
+            self.settings.midi.get(index).cloned(),
+            self.manager.documents.get(index),
+        ) else {
+            return;
+        };
+        let Some(name) = entry.mapping.file_name() else {
+            return;
+        };
+        let target = folder.join(name);
+        let written = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+            .and_then(|mut file| {
+                use std::io::Write as _;
+                file.write_all(document.to_text().as_bytes())
+            });
+        match written {
+            Ok(()) => self.log(
+                Level::Info,
+                &format!("MIDI mapping exported to {}", target.display()),
+            ),
+            Err(error) => self.log(
+                Level::Warning,
+                &format!("MIDI mapping {}: {error}", target.display()),
+            ),
+        }
+    }
+
+    /// The view of the controller manager for the Controllers page.
+    fn manager_view(&self) -> ControllerManager {
+        let open: Vec<usize> = self.controllers.iter().map(|(index, _)| *index).collect();
+        ControllerManager {
+            controllers: self
+                .settings
+                .midi
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| ControllerRow {
+                    input: entry.input.clone(),
+                    mapping: entry
+                        .mapping
+                        .file_name()
+                        .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+                    open: open.contains(&index),
+                    problem: self.manager.problems.get(index).cloned().flatten(),
+                    bindings: self
+                        .manager
+                        .documents
+                        .get(index)
+                        .map(Document::rows)
+                        .unwrap_or_default(),
+                })
+                .collect(),
+            inputs: self.midi_inputs.clone(),
+            selected: self.manager.selected,
+            binding: self.manager.binding,
+            learning: self.manager.learning,
+            target: self.manager.target,
+            importable: self.importable.clone(),
         }
     }
 
@@ -253,7 +699,22 @@ impl PlatterApp {
     fn take_midi(&mut self) -> bool {
         let mut controllers = std::mem::take(&mut self.controllers);
         let mut more = false;
-        for controller in &mut controllers {
+        for (index, controller) in &mut controllers {
+            if self.manager.learning && self.manager.selected == Some(*index) {
+                // While Learn is on, the messages of the controller name controls instead
+                // of acting.
+                if let Some(midi) = controller.take_learned() {
+                    self.last_midi = Some(Instant::now());
+                    let binding = self.manager.binding;
+                    if let (Some(document), Some(binding)) =
+                        (self.manager.documents.get_mut(*index), binding)
+                        && document.learn(binding, &midi)
+                    {
+                        self.manager.pending_write = true;
+                    }
+                }
+                continue;
+            }
             let (actions, taken, left) = controller.take();
             more |= left;
             if taken > 0 {
@@ -289,12 +750,19 @@ impl PlatterApp {
             }
         }
         self.controllers = controllers;
+        if std::mem::take(&mut self.manager.pending_write) {
+            self.write_mapping();
+        }
         more
     }
 
     /// Builds an engine at the sample rate of the settings with the controls where they
     /// stand, and loads again the tracks the decks held. Returns its processor.
     fn rebuild_engine(&mut self) -> Processor {
+        // The tracks come back from the collection: what changed last goes there first.
+        for (path, kept) in self.keeping.flush() {
+            self.browser.keep(path, kept);
+        }
         let snapshot = self.engine.snapshot();
         let rate = self.settings.sample_rate;
         let (engine, processor) = Engine::with_controls_of(rate_of(rate), &self.engine);
@@ -409,7 +877,14 @@ impl PlatterApp {
             Command::MixerCrossfaderFadeBeatsSet {
                 beats: f64::from(settings.fade_beats),
             },
+            Command::GlobalSyncModeSet {
+                mode: settings.sync_mode,
+            },
         ];
+        commands.extend(DeckId::ALL.map(|deck| Command::DeckTempoRangeSet {
+            deck,
+            percent: settings.tempo_range,
+        }));
         for (now, wanted, toggle) in [
             (
                 mixer.autogain,
@@ -426,6 +901,11 @@ impl PlatterApp {
                 settings.external_master_volume,
                 Command::MixerExternalMasterVolumeToggle,
             ),
+            (
+                self.engine.snapshot().load_marker,
+                settings.load_marker,
+                Command::GlobalLoadMarkerToggle,
+            ),
         ] {
             if now != wanted {
                 commands.push(toggle);
@@ -436,17 +916,20 @@ impl PlatterApp {
         }
     }
 
-    /// Keeps the settings of the Mixer page as the engine has them, whatever changed them:
-    /// the page, a shortcut or a controller.
+    /// Keeps the settings of the Decks and Mixer pages as the engine has them, whatever
+    /// changed them: the page, a shortcut or a controller.
     fn keep_mixer_settings(&mut self) {
-        let mixer = self.engine.snapshot().mixer;
+        let snapshot = self.engine.snapshot();
+        let mixer = snapshot.mixer;
         let kept = Settings {
+            sync_mode: snapshot.clock.sync_mode,
             mixer_mode: mixer.mode,
             autogain: mixer.autogain,
             external_eq_gain: mixer.external_eq_gain,
             external_master_volume: mixer.external_master_volume,
             // A length set by a command between whole beats is saved to the nearest one.
             fade_beats: mixer.fade_beats.round() as u32,
+            load_marker: snapshot.load_marker,
             ..self.settings.clone()
         };
         if kept != self.settings {
@@ -457,6 +940,21 @@ impl PlatterApp {
 
     fn run_engine(&mut self, command: Command) -> Result<(), EngineError> {
         match &command {
+            // The rules of loading of the Decks page: a playing deck takes no track.
+            Command::DeckLoad { deck, path }
+                if self.settings.load_stopped_only
+                    && self.engine.snapshot().decks[deck.index()].playing =>
+            {
+                self.log(
+                    Level::Info,
+                    &format!(
+                        "deck {} plays: {} is not loaded",
+                        deck.letter(),
+                        path.display()
+                    ),
+                );
+                return Ok(());
+            }
             Command::DeckLoad { deck, .. } => self.notices[deck.index()] = None,
             Command::MixerCrossfaderCurveSet { curve }
                 if self.settings.crossfader_curve != *curve =>
@@ -473,6 +971,8 @@ impl PlatterApp {
                 | Command::MixerExternalEqGainToggle
                 | Command::MixerExternalMasterVolumeToggle
                 | Command::MixerCrossfaderFadeBeatsSet { .. }
+                | Command::GlobalSyncModeSet { .. }
+                | Command::GlobalLoadMarkerToggle
         );
         self.engine.dispatch(command)?;
         if mixer_setting {
@@ -497,6 +997,22 @@ impl PlatterApp {
                 // The page lists the devices: look for them now, not when it was last open.
                 self.devices = platter_audio_io::devices();
                 self.last_device_scan = Instant::now();
+                self.scan_midi();
+            }
+            AppCommand::MidiControllerAdd
+            | AppCommand::MidiControllerRemove { .. }
+            | AppCommand::MidiControllerSelect { .. }
+            | AppCommand::MidiInputSet { .. }
+            | AppCommand::MidiMappingImport { .. }
+            | AppCommand::MidiMappingExport { .. }
+            | AppCommand::MidiBindingSelect { .. }
+            | AppCommand::MidiBindingAdd { .. }
+            | AppCommand::MidiBindingDuplicate
+            | AppCommand::MidiBindingDelete
+            | AppCommand::MidiLearnToggle
+            | AppCommand::MidiTargetSet { .. } => {
+                self.manage(command);
+                self.scan_midi();
             }
             AppCommand::AudioDeviceSet { device } => {
                 self.change_audio(|settings| settings.device = device)
@@ -534,8 +1050,86 @@ impl PlatterApp {
             AppCommand::SettingsRestoreDefaults => self.restore_defaults(),
             AppCommand::KeymapOpen => self.open_keymap(),
             AppCommand::FullscreenToggle => self.fullscreen_wanted = Some(!self.fullscreen),
+            AppCommand::FullscreenAtStartToggle => {
+                self.settings.fullscreen_at_start = !self.settings.fullscreen_at_start;
+                self.save_settings();
+            }
+            AppCommand::DeckSizeSet { size } => {
+                self.settings.deck_size = size;
+                self.save_settings();
+            }
+            AppCommand::TempoRangeSet { percent } => {
+                if TEMPO_RANGE_PERCENTS.contains(&percent) {
+                    self.settings.tempo_range = percent;
+                    for deck in DeckId::ALL {
+                        self.dispatch(Command::DeckTempoRangeSet { deck, percent }.into());
+                    }
+                    self.save_settings();
+                }
+            }
             AppCommand::TooltipsToggle => {
                 self.settings.tooltips = !self.settings.tooltips;
+                self.save_settings();
+            }
+            AppCommand::BrowserColumnToggle { .. } => {
+                self.settings.columns = self.browser.columns().to_vec();
+                self.save_settings();
+            }
+            AppCommand::MusicFolderAdd { path } => {
+                if !path.as_os_str().is_empty()
+                    && !self.settings.music_folders.contains(&path)
+                    && self.settings.music_folders.len() < MAX_MUSIC_FOLDERS
+                {
+                    self.settings.music_folders.push(path);
+                    self.music_folder = Some(self.settings.music_folders.len() - 1);
+                    self.save_settings();
+                }
+            }
+            AppCommand::MusicFolderRemove { index } => {
+                if index < self.settings.music_folders.len() {
+                    self.settings.music_folders.remove(index);
+                    self.music_folder = None;
+                    self.save_settings();
+                }
+            }
+            AppCommand::MusicFolderSelect { index } => self.music_folder = Some(index),
+            AppCommand::ImportAtStartToggle => {
+                self.settings.import_at_start = !self.settings.import_at_start;
+                self.save_settings();
+            }
+            AppCommand::CheckAtStartToggle => {
+                self.settings.check_at_start = !self.settings.check_at_start;
+                self.save_settings();
+            }
+            AppCommand::LoadStoppedOnlyToggle => {
+                self.settings.load_stopped_only = !self.settings.load_stopped_only;
+                self.save_settings();
+            }
+            AppCommand::AnalysisRangeSet { min, max } => {
+                match TempoRange::new(f64::from(min), f64::from(max)) {
+                    Ok(range) => {
+                        self.settings.bpm_range = range;
+                        self.background.range.set(range);
+                        self.save_settings();
+                    }
+                    Err(error) => self.log(
+                        Level::Warning,
+                        &format!("range of tempos {min} to {max} refused: {error}"),
+                    ),
+                }
+            }
+            AppCommand::KeyNotationSet { notation } => {
+                self.settings.key_notation = notation;
+                self.save_settings();
+            }
+            AppCommand::TagWritingSet { mode } => {
+                self.settings.tag_writing = mode;
+                self.apply_tag_writing();
+                self.save_settings();
+            }
+            AppCommand::MinPlaytimeSet { seconds } => {
+                self.settings.min_playtime = seconds.clamp(MIN_PLAYTIME, MAX_PLAYTIME);
+                self.play_clock.set_minimum(self.settings.min_playtime);
                 self.save_settings();
             }
             AppCommand::DeckNoticeDismiss { deck } => self.notices[deck.index()] = None,
@@ -567,6 +1161,15 @@ impl PlatterApp {
         true
     }
 
+    /// Tells the collection and the analysis in the background what to write into the files.
+    fn apply_tag_writing(&mut self) {
+        let mode = self.settings.tag_writing;
+        self.browser.set_tag_writing(mode);
+        if let Ok(mut shared) = self.background.tag_writing.lock() {
+            *shared = mode;
+        }
+    }
+
     fn restore_defaults(&mut self) {
         // Where the file selector stands, its roots and the MIDI controllers are not settings
         // of these pages.
@@ -577,6 +1180,8 @@ impl PlatterApp {
             ..Settings::default()
         };
         self.save_settings();
+        self.play_clock.set_minimum(self.settings.min_playtime);
+        self.apply_tag_writing();
         self.set_language(self.settings.language);
         let curve = self.settings.crossfader_curve;
         self.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
@@ -604,8 +1209,88 @@ impl PlatterApp {
         }
     }
 
+    /// Gives the decks the time since the last frame and sends the tracks that have just
+    /// counted as played to the library; tells the browser of a track a deck has just loaded.
+    fn count_played(&mut self) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_play_check).as_secs_f64();
+        self.last_play_check = now;
+        let unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+            });
+        let snapshot = self.engine.snapshot();
+        let decks = DeckId::ALL.map(|deck| {
+            let state = &snapshot.decks[deck.index()];
+            (
+                state.track.as_ref().map(|track| track.path.as_path()),
+                state.playing,
+            )
+        });
+        for played in self.play_clock.advance(decks, elapsed, unix) {
+            self.browser.played(played);
+        }
+        for (known, deck) in self.deck_tracks.iter_mut().zip(&snapshot.decks) {
+            let path = deck.track.as_ref().map(|track| &track.path);
+            if known.as_ref() != path {
+                *known = path.cloned();
+                if let Some(path) = path {
+                    self.browser.loaded(path.clone());
+                }
+            }
+        }
+        for (path, kept) in self.keeping.observe(&snapshot.decks, now) {
+            self.browser.keep(path, kept);
+        }
+        self.browser.set_deck_tracks(
+            snapshot
+                .decks
+                .each_ref()
+                .map(|deck| deck.track.as_ref().map(|track| track.path.clone())),
+        );
+        // The analysis in the background leaves the decks alone while they load and analyse,
+        // and leaves their tracks to them.
+        let busy = snapshot
+            .decks
+            .iter()
+            .any(|deck| deck.loading || deck.analysing);
+        self.background.pause.store(busy, Ordering::Relaxed);
+        if let Ok(mut held) = self.background.held.lock() {
+            *held = snapshot
+                .decks
+                .iter()
+                .filter_map(|deck| Some(deck.track.as_ref()?.path.clone()))
+                .collect();
+        }
+    }
+
     /// Takes in what happened in the background since the last frame.
     fn poll(&mut self) {
+        for why in self.browser.take_unwritten() {
+            self.log(Level::Warning, &format!("cannot write the tags of {why}"));
+        }
+        while let Ok(report) = self.background_reports.try_recv() {
+            match report {
+                background::Report::Progress { done, total } => self
+                    .browser
+                    .set_analysis(Some(AnalysisStatus { done, total }), None),
+                background::Report::Idle => self.browser.set_analysis(None, None),
+                background::Report::NotWritten(why) => {
+                    self.log(Level::Warning, &format!("cannot write the tags of {why}"));
+                }
+                background::Report::Stopped(why) => {
+                    self.log(Level::Warning, &format!("the analysis stopped: {why}"));
+                    self.browser.set_analysis(None, Some(why));
+                }
+            }
+        }
+        while let Ok(error) = self.backup_failure.try_recv() {
+            self.log(
+                Level::Warning,
+                &format!("cannot back up the library: {error}"),
+            );
+        }
         for event in self.engine.poll() {
             match event {
                 Event::Loaded { deck, .. } => self.notices[deck.index()] = None,
@@ -616,9 +1301,14 @@ impl PlatterApp {
                         &format!("deck {}: {message}", deck.letter()),
                     );
                 }
+                Event::PreviewFailed { message } => {
+                    self.log(Level::Warning, &format!("preview: {message}"));
+                }
             }
         }
         self.browser.poll();
+        self.start_library();
+        self.count_played();
         let lost = self
             .output
             .as_ref()
@@ -698,13 +1388,44 @@ impl PlatterApp {
             language: self.settings.language,
             fullscreen: self.fullscreen,
             tooltips: self.settings.tooltips,
+            fullscreen_at_start: self.settings.fullscreen_at_start,
+            tempo_range: self.settings.tempo_range,
+            deck_size: self.settings.deck_size,
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
+            library_file: LIBRARY_FILE.to_owned(),
+            min_playtime: self.settings.min_playtime,
+            key_notation: self.settings.key_notation,
+            bpm_range: (
+                self.settings.bpm_range.min().round() as u32,
+                self.settings.bpm_range.max().round() as u32,
+            ),
+            load_stopped_only: self.settings.load_stopped_only,
+            music_folders: self.settings.music_folders.clone(),
+            music_folder: self.music_folder,
+            import_at_start: self.settings.import_at_start,
+            check_at_start: self.settings.check_at_start,
+            controllers: self.manager_view(),
+            tag_writing: self.settings.tag_writing,
         }
     }
 }
 
 impl eframe::App for PlatterApp {
+    fn on_exit(&mut self) {
+        self.background.stop.store(true, Ordering::Relaxed);
+        for (path, kept) in self.keeping.flush() {
+            self.browser.keep(path, kept);
+        }
+        // The worker of the collection is not waited for at the end of the process: give it
+        // a moment to write what was just sent.
+        let deadline = Instant::now() + EXIT_WAIT;
+        while self.browser.collection_busy() && Instant::now() < deadline {
+            self.browser.poll();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         let midi_waiting = self.take_midi();
         self.poll();
@@ -760,6 +1481,9 @@ impl eframe::App for PlatterApp {
             || midi_waiting;
         if busy {
             ctx.request_repaint();
+        } else if self.keeping.waiting() {
+            // A change of the grid or the cues is kept once it settles.
+            ctx.request_repaint_after(SETTLE);
         } else if midi_lit {
             // The light of the MIDI indicator goes out without another message to wake it.
             ctx.request_repaint_after(MIDI_LIGHT);

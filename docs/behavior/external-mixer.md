@@ -61,15 +61,17 @@ deck (`docs/behavior/beatgrid.md`).
 ## Differences
 
 - The outputs of the decks are those of the master and of the headphones in the routing,
-  under those names; the documented application names a pair per deck. There is no preview
-  player yet and no send effect, so there are no pairs for them.
+  under those names; the documented application names a pair per deck. There is no send
+  effect, so there is no pair for it, and the preview player stays silent in this mode
+  (`docs/behavior/browser.md`, *Preview player*).
 - The option for mixer effects waits for the effects (M4). The limiter is always on and has
   no headroom setting.
 - Autogain has no option of its own in external mode: it follows the gain, as above.
 - The mode and both options are on the Mixer page of the preferences
-  (`docs/behavior/settings.md`), which keeps them in the settings file. The design system
-  collapses the mixer panel to the controls that still act in external mode; the panel does
-  not do that yet, it comes with the next change to the mixer panel.
+  (`docs/behavior/settings.md`), which keeps them in the settings file. In external mode the
+  mixer panel collapses, as the design system asks, to the gain, the key and the pre-listen
+  key of each channel and the master column; the equaliser, the filter, the pan, the faders
+  and the crossfader belong to the hardware mixer.
 - Measured only with synthesised signals in the tests. It has not run on a device with four
   outputs feeding a hardware mixer.
 

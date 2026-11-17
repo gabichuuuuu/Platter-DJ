@@ -9,6 +9,7 @@ use crate::command::Action;
 use crate::cx::{ControlKind, Cx};
 use crate::icons::Glyph;
 use crate::paint;
+use crate::widgets::tooltip;
 
 pub struct Choice<'a> {
     pub label: &'a str,
@@ -29,9 +30,13 @@ pub struct SelectSpec<'a> {
 #[derive(Clone, Copy, Default)]
 struct Open {
     highlighted: usize,
+    /// The first option the list shows, when it has more than it shows at once.
+    first: usize,
 }
 
 const ROW_HEIGHT: f32 = 28.0;
+/// Most options an open list shows at once; the wheel and the arrows move through the rest.
+const VISIBLE_ROWS: usize = 12;
 
 /// Draws a drop-down in `rect` showing `choices[current]`, and emits `make(index)` when
 /// another option is picked. `current` is `None` when the value is none of the options.
@@ -70,13 +75,20 @@ pub fn select(
     if enabled && (response.clicked() || alt_down) {
         open = match open {
             Some(_) => None,
-            None => Some(Open {
-                highlighted: current.unwrap_or(0),
-            }),
+            None => {
+                let highlighted = current.unwrap_or(0);
+                Some(Open {
+                    highlighted,
+                    first: highlighted.saturating_sub(VISIBLE_ROWS / 2),
+                })
+            }
         };
     }
     if focused {
         cx.out.claim(&[Key::Space, Key::Enter]);
+    }
+    if enabled && open.is_none() {
+        tooltip::tooltip(cx, &response, name, None);
     }
 
     let tokens = &cx.theme.tokens;
@@ -175,9 +187,26 @@ pub fn select(
         picked = Some(state.highlighted);
     }
 
+    let visible = choices.len().min(VISIBLE_ROWS);
+    let last_first = choices.len() - visible;
+    // The highlighted option stays in view, and the wheel scrolls a long list.
+    let wheel = cx.ui.input(|input| input.smooth_scroll_delta.y);
+    if wheel.abs() > 0.0 {
+        let rows = (wheel.abs() / ROW_HEIGHT).ceil().max(1.0) as usize;
+        state.first = if wheel > 0.0 {
+            state.first.saturating_sub(rows)
+        } else {
+            state.first + rows
+        };
+    } else if state.highlighted < state.first {
+        state.first = state.highlighted;
+    } else if state.highlighted >= state.first + visible {
+        state.first = state.highlighted + 1 - visible;
+    }
+    state.first = state.first.min(last_first);
     let list = Rect::from_min_size(
         rect.left_bottom() + egui::vec2(0.0, tokens.space.s1),
-        egui::vec2(rect.width(), ROW_HEIGHT * choices.len() as f32),
+        egui::vec2(rect.width(), ROW_HEIGHT * visible as f32),
     );
     let mut clicked_inside = false;
     Area::new(id.with("list"))
@@ -193,9 +222,9 @@ pub fn select(
                 paint::hairline(cx.theme, color.line_control),
                 StrokeKind::Inside,
             );
-            for (index, choice) in choices.iter().enumerate() {
+            for (index, choice) in choices.iter().enumerate().skip(state.first).take(visible) {
                 let row = Rect::from_min_size(
-                    list.min + egui::vec2(0.0, ROW_HEIGHT * index as f32),
+                    list.min + egui::vec2(0.0, ROW_HEIGHT * (index - state.first) as f32),
                     egui::vec2(list.width(), ROW_HEIGHT),
                 );
                 let sense = if choice.enabled {
@@ -306,6 +335,9 @@ pub fn segmented(
         }
         // Picking the segment that is already selected is passed on too: whoever carries
         // the command out compares it with what stands.
+        if choice.enabled {
+            tooltip::tooltip(cx, &response, choice.label, Some(&action));
+        }
         if response.clicked() {
             cx.out.emit(action);
         }

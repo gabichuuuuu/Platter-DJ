@@ -88,13 +88,20 @@ pitch of the speed, 12 * log2(speed), otherwise: without key lock, on a track be
 in reverse and at a speed out of the range of the stretch. A track whose key the analysis did not find
 has no resulting key.
 
+### In the interface
+
+- At the right of the row of SYNC of each deck, as the design system draws it: key lock, lit
+  while on; a semitone down; the key the deck plays, its resulting key in the notation of the
+  browser, or `--` without one; a semitone up. The semitone keys are off at the end of the
+  range, and all of them on a deck without a track ready.
+
 ## Differences
 
 - The public manual has a key lock on the deck and another on the mixer channel. Platter
   has one key lock per deck with a shift in semitones: the key lock of the channel is
   `deck.key.persist`, which turns that key lock on with the shift of the current speed, and the
-  key knob is `deck.key.set`. The buttons and the knob are not in the window yet: the commands
-  work from the keyboard file, mappings and scripts.
+  key knob is `deck.key.set`, in whole semitones from -12 to +12, under the equaliser of each
+  mixer channel; it is off on a deck without a track.
 - The range of ±12 semitones and the step of one semitone are Platter's choices; the manual
   states neither.
 - The 32 ms bridge after a jump plays with the pitch following the speed, without the shift:

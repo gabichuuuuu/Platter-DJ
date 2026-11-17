@@ -51,6 +51,16 @@ impl TempoRange {
         }
         Ok(Self { min, max })
     }
+
+    /// The lowest tempo searched, in BPM.
+    pub fn min(&self) -> f64 {
+        self.min
+    }
+
+    /// The highest tempo searched, in BPM.
+    pub fn max(&self) -> f64 {
+        self.max
+    }
 }
 
 impl Default for TempoRange {
