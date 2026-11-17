@@ -277,7 +277,7 @@ pub struct FileBrowser {
     analysis: Option<AnalysisStatus>,
     problem: Option<String>,
     /// The tracks the decks hold, whose covers the deck headers show.
-    deck_tracks: [Option<PathBuf>; 2],
+    deck_tracks: [Option<PathBuf>; DeckId::COUNT],
 }
 
 impl FileBrowser {
@@ -643,7 +643,7 @@ impl FileBrowser {
     }
 
     /// The tracks the decks hold, whose covers are read for their headers.
-    pub fn set_deck_tracks(&mut self, tracks: [Option<PathBuf>; 2]) {
+    pub fn set_deck_tracks(&mut self, tracks: [Option<PathBuf>; DeckId::COUNT]) {
         if tracks != self.deck_tracks {
             self.covers
                 .want(tracks.iter().flatten().map(PathBuf::as_path));

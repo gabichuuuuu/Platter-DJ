@@ -114,7 +114,12 @@ mod tests {
     fn deck_a(clock: &mut PlayClock, track: Option<&str>, playing: bool, elapsed: f64) -> usize {
         clock
             .advance(
-                [(track.map(Path::new), playing), (None, false)],
+                [
+                    (track.map(Path::new), playing),
+                    (None, false),
+                    (None, false),
+                    (None, false),
+                ],
                 elapsed,
                 1_000,
             )
@@ -127,7 +132,16 @@ mod tests {
         assert_eq!(deck_a(&mut clock, Some(TRACK), true, 20.0), 0);
         // Paused: the time stands still.
         assert_eq!(deck_a(&mut clock, Some(TRACK), false, 100.0), 0);
-        let played = clock.advance([(Some(Path::new(TRACK)), true), (None, false)], 10.0, 2_000);
+        let played = clock.advance(
+            [
+                (Some(Path::new(TRACK)), true),
+                (None, false),
+                (None, false),
+                (None, false),
+            ],
+            10.0,
+            2_000,
+        );
         assert_eq!(played.len(), 1);
         assert_eq!(played[0].deck, DeckId::A);
         // It started playing at the first call.

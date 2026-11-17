@@ -7,6 +7,8 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::collections::{BTreeSet, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
@@ -50,6 +52,11 @@ struct State {
     /// Controls the state draws at least, so a state that failed to draw is caught: more than
     /// five for the window or the preferences, the keys of a small dialog over them.
     min_controls: usize,
+}
+
+/// What the two decks the window shows hold, with decks C and D as they start.
+fn shown<T: Default>([a, b]: [T; 2]) -> [T; DeckId::COUNT] {
+    [a, b, T::default(), T::default()]
 }
 
 /// The four states of the reference screens, plus one with everything that only shows
@@ -281,6 +288,8 @@ struct Stage {
     time: f64,
     /// Modifier keys held down during the frames.
     modifiers: Modifiers,
+    /// Files dropped onto the window in the next frame.
+    dropped: Vec<egui::DroppedFileHandle>,
 }
 
 impl Stage {
@@ -292,8 +301,8 @@ impl Stage {
         let mut shell = Shell::new(Language::English).unwrap();
         shell.set_texts(texts);
         shell.state.settings_page = state.page;
-        shell.state.deck_page = state.pages;
-        shell.state.cue_map = state.mapping;
+        shell.state.deck_page = shown(state.pages);
+        shell.state.cue_map = shown(state.mapping);
         shell.state.browser.menu = state.menu;
         shell.state.browser.naming = state.naming;
         shell.state.browser.tree_scroll = state.tree_scroll;
@@ -307,6 +316,7 @@ impl Stage {
             state: state.clone(),
             time: 0.0,
             modifiers: Modifiers::NONE,
+            dropped: Vec::new(),
         };
         // Two frames, so everything that takes a frame to settle has settled.
         stage.frame(Vec::new());
@@ -328,11 +338,12 @@ impl Stage {
             time: Some(self.time),
             events,
             focused: true,
+            dropped_files: std::mem::take(&mut self.dropped),
             ..RawInput::default()
         };
         let mut actions = Vec::new();
         let mut view = self.state.scene.view();
-        view.notices = self.state.notices;
+        view.notices = shown(self.state.notices);
         let shell = &mut self.shell;
         let mut output = self.ctx.run_ui(input, |ui| {
             actions = shell.show(ui, &view);
@@ -503,7 +514,7 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
                 .filter(|state| state.page.is_none() && !state.details)
             {
                 let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
-                stage.shell.state.deck_page = pages;
+                stage.shell.state.deck_page = shown(pages);
                 stage.frame(Vec::new());
                 stage.frame(Vec::new());
                 let controls: Vec<Control> = stage
@@ -1569,4 +1580,50 @@ fn readouts_keep_their_width_while_their_digits_change() {
     let (wide, second) = left_edge(293.55);
     assert_eq!((narrow.as_str(), wide.as_str()), ("-01:51.1", "-01:18.8"));
     assert!((first - second).abs() < 0.01, "{first} and {second}");
+}
+
+/// A file dropped onto the window, as the platform hands it over.
+#[derive(Debug)]
+struct Dropped(PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        Ok(Vec::new())
+    }
+}
+
+/// Deck C holds a track, is the tempo master and clips, and deck D is empty, while the
+/// window shows decks A and B: `docs/behavior/decks.md`.
+#[test]
+fn the_window_draws_with_decks_c_and_d_in_use_and_drops_only_onto_a_shown_deck() {
+    let mut scene = sample::playing();
+    scene.engine.decks[DeckId::C.index()] = scene.engine.decks[DeckId::A.index()].clone();
+    scene.engine.decks[DeckId::C.index()].levels = [1.2, 1.2];
+    scene.engine.clock.master = Some(DeckId::C);
+    let mut state = state_named("main");
+    let shown_only = Stage::new(&state).controls().len();
+    state.scene = scene;
+    let mut stage = Stage::new(&state);
+    assert_eq!(
+        stage.controls().len(),
+        shown_only,
+        "decks C and D add no control to the window"
+    );
+    stage.frame(vec![Event::PointerGone]);
+    // Decks A and B hold tracks and the pointer is over no deck: the drop goes to deck A,
+    // not to deck D, empty but not shown.
+    stage.dropped = vec![Arc::new(Dropped(PathBuf::from("dropped.wav")))];
+    let (actions, _) = stage.frame(Vec::new());
+    let loads: Vec<_> = actions
+        .iter()
+        .filter_map(|action| match action {
+            Action::Engine(Command::DeckLoad { deck, .. }) => Some(*deck),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(loads, [DeckId::A]);
 }

@@ -10,13 +10,13 @@ use platter_core::DeckId;
 use platter_engine::Command;
 
 use crate::command::{
-    Action, AppCommand, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen, SettingsPage,
-    TrackDetails,
+    Action, AppCommand, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen, MeterId,
+    SettingsPage, TrackDetails,
 };
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
-use crate::model::{AudioState, CollectionView, FileRow, RowKind, View};
+use crate::model::{AudioState, CollectionView, FileRow, RowKind, SHOWN_DECKS, View};
 use crate::panels::browser::BrowserMemory;
 use crate::panels::details::{DetailsEdit, DetailsForm};
 use crate::panels::settings::{DIALOG_SIZE, SettingsMemory};
@@ -55,8 +55,8 @@ pub struct ViewState {
     /// The hotcues of each deck are in the mapping mode: the next one pressed takes the
     /// selected cue.
     pub cue_map: [bool; DeckId::COUNT],
-    /// The meters of deck A, deck B and the master.
-    pub meters: [MeterMemory; 3],
+    /// The meters of the decks, deck A first, and the master: [`MeterId::index`].
+    pub meters: [MeterMemory; MeterId::ALL.len()],
     pub browser: BrowserMemory,
     pub settings: SettingsMemory,
     /// The dialog of the maintenance of the collection is open over the preferences.
@@ -81,7 +81,7 @@ impl Default for ViewState {
             remaining_large: [true; DeckId::COUNT],
             deck_page: [DeckPage::default(); DeckId::COUNT],
             cue_map: [false; DeckId::COUNT],
-            meters: [MeterMemory::default(); 3],
+            meters: [MeterMemory::default(); MeterId::ALL.len()],
             browser: BrowserMemory::default(),
             settings: SettingsMemory::default(),
             maintenance: false,
@@ -272,11 +272,11 @@ impl Shell {
     pub fn show(&mut self, ui: &mut egui::Ui, view: &View<'_>) -> Vec<Action> {
         let now = ui.input(|input| input.time);
         let engine = view.engine;
-        for (memory, levels) in self.state.meters.iter_mut().zip([
-            engine.decks[0].levels,
-            engine.decks[1].levels,
-            engine.master_levels,
-        ]) {
+        let levels = MeterId::ALL.map(|meter| match meter {
+            MeterId::Deck(deck) => engine.decks[deck.index()].levels,
+            MeterId::Master => engine.master_levels,
+        });
+        for (memory, levels) in self.state.meters.iter_mut().zip(levels) {
             memory.update(levels, now);
         }
         // The mapping mode of the hotcues ends with the cue it was about: deleted, or gone
@@ -322,7 +322,7 @@ impl Shell {
                 header::audio_notice(&mut cx, rect, *problem);
             }
             waveform::lanes(&mut cx, zones.lanes, &engine.decks, state.zoom);
-            for (deck_id, rect) in DeckId::ALL.into_iter().zip(zones.decks) {
+            for (deck_id, rect) in SHOWN_DECKS.into_iter().zip(zones.decks) {
                 deck::deck(&mut cx, rect, deck_id, view, &state);
             }
             mixer::mixer(&mut cx, zones.mixer, view, &state);
@@ -534,7 +534,7 @@ struct Zones {
     header: Rect,
     notice: Option<Rect>,
     lanes: Rect,
-    decks: [Rect; DeckId::COUNT],
+    decks: [Rect; SHOWN_DECKS.len()],
     mixer: Rect,
     browser: Rect,
 }
@@ -606,14 +606,14 @@ fn dropped_files(cx: &mut Cx<'_>, zones: &Zones, view: &View<'_>) {
         return;
     };
     let under_pointer = pointer.and_then(|pos| {
-        DeckId::ALL
+        SHOWN_DECKS
             .into_iter()
             .zip(zones.decks)
             .find(|(_, rect)| rect.contains(pos))
             .map(|(deck, _)| deck)
     });
     let deck = under_pointer.unwrap_or_else(|| {
-        DeckId::ALL
+        SHOWN_DECKS
             .into_iter()
             .find(|deck| {
                 let snapshot = &view.engine.decks[deck.index()];

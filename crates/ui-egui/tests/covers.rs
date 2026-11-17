@@ -99,14 +99,14 @@ fn the_cover_of_a_track_a_deck_holds_reaches_its_header() {
         path: root.clone(),
     }]);
     // Not listed: the deck holds it all the same.
-    browser.set_deck_tracks([None, Some(root.join("covered.flac"))]);
+    browser.set_deck_tracks([None, Some(root.join("covered.flac")), None, None]);
     until(|| {
         browser.poll();
         browser.view().deck_covers[1].is_some()
     });
     let view = browser.view();
     assert!(view.deck_covers[0].is_none());
-    browser.set_deck_tracks([Some(root.join("plain.wav")), None]);
+    browser.set_deck_tracks([Some(root.join("plain.wav")), None, None, None]);
     browser.poll();
     assert!(browser.view().deck_covers[1].is_none());
 }
@@ -212,7 +212,7 @@ fn an_imported_cover_reaches_the_rows_and_the_deck_and_a_deleted_one_leaves_them
     // Two tracks selected; deck B holds the first.
     browser.apply(&AppCommand::BrowserSelect { index: 0 });
     browser.apply(&AppCommand::BrowserSelectToggle { index: 1 });
-    browser.set_deck_tracks([None, Some(rows[0].clone())]);
+    browser.set_deck_tracks([None, Some(rows[0].clone()), None, None]);
 
     browser.apply(&AppCommand::BrowserTrackCoverImport {
         path: pictures[2].clone(),

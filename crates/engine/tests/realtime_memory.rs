@@ -17,8 +17,13 @@ use platter_testkit::alloc::{CountingAllocator, count};
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 fn commands() -> Vec<Command> {
-    use DeckId::{A, B};
+    use DeckId::{A, B, C, D};
     vec![
+        // Decks C and D play beside A and B, C with key lock and D in sync.
+        Command::DeckKeyLockToggle { deck: C },
+        Command::DeckPlay { deck: C },
+        Command::DeckSyncToggle { deck: D },
+        Command::DeckPlay { deck: D },
         // Key lock on both decks, so what follows runs through the stretch: its jumps,
         // loops, sync and tempo changes, from a 48 kHz and a 44.1 kHz track.
         Command::DeckKeyLockToggle { deck: A },
@@ -382,6 +387,14 @@ fn process_neither_allocates_nor_frees() {
     let mut rig = Rig::new();
     rig.load(DeckId::A, sine_file("memory-a", 440.0, 3.0, 0.5, RATE));
     rig.load(DeckId::B, sine_file("memory-b", 660.0, 3.0, 0.5, 44_100));
+    rig.load(
+        DeckId::C,
+        sine_file("memory-lower-c", 550.0, 3.0, 0.25, RATE),
+    );
+    rig.load(
+        DeckId::D,
+        sine_file("memory-lower-d", 770.0, 3.0, 0.25, 44_100),
+    );
     // Four channels, so the headphone path runs too.
     let mut block = vec![0.0f32; 512 * 4];
     let mut events = 0;

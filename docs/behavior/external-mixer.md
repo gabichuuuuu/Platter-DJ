@@ -34,14 +34,15 @@ deck (`docs/behavior/beatgrid.md`).
 | --- | --- |
 | `mixer.mode.set` | `mode` `internal` or `external` |
 | `mixer.external.eq_gain.toggle` | In external mode, the gain and the equaliser of each channel act on its deck, or not |
-| `mixer.external.master_volume.toggle` | In external mode, the master volume acts on both decks, or not |
+| `mixer.external.master_volume.toggle` | In external mode, the master volume acts on every deck, or not |
 
 - Platter starts in internal mode, with both options of the external mode off.
-- In external mode deck A goes to the outputs the routing of the audio settings gives the
-  master, the first and the second by default, and deck B to those it gives the headphones,
-  the third and the fourth by default (`docs/behavior/settings.md`). When the device cannot
-  carry the headphones, both decks share the master outputs, summed; with one output, that
-  output gets the sum of both sides at half level, as in internal mode.
+- In external mode decks A and C go to the outputs the routing of the audio settings gives
+  the master, the first and the second by default, and decks B and D to those it gives the
+  headphones, the third and the fourth by default (`docs/behavior/settings.md`); two decks on
+  one pair are summed (`docs/behavior/decks.md`). When the device cannot carry the
+  headphones, all the decks share the master outputs, summed; with one output, that output
+  gets the sum of both sides at half level, as in internal mode.
 - The signal of a deck is the track as it plays, with key lock, flux and loops; then the gain
   and the equaliser when their option is on; then the master volume when its option is on;
   then the beat tick of the deck; then a safety limiter, one per pair of outputs.
@@ -82,7 +83,7 @@ deck (`docs/behavior/beatgrid.md`).
 | A `mode` other than `internal` or `external` | The command is rejected; nothing changes |
 | External mode with both options off and a track well below full scale | Each deck reaches its pair untouched by the mixer |
 | Fader down, crossfader at the far side or filter closed, in external mode | The deck is still heard on its pair |
-| External mode with a two-output device | Both decks, summed, through one limiter |
+| External mode with a two-output device | All the decks, summed, through one limiter |
 | Pre-listening in external mode | Nothing reaches the third and the fourth output from the headphones |
 | Back to internal mode | The mix is the one the internal controls set, as before |
 

@@ -1,4 +1,4 @@
-//! The engine of Platter: two decks, the mixer and the master section, driven by commands.
+//! The engine of Platter: four decks, the mixer and the master section, driven by commands.
 //!
 //! [`Engine::new`] returns the two halves. The [`Engine`] is the control side: it takes
 //! [`Command`]s, loads tracks in the background and publishes a [`Snapshot`]. The

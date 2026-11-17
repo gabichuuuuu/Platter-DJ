@@ -1,4 +1,4 @@
-//! The processor: two decks, the mixer, the master section and the headphone output, or
+//! The processor: four decks, the mixer, the master section and the headphone output, or
 //! each deck on its own outputs in external mixer mode.
 
 use std::sync::Arc;
@@ -18,7 +18,9 @@ use super::preview::PreviewPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
-use super::{COMMAND_CAPACITY, DeckReport, Output, Queues, Retired, RtCommand, Shared};
+use super::{
+    COMMAND_CAPACITY, CROSSFADER_SIDES, DeckReport, Output, Queues, Retired, RtCommand, Shared,
+};
 
 /// Channels a device needs for a second pair: the headphones, or deck B in external mode.
 const CHANNELS_WITH_TWO_PAIRS: usize = 4;
@@ -38,14 +40,14 @@ pub struct Processor {
     retired: Producer<Retired>,
     reports: Producer<DeckReport>,
     shared: Arc<Shared>,
-    channels: [Channel; 2],
+    channels: [Channel; DeckId::COUNT],
     clock: Clock,
     /// Synced decks keep their beats on those of the clock, not only its tempo.
     keep_beat: bool,
     crossfader_position: f32,
     crossfader_curve: CrossfaderCurve,
     /// The side of the crossfader each channel is on.
-    crossfader_sides: [CrossfaderSide; 2],
+    crossfader_sides: [CrossfaderSide; DeckId::COUNT],
     /// The automatic fade the crossfader is in.
     fade: Option<Fade>,
     /// The length of one frame in minutes.
@@ -74,12 +76,12 @@ impl Processor {
     pub(super) fn new(rate: SampleRate, queues: Queues, shared: Arc<Shared>) -> Self {
         let position = 0.5;
         let curve = CrossfaderCurve::default();
-        let (left, right) = curve.gains(position);
+        let gains = curve.gains(position);
         let parameter = |value| Smoothed::new(value, rate, PARAMETER_RAMP_MS);
-        let channel = |crossfade| Channel {
+        let channel = |side: CrossfaderSide| Channel {
             player: DeckPlayer::new(rate),
             strip: ChannelStrip::new(rate),
-            crossfade: parameter(crossfade),
+            crossfade: parameter(side.gain(gains)),
             pre_listen: parameter(0.0),
             tick: Tick::new(rate),
         };
@@ -88,12 +90,12 @@ impl Processor {
             retired: queues.retired,
             reports: queues.reports,
             shared,
-            channels: [channel(left), channel(right)],
+            channels: CROSSFADER_SIDES.map(channel),
             clock: Clock::new(rate),
             keep_beat: true,
             crossfader_position: position,
             crossfader_curve: curve,
-            crossfader_sides: [CrossfaderSide::Left, CrossfaderSide::Right],
+            crossfader_sides: CROSSFADER_SIDES,
             fade: None,
             frame_minutes: 1.0 / (rate.as_f64() * 60.0),
             master_gain: parameter(1.0),
@@ -114,10 +116,10 @@ impl Processor {
 
     /// Fills `output`, interleaved with `channels` channels per frame, with the next block
     /// of the mix. The master goes to the first two channels and, when there are four or
-    /// more, the headphones go to the third and the fourth; in external mode deck A and
-    /// deck B take those pairs instead. One channel gets the sum of both sides of the first
-    /// pair at half level; further channels are silent. This is the function the audio
-    /// callback calls, and the deviceless render calls the same one.
+    /// more, the headphones go to the third and the fourth; in external mode decks A and C
+    /// take the first pair and decks B and D the second instead. One channel gets the sum
+    /// of both sides of the first pair at half level; further channels are silent. This is
+    /// the function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
         self.clock.choose(self.candidates());
@@ -223,11 +225,10 @@ impl Processor {
         }
     }
 
-    fn candidates(&self) -> [Candidate; 2] {
-        [
-            self.channels[0].player.candidate(),
-            self.channels[1].player.candidate(),
-        ]
+    fn candidates(&self) -> [Candidate; DeckId::COUNT] {
+        self.channels
+            .each_ref()
+            .map(|channel| channel.player.candidate())
     }
 
     fn apply_mixer(&mut self, command: RtCommand) {
@@ -312,14 +313,14 @@ impl Processor {
 
     /// The next frame of the first and the second pair of outputs. In internal mode they
     /// are the master and the headphones; without a second pair the headphone part of the
-    /// path is skipped, parameter ramps included. In external mode they are deck A and
-    /// deck B, or both decks on the first pair; during the ramp between the modes both
-    /// paths run and their outputs are blended.
+    /// path is skipped, parameter ramps included. In external mode they are decks A and C
+    /// and decks B and D, or all the decks on the first pair; during the ramp between the
+    /// modes both paths run and their outputs are blended.
     fn next_frame(&mut self, two_pairs: bool) -> (Frame, Frame) {
         let mut mix = [0.0f32; 2];
         let mut pre_listened = [0.0f32; 2];
-        let mut decks = [[0.0f32; 2]; 2];
-        let mut ticks = [0.0f32; 2];
+        let mut decks = [[0.0f32; 2]; DeckId::COUNT];
+        let mut ticks = [0.0f32; DeckId::COUNT];
         let external = self.external.advance();
         let routed = external > 0.0;
         let metered_outside = self.external.target() > 0.0;
@@ -372,7 +373,8 @@ impl Processor {
         // The preview plays on, heard or not, so its position moves as it would.
         let preview = self.preview.next();
         let headphones = if two_pairs {
-            self.headphones(pre_listened, master, click + ticks[0] + ticks[1], preview)
+            let clicks = click + ticks.iter().sum::<f32>();
+            self.headphones(pre_listened, master, clicks, preview)
         } else {
             [0.0; 2]
         };
@@ -380,17 +382,19 @@ impl Processor {
             self.master_meter.feed(master);
             return (master, headphones);
         }
-        let with = |deck: Frame, added: f32| [deck[0] + added, deck[1] + added];
-        let [a, b] = decks;
-        let (first, second) = if two_pairs {
-            (
-                self.pair_limiters[0].process(with(a, ticks[0] + tone)),
-                self.pair_limiters[1].process(with(b, ticks[1])),
-            )
+        // Each deck goes to the pair of its column, with its beat tick; one pair takes all.
+        let mut pairs = [[0.0f32; 2]; 2];
+        for (index, (deck, tick)) in decks.into_iter().zip(ticks).enumerate() {
+            let pair = &mut pairs[if two_pairs { index % 2 } else { 0 }];
+            pair[0] += deck[0] + tick;
+            pair[1] += deck[1] + tick;
+        }
+        let [a, b] = pairs;
+        let first = self.pair_limiters[0].process([a[0] + tone, a[1] + tone]);
+        let second = if two_pairs {
+            self.pair_limiters[1].process(b)
         } else {
-            let both = [a[0] + b[0], a[1] + b[1]];
-            let first = self.pair_limiters[0].process(with(both, ticks[0] + ticks[1] + tone));
-            (first, [0.0; 2])
+            [0.0; 2]
         };
         let blend = |inside: Frame, outside: Frame| {
             [

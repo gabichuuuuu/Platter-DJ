@@ -438,7 +438,13 @@ fn a_channel_is_heard_on_the_side_it_is_assigned_to() {
     };
     assert_eq!(
         rig.engine.snapshot().mixer.crossfader_sides,
-        [CrossfaderSide::Left, CrossfaderSide::Right]
+        [
+            CrossfaderSide::Left,
+            CrossfaderSide::Right,
+            CrossfaderSide::Left,
+            CrossfaderSide::Right
+        ],
+        "decks C and D on the side of the deck above them"
     );
 
     // Swapped: deck A on the right, deck B on the left.
@@ -472,7 +478,12 @@ fn a_channel_is_heard_on_the_side_it_is_assigned_to() {
     rig.send(Command::MixerCrossfaderSet { position: 0.5 });
     assert_eq!(
         rig.engine.snapshot().mixer.crossfader_sides,
-        [CrossfaderSide::Thru, CrossfaderSide::Left]
+        [
+            CrossfaderSide::Thru,
+            CrossfaderSide::Left,
+            CrossfaderSide::Left,
+            CrossfaderSide::Right
+        ]
     );
 }
 

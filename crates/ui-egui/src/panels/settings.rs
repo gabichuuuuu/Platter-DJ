@@ -1347,7 +1347,7 @@ fn controllers_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
 
     // Under the table: the deck of a new assignment, Add, Learn, Duplicate and Delete.
     let row_top = table.bottom() + gap;
-    let decks: [&str; 2] = ["A", "B"];
+    let decks = DeckId::ALL.map(|deck| deck.letter().to_string());
     let deck_choices: Vec<Choice<'_>> = decks
         .iter()
         .map(|label| Choice {

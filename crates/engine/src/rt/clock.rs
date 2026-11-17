@@ -175,6 +175,8 @@ mod tests {
 
     const A: DeckId = DeckId::A;
     const B: DeckId = DeckId::B;
+    const C: DeckId = DeckId::C;
+    const D: DeckId = DeckId::D;
     const STOPPED: Candidate = Candidate {
         eligible: true,
         live: false,
@@ -200,7 +202,7 @@ mod tests {
         Clock::new(SampleRate::new(48_000).unwrap())
     }
 
-    fn chosen(clock: &mut Clock, decks: [Candidate; 2]) -> Option<DeckId> {
+    fn chosen(clock: &mut Clock, decks: [Candidate; DeckId::COUNT]) -> Option<DeckId> {
         clock.choose(decks);
         clock.master()
     }
@@ -208,10 +210,10 @@ mod tests {
     #[test]
     fn in_auto_the_deck_that_starts_takes_over_from_the_clock() {
         let mut clock = clock();
-        assert_eq!(chosen(&mut clock, [STOPPED, STOPPED]), None);
-        assert_eq!(chosen(&mut clock, [STOPPED, LIVE]), Some(B));
+        assert_eq!(chosen(&mut clock, [STOPPED, STOPPED, EMPTY, EMPTY]), None);
+        assert_eq!(chosen(&mut clock, [STOPPED, LIVE, EMPTY, EMPTY]), Some(B));
         assert_eq!(
-            chosen(&mut clock, [LIVE, LIVE]),
+            chosen(&mut clock, [LIVE, LIVE, EMPTY, EMPTY]),
             Some(B),
             "a second deck that starts leaves the tempo master alone"
         );
@@ -220,22 +222,37 @@ mod tests {
     #[test]
     fn in_auto_a_tempo_master_that_stops_hands_over_to_a_synced_deck_or_the_clock() {
         let mut clock = clock();
-        assert_eq!(chosen(&mut clock, [LIVE, STOPPED]), Some(A));
-        assert_eq!(chosen(&mut clock, [LIVE, SYNCED]), Some(A));
-        assert_eq!(chosen(&mut clock, [STOPPED, SYNCED]), Some(B));
-        assert_eq!(chosen(&mut clock, [LIVE, SYNCED]), Some(B));
+        assert_eq!(chosen(&mut clock, [LIVE, STOPPED, EMPTY, EMPTY]), Some(A));
+        assert_eq!(chosen(&mut clock, [LIVE, SYNCED, EMPTY, EMPTY]), Some(A));
+        assert_eq!(chosen(&mut clock, [STOPPED, SYNCED, EMPTY, EMPTY]), Some(B));
+        assert_eq!(chosen(&mut clock, [LIVE, SYNCED, EMPTY, EMPTY]), Some(B));
         assert_eq!(
-            chosen(&mut clock, [LIVE, EMPTY]),
+            chosen(&mut clock, [LIVE, EMPTY, EMPTY, EMPTY]),
             None,
             "deck A plays without sync"
         );
         assert_eq!(
-            chosen(&mut clock, [LIVE, EMPTY]),
+            chosen(&mut clock, [LIVE, EMPTY, EMPTY, EMPTY]),
             None,
             "it did not start now"
         );
-        assert_eq!(chosen(&mut clock, [STOPPED, EMPTY]), None);
-        assert_eq!(chosen(&mut clock, [LIVE, EMPTY]), Some(A));
+        assert_eq!(chosen(&mut clock, [STOPPED, EMPTY, EMPTY, EMPTY]), None);
+        assert_eq!(chosen(&mut clock, [LIVE, EMPTY, EMPTY, EMPTY]), Some(A));
+    }
+
+    #[test]
+    fn the_lower_decks_take_and_hand_over_the_tempo_master_like_the_upper_ones() {
+        let mut clock = clock();
+        assert_eq!(chosen(&mut clock, [EMPTY, EMPTY, STOPPED, LIVE]), Some(D));
+        assert_eq!(chosen(&mut clock, [LIVE, LIVE, SYNCED, LIVE]), Some(D));
+        assert_eq!(
+            chosen(&mut clock, [LIVE, LIVE, SYNCED, STOPPED]),
+            Some(C),
+            "the only synced deck that plays"
+        );
+        clock.set_auto(false, [LIVE, LIVE, SYNCED, STOPPED]);
+        clock.set_master(D, STOPPED);
+        assert_eq!(clock.master(), Some(D));
     }
 
     #[test]
@@ -243,30 +260,38 @@ mod tests {
         let mut clock = clock();
         clock.set_master(A, LIVE);
         assert_eq!(clock.master(), None, "the choice is automatic");
-        clock.choose([LIVE, STOPPED]);
-        clock.set_auto(false, [LIVE, STOPPED]);
+        clock.choose([LIVE, STOPPED, EMPTY, EMPTY]);
+        clock.set_auto(false, [LIVE, STOPPED, EMPTY, EMPTY]);
         assert_eq!(clock.master(), None, "the clock takes over");
-        assert_eq!(chosen(&mut clock, [STOPPED, LIVE]), None);
+        assert_eq!(chosen(&mut clock, [STOPPED, LIVE, EMPTY, EMPTY]), None);
         clock.set_master(B, EMPTY);
         assert_eq!(clock.master(), None, "no tempo to follow");
         clock.set_master(B, STOPPED);
         assert_eq!(clock.master(), Some(B));
-        assert_eq!(chosen(&mut clock, [LIVE, STOPPED]), Some(B), "paused");
-        assert_eq!(chosen(&mut clock, [LIVE, EMPTY]), None, "its track left");
+        assert_eq!(
+            chosen(&mut clock, [LIVE, STOPPED, EMPTY, EMPTY]),
+            Some(B),
+            "paused"
+        );
+        assert_eq!(
+            chosen(&mut clock, [LIVE, EMPTY, EMPTY, EMPTY]),
+            None,
+            "its track left"
+        );
     }
 
     #[test]
     fn auto_switched_on_keeps_a_tempo_master_that_plays() {
         let mut clock = clock();
-        clock.set_auto(false, [LIVE, LIVE]);
+        clock.set_auto(false, [LIVE, LIVE, EMPTY, EMPTY]);
         clock.set_master(B, LIVE);
-        clock.set_auto(true, [LIVE, LIVE]);
+        clock.set_auto(true, [LIVE, LIVE, EMPTY, EMPTY]);
         assert_eq!(clock.master(), Some(B));
-        clock.set_auto(false, [LIVE, LIVE]);
+        clock.set_auto(false, [LIVE, LIVE, EMPTY, EMPTY]);
         clock.set_master(B, STOPPED);
-        clock.set_auto(true, [LIVE, STOPPED]);
+        clock.set_auto(true, [LIVE, STOPPED, EMPTY, EMPTY]);
         assert_eq!(clock.master(), Some(A));
-        clock.set_auto(true, [STOPPED, STOPPED]);
+        clock.set_auto(true, [STOPPED, STOPPED, EMPTY, EMPTY]);
         assert_eq!(clock.master(), None);
     }
 
@@ -287,7 +312,7 @@ mod tests {
     #[test]
     fn the_clock_follows_the_deck_that_is_the_tempo_master() {
         let mut clock = clock();
-        clock.choose([LIVE, STOPPED]);
+        clock.choose([LIVE, STOPPED, EMPTY, EMPTY]);
         let lead = |bpm, phase, keeps_the_beat| {
             Some(Lead {
                 pulse: Pulse { bpm, phase },
@@ -310,7 +335,7 @@ mod tests {
         );
         // A deck slowed down to a stop is followed, but the clock does not keep that tempo.
         assert_eq!(clock.tick(lead(0.0, 0.5, true)).bpm, 0.0);
-        clock.choose([STOPPED, STOPPED]);
+        clock.choose([STOPPED, STOPPED, EMPTY, EMPTY]);
         assert_eq!(clock.tick(None).bpm, 140.0);
     }
 }

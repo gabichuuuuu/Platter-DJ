@@ -14,7 +14,7 @@ use crate::command::{Action, AppCommand, MeterId};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
-use crate::model::View;
+use crate::model::{SHOWN_DECKS, View};
 use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::shell::ViewState;
@@ -572,7 +572,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     // While the master clips, the CLIP word takes the place of the heading, right above
     // the clip cell: the column has no other room for it.
     let heading = Rect::from_center_size(at(centre, 19.0), egui::vec2(60.0, 14.0));
-    if !state.meters[2].is_clipped() {
+    if !state.meters[MeterId::Master.index()].is_clipped() {
         paint::text(
             painter,
             theme,
@@ -614,7 +614,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
         MeterId::Master,
         MeterSpec {
             levels: view.engine.master_levels,
-            memory: state.meters[2],
+            memory: state.meters[MeterId::Master.index()],
             segments: MASTER_SEGMENTS,
             vertical: true,
         },
@@ -748,7 +748,7 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
     let tokens = &theme.tokens;
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, tokens.color.surface_panel);
-    for deck in DeckId::ALL {
+    for deck in SHOWN_DECKS {
         channel(cx, rect, deck, view, state);
     }
     master(cx, rect, view, state);

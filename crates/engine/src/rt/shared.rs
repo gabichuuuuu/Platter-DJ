@@ -128,7 +128,7 @@ impl Default for DeckShared {
 
 #[derive(Debug)]
 pub struct Shared {
-    pub decks: [DeckShared; 2],
+    pub decks: [DeckShared; DeckId::COUNT],
     pub master: MasterChoice,
     /// Tempo the decks follow, in beats per minute.
     pub clock_bpm: AtomicF64,

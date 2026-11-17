@@ -239,12 +239,20 @@ pub enum MeterId {
 }
 
 impl MeterId {
-    pub const ALL: [Self; 3] = [Self::Deck(DeckId::A), Self::Deck(DeckId::B), Self::Master];
+    pub const ALL: [Self; DeckId::COUNT + 1] = [
+        Self::Deck(DeckId::A),
+        Self::Deck(DeckId::B),
+        Self::Deck(DeckId::C),
+        Self::Deck(DeckId::D),
+        Self::Master,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Deck(DeckId::A) => "a",
             Self::Deck(DeckId::B) => "b",
+            Self::Deck(DeckId::C) => "c",
+            Self::Deck(DeckId::D) => "d",
             Self::Master => "master",
         }
     }
@@ -1835,7 +1843,7 @@ impl AppCommand {
             },
             "deck.cue.map" => Self::DeckCueMapToggle { deck: read.deck()? },
             "mixer.clip.reset" => Self::MixerClipReset {
-                meter: read.choice("meter", &MeterId::ALL, MeterId::name, "a, b, master")?,
+                meter: read.choice("meter", &MeterId::ALL, MeterId::name, "a, b, c, d, master")?,
             },
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
