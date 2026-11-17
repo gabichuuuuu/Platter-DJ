@@ -77,6 +77,47 @@ the sound; the first beat is corrected by that amount, measured from 13 to 15 ms
 tempos. The tests of `crates/analysis/tests/detection.rs` check every tempo to 0.005 BPM and
 every first beat to 5 ms, the keys of twelve cadences, and the inputs of the edge cases.
 
-All of this is on synthesised signals. A collection of real tracks with known tempos and keys
-has not been measured yet; it stays outside the repository and only its aggregate results will
-be added here.
+All of the above is on synthesised signals.
+
+## Measurement on real recordings
+
+Measured on 17 November 2026, release build, Windows x64, with `platter_analysis::detect` and
+its default range of 70 to 180 BPM, called by a program outside the repository. The corpus is
+the Freesound Loop Dataset (A. Ramires et al., "The Freesound Loop Dataset and Annotation
+Tool", ISMIR 2020; https://zenodo.org/records/3967852): loops published on Freesound under
+Creative Commons licences. Only the loops whose annotators gave a tempo, or a key, and agreed
+on it were used: 2,056 with a tempo and 886 with a key, 2,248 files in all, from 0.4 s to
+9.8 min long, 8 s in the median. The audio stays outside the repository. Loops are shorter
+and barer than the tracks a DJ loads, so this measures the detection on hard material, not on
+a collection.
+
+Tempo, with the scores the MIREX tempo task uses: Accuracy1 counts a tempo within 4 % of the
+annotated one, Accuracy2 also its double, half, triple or third.
+
+| Loops | Answered | Accuracy1 | Accuracy2 | Within 0.5 BPM |
+| --- | --- | --- | --- | --- |
+| All 2,056 | 43.3 % | 31.8 % | 37.0 % | 30.8 % |
+| The 1,975 annotated from 70 to 180 BPM | 43.7 % | 33.1 % | 37.6 % | 32.1 % |
+
+By length, of the loops answered: under 4 s (468 loops) no answer; 4 to 8 s, 115 answered, 90
+right; 8 to 16 s, 391 answered, 276 right; 16 to 30 s, 245 answered, 186 right; 30 s and more,
+140 answered, 102 right. Of the 891 answers, 654 are right, 107 are the double, half, triple
+or third, and 130 are wrong otherwise. When the detection answers, 71 % of its tempos are
+within 0.5 BPM of the annotation, which is a whole number in 2,049 of the 2,056 loops.
+
+First beat, on the 576 loops their annotators marked as cut on the beat and whose tempo was
+right: the beat found lies 9.6 ms from the start in the median, within 10 ms in 50.9 % and
+within 30 ms in 62.5 %.
+
+Key, with the MIREX key score (the same key 1, a fifth 0.5, the relative key 0.3, the parallel
+key 0.2): answered 70.0 %, exact 36.0 %, weighted score 43.4 % over the 886 loops. The share
+exactly right is 25 % under 4 s and from 37 % to 39 % at every longer length. Of the 620 answers, 199 have the mode wrong: 125 minor keys
+found as major and 74 major keys found as minor.
+
+One file held no audio and was reported so.
+
+What it shows: the tempo found is precise when it is right, but too many wrong tempos are
+given, against the rule of `docs/behavior/analysis.md` that no answer is better than a wrong
+one, and the key is right about a third of the time. Neither detection is yet what a DJ needs
+from a collection; both stay in progress in `docs/parity.toml` until they improve on this
+corpus and, separately, on full tracks.

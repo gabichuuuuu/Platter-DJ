@@ -158,5 +158,8 @@ period and the offset that collect the most of it over the whole track.
 
 `crates/analysis/tests/detection.rs`, on synthesised signals: drum patterns at known tempos and
 offsets, chord progressions in known keys, and the inputs of the edge cases. The measurements
-behind the method are in `docs/decisions/0020-own-analysis.md`. The analysis on load, the
+behind the method are in `docs/decisions/0020-own-analysis.md`, with a measurement on 2,248
+annotated loops of a public dataset: a tempo, when one is given, is usually precise, but too
+many wrong tempos are given and the key is right about a third of the time, so the detection
+does not yet meet this note. The analysis on load, the
 resets and the lock: `crates/engine/tests/analysis.rs`, on drum patterns written as WAV files.
