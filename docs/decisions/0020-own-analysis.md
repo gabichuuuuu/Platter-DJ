@@ -121,3 +121,32 @@ given, against the rule of `docs/behavior/analysis.md` that no answer is better 
 one, and the key is right about a third of the time. Neither detection is yet what a DJ needs
 from a collection; both stay in progress in `docs/parity.toml` until they improve on this
 corpus and, separately, on full tracks.
+
+## What the measurement points to
+
+Left for a later change, found on 17 November 2026. The loops were split by the user who
+uploaded them: 1,406 to try changes on and 842 kept apart, not yet looked at, to confirm them.
+The published results that come with the dataset were scored the same way on the first part.
+
+- **The annotated keys lean towards one estimator.** The paper of the dataset (section 3.2.5)
+  says the annotation tool proposed to each annotator the key found by an existing EDM key
+  estimator. The estimators of that family agree with the annotations in 60 to 75 % of the
+  loops; an independent one shipped with the dataset agrees in 31 %, as Platter does. On this
+  corpus a key score measures in part the agreement with that proposal; the annotated tempos
+  came from the uploaders, not from an estimator.
+- **Key.** The errors follow the harmonics of the tonic: the third harmonic falls on the
+  fifth (minor keys found a fifth up) and the fifth on the major third (minor keys found as
+  major). On the first part, reading only the peaks of the spectrum, adding each peak to the
+  pitch classes of the fundamentals it can be the harmonic of (eight, each weighted 0.8 of
+  the last) and reading from 30 Hz instead of 55 Hz raised the exact keys of the answers from
+  50 % to 62 % and the answers from 71 % to 77 % of the loops, with the same profiles and
+  thresholds. Estimating the tuning, a proper anti-alias filter before the reduction and
+  profiles learned from the loops gave little or nothing more.
+- **Tempo.** 45 of the 63 wrong tempos of the first part are 4/3 of the annotation, and 8 are
+  2/3: a dotted pattern taken for the beat. Trying the periods 4/3 and 3/4 of each candidate,
+  and scoring a candidate also by how regularly the bar of four of its beats repeats, brought
+  the wrong answers from 12.4 % to 10.3 %. A higher salience threshold trades answers for
+  fewer errors: at 5 instead of 4, 23 % fewer answers and 7.9 % wrong.
+
+None of this is in the code yet; the changes tried are kept with the measuring program,
+outside the repository.
