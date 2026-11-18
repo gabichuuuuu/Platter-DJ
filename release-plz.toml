@@ -68,14 +68,6 @@ changelog_include = [
   "platter-ui-egui",
 ]
 
-# A crate added after the last tag: release-plz reads every crate at the tag `vX.Y.Z` and stops
-# with "cannot find package" when one is missing there. A tag name of its own, which never
-# exists, makes it a first release instead. Remove this section once a tag contains the crate,
-# or every later merge, even of docs alone, raises the version (`docs/development.md`).
-[[package]]
-name = "platter-device-io"
-git_tag_name = "platter-device-io-v{{ version }}"
-
 # Development tools: their commits never release Platter.
 [[package]]
 name = "xtask"
