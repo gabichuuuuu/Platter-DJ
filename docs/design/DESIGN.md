@@ -212,8 +212,9 @@ Top to bottom, separated by 2px seams of `bg-app`:
    (*Four-deck layout (M4)* below).
 5. Browser: tree on the left (260px), list on the right, to the bottom of the window.
 
-When the window is wider than 1440 the browser list and the waveform lanes take the extra width; decks and mixer keep theirs. When it is
-taller or shorter than 900 the browser gains or loses rows. Windows narrower than 1440 are not designed yet: ask before choosing how the
+When the window is wider than 1440 the mixer keeps its width and the two columns of decks share the extra width, so the decks reach the
+edges of the window; the browser list and the waveform lanes take the whole width. When it is taller or shorter than 900 the browser gains
+or loses rows. Windows narrower than 1440 are not designed yet: ask before choosing how the
 decks shrink.
 
 ### M2: what each zone contains

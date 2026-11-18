@@ -2,7 +2,8 @@
 //! invented data, with no engine and no audio device, and saves one frame as an image.
 //!
 //! It exists for the visual comparison with the reference screens of `docs/design/`. The
-//! window is drawn at one pixel per point, 1440 by 900, whatever the scale of the screen.
+//! window is drawn at one pixel per point, 1440 by 900 or the size asked for, whatever the scale
+//! of the screen.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -72,6 +73,8 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
 
 struct CaptureApp {
     shell: Shell,
+    /// The size of the picture, in points.
+    size: egui::Vec2,
     scene: Scene,
     file: PathBuf,
     frames: u32,
@@ -111,7 +114,7 @@ impl eframe::App for CaptureApp {
         let _ = self.shell.show(ui, &self.scene.view());
 
         let size = ui.max_rect().size();
-        let wanted = egui::vec2(DESIGN_WIDTH, DESIGN_HEIGHT);
+        let wanted = self.size;
         let right_size =
             (size - wanted).abs().max_elem() < 0.5 && (ctx.pixels_per_point() - 1.0).abs() < 0.001;
         if right_size {
@@ -141,8 +144,27 @@ impl eframe::App for CaptureApp {
     }
 }
 
-/// Opens the window in `state`, saves one frame to `file` and closes it.
-pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
+/// The largest picture a capture takes, a side of a 4K screen.
+const MAX_SIDE: f32 = 3_840.0;
+
+/// Reads a size written `<width>x<height>`, from the designed 1440 by 900 up to a 4K screen.
+pub fn size_of(text: &str) -> Result<egui::Vec2, String> {
+    let wrong = || format!("the size `{text}` is not <width>x<height>, from 1440x900 to 3840x2160");
+    let (width, height) = text.split_once(['x', 'X']).ok_or_else(wrong)?;
+    let width: f32 = width.trim().parse().map_err(|_| wrong())?;
+    let height: f32 = height.trim().parse().map_err(|_| wrong())?;
+    let fits = |side: f32, least: f32| side.is_finite() && (least..=MAX_SIDE).contains(&side);
+    if fits(width, DESIGN_WIDTH) && fits(height, DESIGN_HEIGHT) {
+        Ok(egui::vec2(width.round(), height.round()))
+    } else {
+        Err(wrong())
+    }
+}
+
+/// Opens the window in `state` at `size`, 1440 by 900 when none is given, saves one frame to
+/// `file` and closes it.
+pub fn run(state: &str, file: PathBuf, size: Option<egui::Vec2>) -> Result<(), String> {
+    let size = size.unwrap_or(egui::vec2(DESIGN_WIDTH, DESIGN_HEIGHT));
     let (scene, page) = scene_of(state).ok_or_else(|| {
         format!(
             "unknown state `{state}`; the states are: {}",
@@ -156,12 +178,13 @@ pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Platter DJ")
-            .with_inner_size([DESIGN_WIDTH, DESIGN_HEIGHT])
+            .with_inner_size(size)
             .with_resizable(false),
         ..eframe::NativeOptions::default()
     };
     let app = CaptureApp {
         shell,
+        size,
         scene,
         file,
         frames: 0,
@@ -178,4 +201,25 @@ pub fn run(state: &str, file: PathBuf) -> Result<(), String> {
         }),
     )
     .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::size_of;
+
+    #[test]
+    fn a_capture_size_is_read_from_the_design_size_to_a_4k_screen() {
+        assert_eq!(size_of("1920x1080"), Ok(eframe::egui::vec2(1920.0, 1080.0)));
+        assert_eq!(size_of("1440X900"), Ok(eframe::egui::vec2(1440.0, 900.0)));
+        for wrong in [
+            "1280x800",
+            "8000x900",
+            "1920",
+            "widexhigh",
+            "NaNx900",
+            "1920x",
+        ] {
+            assert!(size_of(wrong).is_err(), "{wrong}");
+        }
+    }
 }

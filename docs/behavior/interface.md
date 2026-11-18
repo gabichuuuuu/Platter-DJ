@@ -84,9 +84,13 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   colour never stands alone, the count says the same. The label lights for 150 ms after each
   message any open controller sends, mapped or not, so a control that is moved can be seen
   to reach Platter. Without a controller in the settings the indicator is not drawn.
-- **Window size.** The layout is designed 1440 points wide. A wider window gives the extra
-  width to the waveform lanes and the file list; a taller or shorter one gains or loses rows
-  of the file list. A narrower window shows the whole interface smaller.
+- **Window size.** The layout is designed 1440 points wide. In a wider window, full screen
+  included, the mixer keeps its width and the two columns of decks share the rest, so the
+  decks reach the edges of the window; the waveform lanes and the file list take the whole
+  width. A taller or shorter window gains or loses rows of the file list. A narrower window
+  shows the whole interface smaller. Until 18 November 2026 the decks kept 520 points and
+  stayed in the middle, which left empty bands at both sides in full screen; the maintainer
+  chose to widen them.
 
 ## Differences
 
@@ -121,6 +125,7 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
 | No audio device, or the device goes away while playing | The header and the notice say so; the engine keeps running in silence |
 | The device chosen in the settings is not connected | The notice says so; nothing else is tried |
 | A window narrower than 1440 points | The whole interface is drawn smaller, down to a window of 960 points |
+| A window 1920 points wide | Decks of 760 points from edge to edge, the mixer of 396 points between them |
 | A title longer than its place | It is cut with an ellipsis; the full title shows on hover |
 | A track longer than 99 minutes | The times grow to three digits of minutes |
 
@@ -128,7 +133,8 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
 
 `crates/ui-egui/tests/panels.rs`: every control emits its command, no text is written in the
 code, every command can be reached with the keyboard, no colour comes from outside the design
-tokens, and readouts keep their width while their digits change.
+tokens, and readouts keep their width while their digits change. `crates/ui-egui/src/shell.rs`
+for the zones of a wide window, in both layouts.
 `crates/ui-egui/tests/tooltips.rs` for the tooltips. `crates/ui-egui/tests/midi_indicator.rs`
 for the MIDI indicator; no real controller has lit it yet.
 
