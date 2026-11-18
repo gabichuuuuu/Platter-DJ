@@ -636,6 +636,10 @@ pub fn four_decks() -> Scene {
     decks[3] = loaded_deck(3, 0.0, 1.0, [0.0, 0.0]);
     decks[3].playing = false;
     decks[3].controls.fader = 0.0;
+    // Decks A, B and C play at the gain autogain gives them; deck D waits for its analysis.
+    for deck in decks.iter_mut().take(3) {
+        deck.autogain_db = Some(deck.controls.gain_db);
+    }
     scene
 }
 

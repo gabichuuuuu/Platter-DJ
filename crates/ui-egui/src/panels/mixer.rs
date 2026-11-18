@@ -236,6 +236,8 @@ struct ChannelLayout {
     /// Diameter of the gain and equaliser knobs.
     knob: f32,
     pre_listen: Rect,
+    /// The key that restores the autogain value, beside the gain knob, when the channel has one.
+    auto: Option<Rect>,
     key: Vec2,
     eq: [Vec2; 3],
     /// Where each kill key sits from the top left corner of its knob.
@@ -262,6 +264,7 @@ impl ChannelLayout {
             gain: egui::vec2(16.0, 35.0),
             knob,
             pre_listen: Rect::from_min_size(egui::pos2(108.0, 143.0), egui::vec2(54.0, 22.0)),
+            auto: None,
             key: egui::vec2(24.0, 272.0),
             eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
             kill: egui::vec2(47.0, 19.0),
@@ -290,6 +293,10 @@ impl ChannelLayout {
             gain: egui::vec2(6.0, 23.0),
             knob: 30.0,
             pre_listen: Rect::from_min_size(egui::pos2(9.0, 371.0), egui::vec2(58.0, 20.0)),
+            auto: Some(Rect::from_min_size(
+                egui::pos2(40.0, 37.0),
+                egui::vec2(31.0, 18.0),
+            )),
             key: egui::vec2(8.0, 327.0),
             eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
             kill: egui::vec2(34.0, 14.0),
@@ -371,6 +378,25 @@ fn channel(
             .into()
         },
     );
+    if let Some(auto) = layout.auto {
+        // Lit while the gain is the autogain value of the track.
+        let value = snapshot.autogain_db;
+        let at_value = value.is_some_and(|db| (db - controls.gain_db).abs() < 0.05);
+        let name = texts.format("mixer.auto_name", &[("deck", &letter)]);
+        let mut spec = KeySpec::text(texts.get("mixer.fade_auto"))
+            .enabled(value.is_some())
+            .lit(at_value.then_some(color.text_primary));
+        spec.name = &name;
+        spec.text = Some(tokens.text.label);
+        spec.keeps_led = true;
+        key::key(
+            cx,
+            auto.translate(origin.to_vec2()),
+            id(("mixer-auto", index)),
+            spec,
+            Press::Click(Command::MixerGainRestore { deck }.into()),
+        );
+    }
     let headphones = view.audio.has_headphones();
     let name = texts.format("mixer.pre_listen", &[("deck", &letter)]);
     let spec = KeySpec {
@@ -641,7 +667,52 @@ fn channel(
     );
 }
 
-fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
+/// Where the parts of the master column sit, from the top left corner of the mixer.
+struct MasterLayout {
+    meter: Rect,
+    level: Vec2,
+    /// The line between the level and the headphones, its top.
+    divider: f32,
+    phones: f32,
+    mix: Vec2,
+    vol: Vec2,
+    phones_knob: f32,
+    /// The two headphone knobs sit side by side, so their values share one row.
+    side_by_side: bool,
+}
+
+impl MasterLayout {
+    /// The column of the two-deck mixer, as `docs/design/screens/M2-main.html` places it.
+    const TWO: Self = Self {
+        meter: Rect::from_min_max(egui::pos2(361.0, 38.0), egui::pos2(373.0, 156.0)),
+        level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0, 162.0),
+        divider: 221.0,
+        phones: 230.0,
+        mix: egui::vec2(330.0, 250.0),
+        vol: egui::vec2(359.0, 250.0),
+        phones_knob: SMALL_KNOB,
+        side_by_side: true,
+    };
+
+    /// The column of the four-deck mixer, as `docs/design/screens/M4-effects.html` places it.
+    const FOUR: Self = Self {
+        meter: Rect::from_min_max(egui::pos2(362.0, 32.0), egui::pos2(374.0, 142.0)),
+        level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0 + 2.0, 150.0),
+        divider: 245.0,
+        phones: 256.0,
+        mix: egui::vec2(340.0, 278.0),
+        vol: egui::vec2(340.0, 337.0),
+        phones_knob: MASTER_KNOB,
+        side_by_side: false,
+    };
+}
+
+fn master(
+    cx: &mut Cx<'_>,
+    panel: Rect,
+    layout: &MasterLayout,
+    (view, state): (&View<'_>, &ViewState),
+) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -670,7 +741,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
         );
     }
 
-    let meter_rect = Rect::from_min_size(at(361.0, 38.0), egui::vec2(12.0, 118.0));
+    let meter_rect = layout.meter.translate(panel.min.to_vec2());
     // 0 and 6 dB sit closer than a line of text on this short meter: each figure keeps at
     // least a line below the one above it.
     let mut below = f32::NEG_INFINITY;
@@ -709,7 +780,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
 
     knob_cell(
         cx,
-        at(centre - MASTER_KNOB / 2.0, 162.0),
+        panel.min + layout.level,
         id("mixer-master-level"),
         KnobCell {
             name: "mixer.level",
@@ -732,7 +803,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     let painter = cx.painter();
     painter.hline(
         panel.left() + centre - 22.0..=panel.left() + centre + 22.0,
-        panel.top() + 221.0,
+        panel.top() + layout.divider,
         paint::hairline(theme, color.line_divider),
     );
     let headphones = view.audio.has_headphones();
@@ -746,7 +817,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
         14.0 + tokens.space.s1 + paint::text_width(painter, theme, phones, tokens.text.label);
     let left = panel.left() + centre - width / 2.0;
     let icon = Rect::from_min_size(
-        egui::pos2(left, panel.top() + 230.0),
+        egui::pos2(left, panel.top() + layout.phones),
         egui::vec2(14.0, 14.0),
     );
     theme.icons.paint(painter, Glyph::Headphones, icon, ink);
@@ -777,7 +848,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     };
     let mix_label = knob(
         cx,
-        at(330.0, 250.0),
+        panel.min + layout.mix,
         id("mixer-phones-mix"),
         KnobCell {
             name: "mixer.mix",
@@ -787,13 +858,13 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             centre_detent: false,
             hide_arc: false,
             enabled: headphones,
-            size: SMALL_KNOB,
+            size: layout.phones_knob,
         },
         |position| Command::MixerCueMixSet { position }.into(),
     );
     let vol_label = knob(
         cx,
-        at(359.0, 250.0),
+        panel.min + layout.vol,
         id("mixer-phones-volume"),
         KnobCell {
             name: "mixer.vol",
@@ -803,7 +874,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
             centre_detent: false,
             hide_arc: false,
             enabled: headphones,
-            size: SMALL_KNOB,
+            size: layout.phones_knob,
         },
         |position| {
             Command::MixerCueVolumeSet {
@@ -820,7 +891,7 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     );
     if let Some(label) = [&mix_label, &vol_label]
         .into_iter()
-        .find(|label| label.in_use)
+        .find(|label| layout.side_by_side && label.in_use)
     {
         label.paint(cx, row);
     } else {
@@ -884,7 +955,11 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
             }
         }
     };
-    master(cx, rect, view, state);
+    let layout = match view.settings.deck_layout {
+        DeckLayout::Two => &MasterLayout::TWO,
+        DeckLayout::Four => &MasterLayout::FOUR,
+    };
+    master(cx, rect, layout, (view, state));
 
     if view.engine.mixer.mode == MixerMode::External {
         return;

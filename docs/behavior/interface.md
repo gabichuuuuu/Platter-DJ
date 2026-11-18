@@ -226,16 +226,19 @@ The manual does not say how the window shares its room between two and four deck
   deck B over deck D on the right, then the browser to the bottom of the window. There are no
   waveform lanes: each deck carries its own.
 - **The deck of the four-deck layout.** A header of two lines (the letter, the cover, the
-  title over the artist and album, the tempo over its offset and key, the large time over the
-  next one), the scrolling waveform with the overview under it, the row of sync with the key
-  controls, one row with the transport and the loop keys, and the eight hotcues in one row;
-  the tempo column at the right. There is no advanced panel and no beatjump row in this size,
+  title with the tag of its kind, `Track`, over the artist and album, the tempo over its offset
+  and the key the deck plays, the large time over the next one), the scrolling waveform with
+  the overview under it, the row of sync with the key controls, one row with play, CUE, CUP,
+  Flux, reverse and the loop keys, and the eight hotcues in one row; the tempo column at the
+  right, with its range, fader, reading and the two bend keys side by side. There is no advanced panel and no beatjump row in this size,
   and the deck size setting does not apply to it. The zoom of the waveform is the one of the
   deck, kept from the two-deck layout.
 - **The mixer of the four-deck layout.** Four narrow channels in the order C, A, B, D, each
-  with gain, the three bands with their kill keys, its meter, the filter, key and pan,
-  pre-listen, the fader and the assign keys; the master column as with two decks; the
-  crossfader row under the four channels, its ends marked L and R.
+  with gain and its Auto key (`mixer.gain.restore`, lit while the gain is the autogain value
+  of the track, disabled until the analysis has found it), the three bands with their kill
+  keys, its meter, the filter, key and pan, pre-listen, the fader and the assign keys; the
+  master column with its meter, level and, one under the other, the headphone mix and volume;
+  the crossfader row under the four channels, its ends marked L and R.
 - **Loading.** The browser shows Load A, Load B, Load C and Load D, left to right; a file
   dragged onto any of the four decks loads into it, and a file dropped from outside away from
   the decks goes to the first empty deck of the four, or deck A.

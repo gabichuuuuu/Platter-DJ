@@ -192,6 +192,26 @@ pub fn badge(painter: &Painter, theme: &Theme, rect: Rect, letter: char, color: 
     );
 }
 
+/// A small framed word that names a kind, such as the kind of track a deck holds.
+pub fn tag(painter: &Painter, theme: &Theme, rect: Rect, word: &str) {
+    let color = &theme.tokens.color;
+    painter.rect_stroke(
+        rect,
+        radius(theme.tokens.radius.sm),
+        hairline(theme, color.line_key),
+        egui::StrokeKind::Inside,
+    );
+    text(
+        painter,
+        theme,
+        rect,
+        Align2::CENTER_CENTER,
+        word,
+        theme.tokens.text.label,
+        color.text_secondary,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

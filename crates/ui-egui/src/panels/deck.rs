@@ -153,7 +153,7 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         egui::pos2(tempo_column.left() - tokens.space.s5, controls.bottom()),
     );
     let mapping = state.cue_map[deck.index()];
-    sync_controls(cx, left, deck, view);
+    sync_controls(cx, left, deck, view, false);
     // A notice takes the place of the hotcues for as long as it shows.
     if let Some(notice) = view.notices[deck.index()] {
         let top = left.top() + tokens.size.button_h + tokens.space.s3;
@@ -241,6 +241,13 @@ const FOUR_COVER_SIDE: f32 = 38.0;
 const FOUR_LOOP_SIZE_WIDTH: f32 = 30.0;
 const FOUR_LOOP_KEY_WIDTH: f32 = 32.0;
 const NARROW_REVERSE_WIDTH: f32 = 28.0;
+const NARROW_PLAY_WIDTH: f32 = 44.0;
+const NARROW_ARROW_WIDTH: f32 = 26.0;
+const NARROW_SYNC_WIDTH: f32 = 50.0;
+const NARROW_MASTER_WIDTH: f32 = 64.0;
+const NARROW_TEMPO_KEY_HEIGHT: f32 = 22.0;
+const FOUR_TITLE_WIDTH: f32 = 180.0;
+const FOUR_TAG_WIDTH: f32 = 42.0;
 
 /// A deck of the four-deck layout: a header of two lines, the scrolling waveform with the
 /// overview under it, the row of sync, the transport and loop row and the eight hotcues in one
@@ -307,7 +314,7 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
         ),
         egui::pos2(main.right(), row.top()),
     );
-    sync_controls(cx, sync_row, deck, view);
+    sync_controls(cx, sync_row, deck, view, true);
     // A notice takes the place of the transport and the hotcues for as long as it shows.
     if let Some(notice) = view.notices[deck.index()] {
         deck_notice(cx, Rect::from_min_max(row.min, pads.max), deck, notice);
@@ -327,7 +334,7 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
         let gap = tokens.space.s2;
         // The loop keys end at the right of the row when they fit there: the size between its
         // arrows, In, Out and the wider Active.
-        let width = 2.0 * ARROW_WIDTH
+        let width = 2.0 * NARROW_ARROW_WIDTH
             + FOUR_LOOP_SIZE_WIDTH
             + tokens.space.s3
             + 2.0 * FOUR_LOOP_KEY_WIDTH
@@ -389,6 +396,17 @@ fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state
     let title_line = line(text_block, 0.0, 18.0);
     match title_of(snapshot) {
         Some(title) => {
+            // The title takes what its words need, up to its width, and the tag of the kind of
+            // deck follows it.
+            let width = paint::text_width(cx.painter(), theme, &title, tokens.text.title)
+                .min(FOUR_TITLE_WIDTH)
+                .min(title_line.width() - FOUR_TAG_WIDTH - tokens.space.s3);
+            let title_line = Rect::from_min_size(title_line.min, egui::vec2(width, 18.0));
+            let tag = Rect::from_min_size(
+                egui::pos2(title_line.right() + tokens.space.s3, title_line.top() + 1.0),
+                egui::vec2(FOUR_TAG_WIDTH, 16.0),
+            );
+            paint::tag(cx.painter(), theme, tag, texts.get("deck.kind_track"));
             let elided = paint::text_elided(
                 cx.painter(),
                 theme,
@@ -445,6 +463,12 @@ fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state
     }
 
     let readings = Readings::of(cx, snapshot, state.remaining_large[deck.index()]);
+    // Under the tempo: its offset, then the key the deck plays when there is one.
+    let offset = format::signed_percent(snapshot.speed - 1.0);
+    let detail = match played_key(texts, snapshot, view).filter(|_| loaded) {
+        Some(key) => texts.format("deck.offset_key", &[("offset", &offset), ("key", &key)]),
+        None => texts.format("deck.tempo_offset", &[("offset", &offset)]),
+    };
     let painter = cx.painter();
     paint::text(
         painter,
@@ -460,7 +484,7 @@ fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state
         theme,
         line(tempo_block, 22.0, 14.0),
         Align2::RIGHT_CENTER,
-        &readings.detail,
+        &detail,
         tokens.text.readout,
         readings.small_ink,
     );
@@ -488,7 +512,7 @@ fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state
 
 /// The row of sync at the top of `area`: SYNC, MASTER, the phase meter and, beside it on the
 /// deck that is the tempo master, its caption.
-fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
+fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>, narrow: bool) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -498,8 +522,22 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
     let lit = deck_color(theme, deck);
     let letter = deck.letter().to_string();
     let master = clock.master == Some(deck);
-    let height = tokens.size.button_h;
-    let gap = tokens.space.s3;
+    // The row of a deck of the four-deck layout is lower and its keys narrower.
+    let (height, gap, sync_width, master_width) = if narrow {
+        (
+            KEY_ROW_HEIGHT,
+            tokens.space.s2 + tokens.space.s1,
+            NARROW_SYNC_WIDTH,
+            NARROW_MASTER_WIDTH,
+        )
+    } else {
+        (
+            tokens.size.button_h,
+            tokens.space.s3,
+            SYNC_WIDTH,
+            MASTER_WIDTH,
+        )
+    };
     let mut row = Row {
         x: area.left(),
         top: area.top(),
@@ -508,7 +546,7 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
     };
 
     let label = texts.get("deck.sync");
-    let rect = row.place(key::width_for(cx, label, SYNC_WIDTH));
+    let rect = row.place(label_width(cx, label, sync_width, narrow));
     let name = texts.format("deck.sync_name", &[("deck", &letter)]);
     let mut spec = KeySpec::text(label).lit((snapshot.sync && !master).then_some(lit));
     spec.name = &name;
@@ -522,7 +560,7 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
 
     // In the automatic mode the engine chooses the tempo master and the key only shows it.
     let label = texts.get("deck.master");
-    let rect = row.place(key::width_for(cx, label, MASTER_WIDTH));
+    let rect = row.place(label_width(cx, label, master_width, narrow));
     let name = texts.format("deck.master_name", &[("deck", &letter)]);
     let has_tempo = is_ready(snapshot) && snapshot.grid.bpm().is_some();
     let mut spec = KeySpec::text(label)
@@ -573,8 +611,9 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
         .ui
         .interact(slot, id(("deck-phase", deck.index())), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Image, true, &name));
-    let keys_left = key_controls(cx, area, deck, view);
-    if master {
+    let keys_left = key_controls(cx, area, height, deck, view);
+    // The narrow row has no room for the caption: the lit MASTER says it.
+    if master && !narrow {
         let caption = Rect::from_min_max(
             egui::pos2(slot.right() + gap, area.top()),
             egui::pos2(keys_left - gap, area.top() + height),
@@ -592,7 +631,13 @@ fn sync_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) {
 
 /// Key lock, a semitone down, the key the deck plays and a semitone up, at the right of the
 /// row of sync. Returns where they start.
-fn key_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) -> f32 {
+fn key_controls(
+    cx: &mut Cx<'_>,
+    area: Rect,
+    row_height: f32,
+    deck: DeckId,
+    view: &View<'_>,
+) -> f32 {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -600,7 +645,7 @@ fn key_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) -> f
     let snapshot = &view.engine.decks[deck.index()];
     let letter = deck.letter().to_string();
     let ready = is_ready(snapshot);
-    let top = area.top() + (tokens.size.button_h - KEY_ROW_HEIGHT) / 2.0;
+    let top = area.top() + (row_height - KEY_ROW_HEIGHT) / 2.0;
     let width = KEY_LOCK_WIDTH + 2.0 * KEY_STEP_WIDTH + KEY_READOUT_WIDTH + 3.0 * KEY_GAP;
     let left = area.right() - width;
     let mut row = Row {
@@ -653,20 +698,7 @@ fn key_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) -> f
         &up,
         SizeStep::Up,
     );
-    // The key the deck plays: what the analysis found, moved by the shift or the speed.
-    let played = snapshot.resulting_key.map_or_else(
-        || "--".to_owned(),
-        |transposed| {
-            keys::key_text(
-                keys::number_of(transposed.key),
-                view.settings.key_notation,
-                (
-                    texts.get("browser.key_major"),
-                    texts.get("browser.key_minor"),
-                ),
-            )
-        },
-    );
+    let played = played_key(texts, snapshot, view).unwrap_or_else(|| "--".to_owned());
     paint::text(
         cx.painter(),
         theme,
@@ -681,6 +713,20 @@ fn key_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, view: &View<'_>) -> f
         },
     );
     left
+}
+
+/// The key the deck plays: what the analysis found, moved by the shift or the speed.
+fn played_key(texts: &Texts, snapshot: &DeckSnapshot, view: &View<'_>) -> Option<String> {
+    snapshot.resulting_key.map(|transposed| {
+        keys::key_text(
+            keys::number_of(transposed.key),
+            view.settings.key_notation,
+            (
+                texts.get("browser.key_major"),
+                texts.get("browser.key_minor"),
+            ),
+        )
+    })
 }
 
 /// The tops of the two rows of a page of the advanced panel, above the transport keys at
@@ -710,11 +756,23 @@ fn stepper(
     reading: (&str, TextStyle, f32),
     arrows: [Arrow<'_>; 2],
 ) {
+    stepper_sized(cx, row, salt, reading, arrows, ARROW_WIDTH);
+}
+
+/// A stepper whose arrows are `arrow_width` wide.
+fn stepper_sized(
+    cx: &mut Cx<'_>,
+    row: &mut Row,
+    salt: (&'static str, usize),
+    reading: (&str, TextStyle, f32),
+    arrows: [Arrow<'_>; 2],
+    arrow_width: f32,
+) {
     let color = &cx.theme.tokens.color;
     let (text, style, width) = reading;
     let [down, up] = arrows;
     let active = down.enabled || up.enabled;
-    let rect = row.place(ARROW_WIDTH);
+    let rect = row.place(arrow_width);
     key::key(
         cx,
         rect,
@@ -737,7 +795,7 @@ fn stepper(
         style,
         ink,
     );
-    let rect = row.place(ARROW_WIDTH);
+    let rect = row.place(arrow_width);
     key::key(
         cx,
         rect,
@@ -870,7 +928,12 @@ fn loop_keys(
     let smaller = named("deck.loop_smaller_name");
     let larger = named("deck.loop_larger_name");
     let step = |direction| Command::DeckLoopSizeStep { deck, direction }.into();
-    stepper(
+    let arrow_width = if size_width < LOOP_SIZE_WIDTH {
+        NARROW_ARROW_WIDTH
+    } else {
+        ARROW_WIDTH
+    };
+    stepper_sized(
         cx,
         &mut row,
         ("deck-loop-size", deck.index()),
@@ -887,6 +950,7 @@ fn loop_keys(
                 action: step(SizeStep::Up),
             },
         ],
+        arrow_width,
     );
     row.x += tokens.space.s3;
     let keys = [
@@ -2336,18 +2400,23 @@ fn transport(
     } else {
         tokens.space.s3
     };
-    let mut place = |cx: &Cx<'_>, label: Option<&str>| {
-        let width = match label {
-            Some(label) => label_width(cx, label, key_width, narrow),
-            None => key_width,
-        };
-        let rect = Rect::from_min_size(egui::pos2(left, top), egui::vec2(width, height));
-        left += width + gap;
-        rect
-    };
-
+    // CUE, CUP and play; the four-deck layout puts play first, as its screen orders them.
     let cue = texts.get("deck.cue");
-    let rect = place(cx, Some(cue));
+    let cup = texts.get("deck.cup");
+    let widths = [
+        label_width(cx, cue, key_width, narrow),
+        label_width(cx, cup, key_width, narrow),
+        if narrow { NARROW_PLAY_WIDTH } else { key_width },
+    ];
+    let order = if narrow { [2, 0, 1] } else { [0, 1, 2] };
+    let mut slots = [Rect::NOTHING; 3];
+    for index in order {
+        slots[index] =
+            Rect::from_min_size(egui::pos2(left, top), egui::vec2(widths[index], height));
+        left += widths[index] + gap;
+    }
+
+    let rect = slots[0];
     let name = texts.format("deck.cue_name", &[("deck", &letter)]);
     let mut spec = KeySpec::text(cue).enabled(loaded);
     spec.name = &name;
@@ -2371,8 +2440,7 @@ fn transport(
         },
     );
 
-    let cup = texts.get("deck.cup");
-    let rect = place(cx, Some(cup));
+    let rect = slots[1];
     let name = texts.format("deck.cup_name", &[("deck", &letter)]);
     let mut spec = KeySpec::text(cup).enabled(loaded);
     spec.name = &name;
@@ -2396,7 +2464,7 @@ fn transport(
         },
     );
 
-    let rect = place(cx, None);
+    let rect = slots[2];
     let (glyph, name) = if snapshot.playing {
         (Glyph::Pause, "deck.pause_name")
     } else {
@@ -2503,10 +2571,20 @@ fn tempo(cx: &mut Cx<'_>, column: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
 
     let label = texts.format("deck.tempo_range", &[("percent", &percent)]);
     let name = texts.format("deck.tempo_range_name", &[("percent", &percent)]);
-    let width = key::width_for(cx, &label, 0.0).max(43.0);
+    let narrow = column.width() < 64.0;
+    let width = if narrow {
+        label_width(cx, &label, 0.0, true).min(column.width())
+    } else {
+        key::width_for(cx, &label, 0.0).max(43.0)
+    };
+    let key_height = if narrow {
+        NARROW_TEMPO_KEY_HEIGHT
+    } else {
+        24.0
+    };
     let range_key = Rect::from_min_size(
         egui::pos2(column.center().x - width / 2.0, column.top()),
-        egui::vec2(width, 24.0),
+        egui::vec2(width, key_height),
     );
     let mut spec = KeySpec::text(&label).enabled(loaded);
     spec.name = &name;
@@ -2518,7 +2596,7 @@ fn tempo(cx: &mut Cx<'_>, column: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
         Press::Click(Command::DeckTempoRangeCycle { deck }.into()),
     );
 
-    let nudge_top = column.bottom() - 24.0 - 2.0;
+    let nudge_top = column.bottom() - key_height - 2.0;
     let reading_top = nudge_top - tokens.space.s3 - 14.0;
     let track = Rect::from_min_max(
         egui::pos2(
@@ -2587,10 +2665,22 @@ fn tempo(cx: &mut Cx<'_>, column: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
         (Glyph::Plus, "deck.nudge_faster", NUDGE_AMOUNT),
     ];
     for (index, (glyph, name, amount)) in bends.into_iter().enumerate() {
-        let rect = Rect::from_min_size(
-            egui::pos2(column.center().x - 30.0 + 32.0 * index as f32, nudge_top),
-            egui::vec2(28.0, 24.0),
-        );
+        // Side by side across the narrow column; centred under the fader in a wide one.
+        let rect = if narrow {
+            let width = (column.width() - tokens.space.s1) / 2.0;
+            Rect::from_min_size(
+                egui::pos2(
+                    column.left() + (width + tokens.space.s1) * index as f32,
+                    nudge_top,
+                ),
+                egui::vec2(width, key_height),
+            )
+        } else {
+            Rect::from_min_size(
+                egui::pos2(column.center().x - 30.0 + 32.0 * index as f32, nudge_top),
+                egui::vec2(28.0, 24.0),
+            )
+        };
         let mut spec = KeySpec::icon(glyph, 14.0, texts.get(name)).enabled(loaded);
         spec.held = Some(deck_color(theme, deck));
         key::key(
