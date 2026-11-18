@@ -92,32 +92,27 @@ pub fn panel(cx: &mut Cx<'_>, rect: Rect, recorder: &RecorderSnapshot) {
     );
 }
 
-/// The indicator of the status header while a recording runs: a dot, the label and the time.
-/// Returns where the next indicator starts.
-pub fn indicator(cx: &Cx<'_>, x: f32, header: Rect, recorder: &RecorderSnapshot) -> f32 {
+/// The indicator of the status header while a recording runs: a dot and the label. The time
+/// is left to the panel, since the header has little room (`docs/behavior/recording.md`,
+/// *Indicator*). Returns where the next indicator starts.
+pub fn indicator(cx: &Cx<'_>, x: f32, header: Rect) -> f32 {
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let color = &tokens.color;
     let painter = cx.painter();
     let middle = header.center().y;
     painter.circle_filled(egui::pos2(x + 4.0, middle), 4.0, color.status_error);
-    let line = |x: f32| Rect::from_min_max(egui::pos2(x, header.top()), header.max);
-    let name = paint::text(
-        painter,
-        theme,
-        line(x + 8.0 + tokens.space.s3),
-        Align2::LEFT_CENTER,
-        cx.t("recorder.indicator"),
-        tokens.text.label,
-        color.text_secondary,
+    let line = Rect::from_min_max(
+        egui::pos2(x + 8.0 + tokens.space.s3, header.top()),
+        header.max,
     );
     paint::text(
         painter,
         theme,
-        line(name.right() + tokens.space.s2 + tokens.space.s1),
+        line,
         Align2::LEFT_CENTER,
-        &format::hours(recorder.seconds),
-        tokens.text.readout,
+        cx.t("recorder.indicator"),
+        tokens.text.label,
         color.text_primary,
     )
     .right()

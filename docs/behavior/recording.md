@@ -55,10 +55,10 @@ and Cut.
   it is the length of the set. A cut does not set it back to zero. After a stop it keeps the
   length of the last recording until the next one starts.
 
-**Indicator.** While a recording runs, the status header shows a red dot, the label *Rec* and
-the same time, after the MIDI indicator. Without a recording it is not drawn. The design system
-places it there (`docs/design/DESIGN.md`, *StatusHeader*); the public manual does not describe
-one.
+**Indicator.** While a recording runs, the status header shows a red dot and the label *Rec*
+after the MIDI indicator. Without a recording it is not drawn. The design system places it
+there (`docs/design/DESIGN.md`, *StatusHeader*); the public manual does not describe one. The
+time stays in the panel: the header has no room for it (*Differences*).
 
 **What is recorded.** The master output after the master volume and the safety limiter, in
 stereo, whatever the number of channels of the device: the mix the first pair of outputs
@@ -108,9 +108,10 @@ lost when the recording ends.
   *Differences*).
 - At 1440 points the status header has no room left for the indicator. The master clock is
   centred in what the indicators leave and, when it is wider, runs to the right: without a
-  recording it already covers part of the label *Master*, and while recording it covers the
-  start of the master meter too. The captures of 18 November 2026 show it; where the
-  indicators should give way waits for the maintainer.
+  recording it already covers part of the label *Master*, and with the indicator, though it
+  shows no time, it covers the whole label and reaches the edge of the master meter. Captures
+  of the four-deck state made on 18 November 2026 show it; where the indicators should give
+  way waits for the maintainer.
 
 ## Edge cases
 
@@ -126,7 +127,7 @@ lost when the recording ends.
 | The disk is slower than the audio for more than four seconds | The frames it cannot take are counted and left out |
 | A file reaches 2048 MiB | It is closed and the next part opened, with no frame lost |
 | A change of sample rate while recording | The engine is built again at the new rate: the recording ends and its file is finished; Rec starts a new one |
-| A change of device at the same rate | The recording goes on; the frames the device did not ask for while it changed are not in the file |
+| A change of device at the same rate | When the stream hands the processor back, the recording goes on and the frames the device did not ask for while it changed are not in the file; when it does not, the engine is built again and the recording ends as on a change of rate. No test covers it |
 | No audio device, and no silent output either | The processor does not run, so no frame is recorded; a stop finishes the file after two seconds |
 | The application closes while recording | The recording is stopped and its file finished before the window goes |
 

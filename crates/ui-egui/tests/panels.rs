@@ -1978,21 +1978,30 @@ fn the_mix_recorder_lights_rec_shows_its_time_and_cuts_only_while_recording() {
                 .filter(|(text, _)| text == time)
                 .map(|(_, rect)| *rect)
                 .collect();
-            // The panel, and the header while recording.
-            assert_eq!(times.len(), if recording { 2 } else { 1 }, "{name}");
-            for rect in times.iter().filter(|rect| rect.bottom() <= 40.0) {
+            // In the panel only: the indicator of the header has no time.
+            assert_eq!(times.len(), 1, "{name}");
+            assert!(times[0].top() > 42.0, "{name}");
+            let indicator: Vec<Rect> = painted
+                .iter()
+                .filter(|(text, rect)| {
+                    rect.bottom() <= 40.0 && text == texts.get("recorder.indicator")
+                })
+                .map(|(_, rect)| *rect)
+                .collect();
+            assert_eq!(
+                indicator.len(),
+                usize::from(recording),
+                "{name}: the indicator of the header"
+            );
+            for rect in &indicator {
                 for control in &controls {
                     assert!(
                         !control.rect.intersects(*rect),
-                        "{name}, {language:?}: {} covers the time of the indicator",
+                        "{name}, {language:?}: {} covers the indicator",
                         control.command
                     );
                 }
             }
-            let indicator = painted.iter().any(|(text, rect)| {
-                rect.bottom() <= 40.0 && text == texts.get("recorder.indicator")
-            });
-            assert_eq!(indicator, recording, "{name}: the indicator of the header");
             if name == "recorder-failed" {
                 assert_eq!(colours_of_text(&shapes, time), [warn]);
             }

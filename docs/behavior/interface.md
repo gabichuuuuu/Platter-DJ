@@ -84,9 +84,8 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   colour never stands alone, the count says the same. The label lights for 150 ms after each
   message any open controller sends, mapped or not, so a control that is moved can be seen
   to reach Platter. Without a controller in the settings the indicator is not drawn.
-- **Rec.** While the mix recorder records, a red dot, the label "Rec" and the time recorded
-  follow the MIDI indicator (`docs/behavior/recording.md`, *Indicator*). Without a recording
-  it is not drawn.
+- **Rec.** While the mix recorder records, a red dot and the label "Rec" follow the MIDI
+  indicator (`docs/behavior/recording.md`, *Indicator*). Without a recording it is not drawn.
 - **Window size.** The layout is designed 1440 points wide. In a wider window, full screen
   included, the mixer keeps its width and the two columns of decks share the rest, so the
   decks reach the edges of the window; the waveform lanes and the file list take the whole
