@@ -1,5 +1,5 @@
 //! The effect row: effect units 1 and 2 over the deck columns, and the panel over the mixer
-//! that will hold the mix recorder.
+//! that holds the mix recorder (`super::recorder`).
 //!
 //! Components: `EffectUnit` and *Effect row* in `docs/design/DESIGN.md`; placement measured on
 //! `docs/design/screens/M4-effects.html`. Behaviour note: `docs/behavior/effects.md`.
@@ -61,6 +61,7 @@ pub fn row(cx: &mut Cx<'_>, [left, middle, right]: [Rect; 3], view: &View<'_>) {
         cx.painter().rect_filled(rect, 0.0, fill);
     }
     unit(cx, left, FxUnit::ALL[0], view);
+    super::recorder::panel(cx, middle, &view.engine.recorder);
     unit(cx, right, FxUnit::ALL[1], view);
 }
 

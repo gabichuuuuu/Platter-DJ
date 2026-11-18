@@ -106,6 +106,11 @@ lost when the recording ends.
   mode does not show; recording the external mixer needs an input.
 - Names in UTC: Platter has no source for the local time zone (`docs/behavior/browser.md`,
   *Differences*).
+- At 1440 points the status header has no room left for the indicator. The master clock is
+  centred in what the indicators leave and, when it is wider, runs to the right: without a
+  recording it already covers part of the label *Master*, and while recording it covers the
+  start of the master meter too. The captures of 18 November 2026 show it; where the
+  indicators should give way waits for the maintainer.
 
 ## Edge cases
 

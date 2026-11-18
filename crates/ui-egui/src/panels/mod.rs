@@ -8,5 +8,6 @@ pub mod effects;
 pub mod header;
 pub mod maintenance;
 pub mod mixer;
+pub mod recorder;
 pub mod settings;
 pub mod waveform;

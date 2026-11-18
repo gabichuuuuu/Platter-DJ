@@ -810,3 +810,13 @@ reverse = "Reversa"
 resync = "Resinc."
 bits = "Bits"
 smooth = "Suave"
+
+[recorder]
+title = "Grabadora de mezcla"
+rec = "Rec"
+cut = "Corte"
+record_name = "Grabar la mezcla"
+stop_name = "Detener la grabación de la mezcla"
+failed_name = "Grabar la mezcla. La última grabación se detuvo: {reason}"
+cut_name = "Cortar la grabación en un archivo nuevo"
+indicator = "Rec"

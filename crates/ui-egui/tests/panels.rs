@@ -213,6 +213,17 @@ fn states() -> Vec<State> {
     other_preview.scene.engine.preview.track = other_preview.scene.engine.decks[0].track.clone();
     let mut rename = state("rename-playlist", sample::playing(), None);
     rename.naming = Some(Naming::Rename(NodeId::new(1)));
+    // The mix recorder runs in the two-deck layout, so Cut can be operated and the indicator
+    // of the header shows beside the MIDI one.
+    let mut recording = sample::playing();
+    recording.engine.recorder = sample::four_decks().engine.recorder;
+    let recording = state("recording", recording, None);
+    // The last recording stopped by itself and lost frames: the time turns to the warning
+    // colour.
+    let mut recorder_failed = sample::playing();
+    recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
+    recorder_failed.engine.recorder.dropped_frames = 4_800;
+    let recorder_failed = state("recorder-failed", recorder_failed, None);
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -263,6 +274,8 @@ fn states() -> Vec<State> {
             Some(SettingsPage::Decks),
         ),
         other_preview,
+        recording,
+        recorder_failed,
         state(
             "preferences-controllers",
             sample::playing(),
@@ -1868,4 +1881,142 @@ fn the_mixer_effect_collapses_with_the_channel_in_external_mode() {
     assert_eq!(count("mixer.effect.set"), 0);
     assert_eq!(count("mixer.effect.select"), 0);
     assert_eq!(count("mixer.fx_assign.toggle"), 8);
+}
+
+/// Every text a frame paints, with the rectangle it covers.
+fn placed_texts(shapes: &[ClippedShape]) -> Vec<(String, Rect)> {
+    fn collect(shape: &Shape, out: &mut Vec<(String, Rect)>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
+            Shape::Text(text) if !text.galley.job.text.trim().is_empty() => {
+                out.push((text.galley.job.text.clone(), text.visual_bounding_rect()));
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in shapes {
+        collect(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// The colours of the texts a frame paints that read `wanted`.
+fn colours_of_text(shapes: &[ClippedShape], wanted: &str) -> Vec<Color32> {
+    fn collect(shape: &Shape, wanted: &str, out: &mut Vec<Color32>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, wanted, out)),
+            Shape::Text(text) if text.galley.job.text == wanted => out.extend(
+                text.galley
+                    .job
+                    .sections
+                    .iter()
+                    .map(|section| section.format.color),
+            ),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in shapes {
+        collect(&clipped.shape, wanted, &mut out);
+    }
+    out
+}
+
+/// The mix recorder in the middle of the effect row and its indicator in the header, in both
+/// layouts and languages: `docs/behavior/recording.md`, *Keys*, *Indicator* and *Problems*.
+#[test]
+fn the_mix_recorder_lights_rec_shows_its_time_and_cuts_only_while_recording() {
+    let tokens = platter_ui_egui::tokens::Tokens::load().unwrap();
+    let error = tokens.all_colors["status-error"];
+    let warn = tokens.all_colors["status-warn"];
+    for (name, recording) in [
+        ("main", false),
+        ("recorder-failed", false),
+        ("recording", true),
+        ("four-decks", true),
+    ] {
+        for language in Language::ALL {
+            let texts = Texts::load(language).unwrap();
+            let state = state_named(name);
+            let mut stage = Stage::with_texts(&state, texts.clone());
+            let (_, shapes) = stage.frame(Vec::new());
+            let controls = stage.controls();
+            let find = |command: &str| {
+                let found: Vec<&Control> = controls
+                    .iter()
+                    .filter(|control| control.command == command)
+                    .collect();
+                assert_eq!(found.len(), 1, "{name}, {language:?}: {command}");
+                found[0].clone()
+            };
+            let (rec, cut) = (find("recorder.toggle"), find("recorder.cut"));
+            assert!(rec.enabled, "{name}");
+            assert_eq!(cut.enabled, recording, "{name}");
+            // In the row of effects, right-aligned with 12 points of padding over the mixer.
+            assert!(rec.rect.top() >= 42.0 && rec.rect.bottom() <= 114.0);
+            assert_eq!((rec.rect.width(), rec.rect.height()), (48.0, 28.0));
+            assert_eq!((cut.rect.width(), cut.rect.height()), (39.0, 28.0));
+            assert_eq!(cut.rect.right(), DESIGN_WIDTH - 520.0 - 2.0 - 12.0);
+            let painted = placed_texts(&shapes);
+            for (control, key) in [(&rec, "recorder.rec"), (&cut, "recorder.cut")] {
+                let label = texts.get(key);
+                assert!(
+                    painted
+                        .iter()
+                        .any(|(text, rect)| text == label && control.rect.contains_rect(*rect)),
+                    "{name}, {language:?}: {label} does not fit its key"
+                );
+            }
+            let strip = filled(&shapes, error)
+                .into_iter()
+                .any(|rect| rec.rect.expand(1.0).contains_rect(rect));
+            assert_eq!(strip, recording, "{name}: the strip of Rec");
+            let time = if recording { "00:42:17" } else { "00:00:00" };
+            let times: Vec<Rect> = painted
+                .iter()
+                .filter(|(text, _)| text == time)
+                .map(|(_, rect)| *rect)
+                .collect();
+            // The panel, and the header while recording.
+            assert_eq!(times.len(), if recording { 2 } else { 1 }, "{name}");
+            for rect in times.iter().filter(|rect| rect.bottom() <= 40.0) {
+                for control in &controls {
+                    assert!(
+                        !control.rect.intersects(*rect),
+                        "{name}, {language:?}: {} covers the time of the indicator",
+                        control.command
+                    );
+                }
+            }
+            let indicator = painted.iter().any(|(text, rect)| {
+                rect.bottom() <= 40.0 && text == texts.get("recorder.indicator")
+            });
+            assert_eq!(indicator, recording, "{name}: the indicator of the header");
+            if name == "recorder-failed" {
+                assert_eq!(colours_of_text(&shapes, time), [warn]);
+            }
+        }
+    }
+}
+
+/// Rec and Cut send the commands of the recorder.
+#[test]
+fn rec_and_cut_send_the_commands_of_the_recorder() {
+    let state = state_named("recording");
+    for (command, expected) in [
+        ("recorder.toggle", Command::RecorderToggle),
+        ("recorder.cut", Command::RecorderCut),
+    ] {
+        let mut stage = Stage::new(&state);
+        let control = stage
+            .controls()
+            .into_iter()
+            .find(|control| control.command == command)
+            .unwrap();
+        assert_eq!(
+            stage.click(control.rect.center()),
+            [Action::Engine(expected)]
+        );
+    }
 }

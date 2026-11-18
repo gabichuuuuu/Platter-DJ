@@ -84,6 +84,9 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
   colour never stands alone, the count says the same. The label lights for 150 ms after each
   message any open controller sends, mapped or not, so a control that is moved can be seen
   to reach Platter. Without a controller in the settings the indicator is not drawn.
+- **Rec.** While the mix recorder records, a red dot, the label "Rec" and the time recorded
+  follow the MIDI indicator (`docs/behavior/recording.md`, *Indicator*). Without a recording
+  it is not drawn.
 - **Window size.** The layout is designed 1440 points wide. In a wider window, full screen
   included, the mixer keeps its width and the two columns of decks share the rest, so the
   decks reach the edges of the window; the waveform lanes and the file list take the whole
@@ -94,7 +97,7 @@ lanes, deck A with the mixer and deck B, and the file selector to the bottom of 
 
 ## Differences
 
-- No indicators for battery or recording; recording arrives in M4.
+- No indicator for the battery.
 - The documented application has two indicators for controllers, one for signals and one for
   connections. Platter draws one, with both: the count of open controllers and the light of
   the messages. A controller is counted as open when its input opened at start; one that is
@@ -220,8 +223,8 @@ The manual does not say how the window shares its room between two and four deck
   settings file under `[decks]` as `layout`; four to begin with. Restoring the defaults goes
   back to four.
 - **The effect row.** In both layouts, 72 points under the status header: unit 1 over the left
-  column of decks, an empty panel over the mixer, unit 2 over the right column
-  (`docs/behavior/effects.md`). The decks move down and the browser gives up its height.
+  column of decks, the mix recorder over the mixer, unit 2 over the right column
+  (`docs/behavior/effects.md`, `docs/behavior/recording.md`). The decks move down and the browser gives up its height.
 - **Two decks.** The waveform lanes, deck A, the mixer with two channels and deck B, in the
   size the deck size setting gives.
 - **Four decks.** `docs/design/DESIGN.md`, *Four-deck layout (M4)*: under the status header,
@@ -260,8 +263,8 @@ The manual does not say how the window shares its room between two and four deck
 - One layout for the four decks instead of a size per pair: the design system gives the decks
   of the four-deck layout one size.
 - The controls the design system draws for later functions are left out: the effect sends and
-  the effect knob of each channel, the limiter key, the mix recorder and the stem lanes. Their
-  place in the mixer stays empty.
+  the effect knob of each channel, the limiter key and the stem lanes. Their place in the
+  mixer stays empty.
 
 ### Edge cases
 

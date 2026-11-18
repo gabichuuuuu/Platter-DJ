@@ -17,7 +17,7 @@ title = "Interface"
 features = [
   { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the clock waits for the local time zone, see docs/behavior/interface.md" },
   { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test midi_indicator; no real MIDI controller tried yet, see ROADMAP.md" },
-  { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
+  { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; drawn only while recording, see docs/behavior/recording.md" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; two or four decks, chosen in the preferences, see docs/behavior/interface.md" },
   { id = "fullscreen", name = "Full screen", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the real window has not been looked at in full screen, see ROADMAP.md" },
   { id = "tooltips", name = "Tooltips", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tooltips; a disabled control shows no reason yet, see docs/behavior/interface.md" },
@@ -196,7 +196,7 @@ features = [
 id = "recording"
 title = "Recording and output"
 features = [
-  { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "planned" },
+  { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test recorder --test realtime_memory; cargo test -p platter-ui-egui --test panels; the level is the master meter, with no gain of its own, and the folder and the split are fixed, see docs/behavior/recording.md" },
   { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "planned" },
   { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "planned" },
   { id = "broadcasting", name = "Broadcasting to a server the user configures", milestone = "M5", status = "planned" },

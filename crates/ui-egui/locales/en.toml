@@ -810,3 +810,13 @@ reverse = "Reverse"
 resync = "Re-sync"
 bits = "Bits"
 smooth = "Smooth"
+
+[recorder]
+title = "Mix recorder"
+rec = "Rec"
+cut = "Cut"
+record_name = "Record the mix"
+stop_name = "Stop recording the mix"
+failed_name = "Record the mix. The last recording stopped: {reason}"
+cut_name = "Cut the recording into a new file"
+indicator = "Rec"
