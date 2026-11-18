@@ -47,6 +47,54 @@ pub fn select(
     spec: SelectSpec<'_>,
     make: impl Fn(usize) -> Action,
 ) {
+    drop_down(cx, rect, id, spec, make, Look::Field);
+}
+
+/// A drop-down with the small type of the keys, for the narrow selectors of the effect units
+/// (`EffectUnit` in `docs/design/DESIGN.md`).
+pub fn small_select(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: SelectSpec<'_>,
+    make: impl Fn(usize) -> Action,
+) {
+    drop_down(cx, rect, id, spec, make, Look::Small);
+}
+
+/// How a drop-down is drawn.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Look {
+    Field,
+    Small,
+    Label,
+}
+
+/// A drop-down drawn as a small label: its text alone, with a fill under the pointer, as the
+/// name of the mixer effect under its knob (`MixerEffect` in `docs/design/DESIGN.md`). Its
+/// list is wide enough for the options.
+pub fn label_select(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: SelectSpec<'_>,
+    make: impl Fn(usize) -> Action,
+) {
+    drop_down(cx, rect, id, spec, make, Look::Label);
+}
+
+/// The width of the list of a label drop-down.
+const LABEL_LIST_WIDTH: f32 = 120.0;
+
+fn drop_down(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: SelectSpec<'_>,
+    make: impl Fn(usize) -> Action,
+    look: Look,
+) {
+    let label = look == Look::Label;
     let SelectSpec {
         name,
         choices,
@@ -94,40 +142,56 @@ pub fn select(
     let tokens = &cx.theme.tokens;
     let color = &tokens.color;
     let painter = cx.painter();
-    let fill = if response.hovered() && enabled {
-        color.surface_hover
-    } else {
-        color.surface_control
-    };
-    let outline = if enabled {
-        color.line_control
-    } else {
-        color.line_key
-    };
-    painter.rect(
-        rect,
-        paint::radius(tokens.radius.md),
-        fill,
-        paint::hairline(cx.theme, outline),
-        StrokeKind::Inside,
-    );
     let ink = if enabled {
         color.text_primary
     } else {
         color.text_disabled
     };
-    let chevron = Rect::from_center_size(
-        egui::pos2(rect.right() - tokens.space.s3 - 7.0, rect.center().y),
-        egui::vec2(14.0, 14.0),
-    );
-    cx.theme
-        .icons
-        .paint(painter, Glyph::ChevronDown, chevron, ink);
-    let text_rect = Rect::from_min_max(
-        rect.min + egui::vec2(tokens.space.s3, 0.0),
-        egui::pos2(chevron.left() - tokens.space.s2, rect.bottom()),
-    );
-    paint::text_elided(painter, cx.theme, text_rect, shown, tokens.text.body, ink);
+    if label {
+        if response.hovered() && enabled {
+            painter.rect_filled(rect, paint::radius(tokens.radius.sm), color.surface_hover);
+        }
+        let ink = if enabled {
+            color.text_secondary
+        } else {
+            color.text_disabled
+        };
+        paint::text_elided(painter, cx.theme, rect, shown, tokens.text.label, ink);
+    } else {
+        let fill = if response.hovered() && enabled {
+            color.surface_hover
+        } else {
+            color.surface_control
+        };
+        let outline = if enabled {
+            color.line_control
+        } else {
+            color.line_key
+        };
+        painter.rect(
+            rect,
+            paint::radius(tokens.radius.md),
+            fill,
+            paint::hairline(cx.theme, outline),
+            StrokeKind::Inside,
+        );
+        let (padding, glyph, style) = match look {
+            Look::Small => (tokens.space.s2, 10.0, tokens.text.label),
+            _ => (tokens.space.s3, 14.0, tokens.text.body),
+        };
+        let chevron = Rect::from_center_size(
+            egui::pos2(rect.right() - padding - glyph / 2.0, rect.center().y),
+            egui::vec2(glyph, glyph),
+        );
+        cx.theme
+            .icons
+            .paint(painter, Glyph::ChevronDown, chevron, ink);
+        let text_rect = Rect::from_min_max(
+            rect.min + egui::vec2(padding, 0.0),
+            egui::pos2(chevron.left() - tokens.space.s1, rect.bottom()),
+        );
+        paint::text_elided(painter, cx.theme, text_rect, shown, style, ink);
+    }
     if focused {
         paint::focus_ring(painter, cx.theme, rect, tokens.radius.md);
     }
@@ -206,7 +270,14 @@ pub fn select(
     state.first = state.first.min(last_first);
     let list = Rect::from_min_size(
         rect.left_bottom() + egui::vec2(0.0, tokens.space.s1),
-        egui::vec2(rect.width(), ROW_HEIGHT * visible as f32),
+        egui::vec2(
+            if label {
+                rect.width().max(LABEL_LIST_WIDTH)
+            } else {
+                rect.width()
+            },
+            ROW_HEIGHT * visible as f32,
+        ),
     );
     let mut clicked_inside = false;
     Area::new(id.with("list"))

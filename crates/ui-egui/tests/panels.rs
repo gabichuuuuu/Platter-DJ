@@ -13,7 +13,7 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
-use platter_engine::{ClockMode, Command};
+use platter_engine::{ClockMode, Command, EffectKind, UnitMode};
 use platter_library::{NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
@@ -1747,4 +1747,83 @@ fn the_general_page_chooses_four_decks() {
             layout: DeckLayout::Four
         })]
     );
+}
+
+/// The effect row of the four-deck layout holds units 1 and 2, in group mode as the M4 screen
+/// draws them and in single mode; no control covers another, in either language.
+/// `docs/behavior/effects.md`.
+#[test]
+fn the_effect_row_shows_both_units_in_either_mode_without_overlaps() {
+    let group = state_named("four-decks");
+    let mut single = group.clone();
+    let unit = &mut single.scene.engine.effects.units[1];
+    unit.values.mode = UnitMode::Single;
+    unit.single = Some(EffectKind::Delay);
+    unit.values.single.controls = EffectKind::Delay.defaults();
+    let group_commands = [
+        "fx.unit.mode.set",
+        "fx.unit.dry_wet.set",
+        "fx.slot.effect.set",
+        "fx.slot.amount.set",
+        "fx.slot.toggle",
+    ];
+    let single_commands = [
+        "fx.single.effect.set",
+        "fx.single.knob.set",
+        "fx.single.key.toggle",
+        "fx.single.toggle",
+        "fx.unit.reset",
+    ];
+    for (state, commands) in [(group, &group_commands[..]), (single, &single_commands[..])] {
+        for language in Language::ALL {
+            let stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| control.rect.top() >= 42.0 && control.rect.bottom() <= 114.0)
+                .collect();
+            for command in commands {
+                assert!(
+                    controls.iter().any(|control| control.command == *command),
+                    "{language:?}: no {command} in the effect row"
+                );
+            }
+            for (index, first) in controls.iter().enumerate() {
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{language:?}: {} at {:?} overlaps {} at {:?}",
+                        first.command,
+                        first.rect,
+                        second.command,
+                        second.rect,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Each narrow channel sends its deck to units 1 and 2 and turns its mixer effect.
+#[test]
+fn each_channel_of_the_four_deck_mixer_has_its_effect_controls() {
+    let four = state_named("four-decks");
+    for command in [
+        "mixer.fx_assign.toggle",
+        "mixer.effect.set",
+        "mixer.effect.select",
+    ] {
+        let found = Stage::new(&four)
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count();
+        let expected = if command == "mixer.fx_assign.toggle" {
+            8
+        } else {
+            4
+        };
+        assert_eq!(found, expected, "{command}");
+    }
 }

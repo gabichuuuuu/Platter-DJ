@@ -8,8 +8,8 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, DeckSnapshot, Key, Mode, PreviewSnapshot, Snapshot, TrackAnalysis, TrackInfo,
-    Transposed, WaveformPeaks,
+    AnalysedTempo, DeckSnapshot, EffectKind, Key, Mode, PreviewSnapshot, Snapshot, TrackAnalysis,
+    TrackInfo, Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
@@ -640,6 +640,40 @@ pub fn four_decks() -> Scene {
     for deck in decks.iter_mut().take(3) {
         deck.autogain_db = Some(deck.controls.gain_db);
     }
+    // The effects of the M4 screen: delay on in unit 1, the gater on in unit 2, decks C and
+    // A through unit 1, deck B through unit 2, a mixer effect on each channel.
+    let effects = &mut scene.engine.effects;
+    let one = &mut effects.units[0];
+    one.slots = [
+        Some(EffectKind::Delay),
+        Some(EffectKind::Reverb),
+        Some(EffectKind::Filter),
+    ];
+    one.values.dry_wet = 0.6;
+    one.values.slots[0].on = true;
+    one.values.slots[0].amount = 0.4;
+    one.values.slots[1].amount = 0.3;
+    let two = &mut effects.units[1];
+    two.slots = [
+        Some(EffectKind::Flanger),
+        Some(EffectKind::Gater),
+        Some(EffectKind::Slicer),
+    ];
+    two.values.dry_wet = 0.45;
+    two.values.slots[1].on = true;
+    two.values.slots[1].amount = 0.7;
+    effects.assigned[DeckId::C.index()][0] = true;
+    effects.assigned[DeckId::A.index()][0] = true;
+    effects.assigned[DeckId::B.index()][1] = true;
+    for (mixer, effect) in effects.mixer.iter_mut().zip([
+        EffectKind::Reverb,
+        EffectKind::Delay,
+        EffectKind::Bitcrusher,
+        EffectKind::Gater,
+    ]) {
+        mixer.effect = effect;
+    }
+    effects.mixer[0].amount = 0.3;
     scene
 }
 

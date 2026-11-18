@@ -8,7 +8,9 @@
 use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Role, Sense, Vec2, WidgetInfo};
 use platter_core::DeckId;
 use platter_dsp::eq::band_gain;
-use platter_engine::{Band, Command, CrossfaderDirection, CrossfaderSide, FADER_UNITY, MixerMode};
+use platter_engine::{
+    Band, Command, CrossfaderDirection, CrossfaderSide, EffectKind, FADER_UNITY, FxUnit, MixerMode,
+};
 
 use crate::command::DeckLayout;
 use crate::command::{Action, AppCommand, MeterId};
@@ -20,6 +22,7 @@ use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::shell::ViewState;
 use crate::tokens::{TextStyle, Tokens};
+use crate::widgets::choice::{self, Choice, SelectSpec};
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec, scale_position};
 use crate::widgets::value::{
@@ -238,6 +241,8 @@ struct ChannelLayout {
     pre_listen: Rect,
     /// The key that restores the autogain value, beside the gain knob, when the channel has one.
     auto: Option<Rect>,
+    /// The mixer effect knob and the keys of effect units 1 and 2, when the channel has them.
+    effects: Option<ChannelEffects>,
     key: Vec2,
     eq: [Vec2; 3],
     /// Where each kill key sits from the top left corner of its knob.
@@ -265,6 +270,7 @@ impl ChannelLayout {
             knob,
             pre_listen: Rect::from_min_size(egui::pos2(108.0, 143.0), egui::vec2(54.0, 22.0)),
             auto: None,
+            effects: None,
             key: egui::vec2(24.0, 272.0),
             eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
             kill: egui::vec2(47.0, 19.0),
@@ -297,6 +303,10 @@ impl ChannelLayout {
                 egui::pos2(40.0, 37.0),
                 egui::vec2(31.0, 18.0),
             )),
+            effects: Some(ChannelEffects {
+                knob: egui::pos2(12.0, 277.0),
+                keys: egui::pos2(49.0, 280.0),
+            }),
             key: egui::vec2(8.0, 327.0),
             eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
             kill: egui::vec2(34.0, 14.0),
@@ -313,6 +323,122 @@ impl ChannelLayout {
     }
 }
 
+/// Where the effect controls of a narrow channel sit, from its top left corner.
+struct ChannelEffects {
+    /// The top left corner of the 30 point mixer effect knob; its name goes under it.
+    knob: Pos2,
+    /// The top left corner of the key of unit 1; the key of unit 2 is under it.
+    keys: Pos2,
+}
+
+const MIXER_EFFECT_KNOB: f32 = 30.0;
+const ASSIGN_KEY: Vec2 = egui::vec2(20.0, 18.0);
+
+/// The mixer effect knob with the name of its effect under it, which opens the list of the
+/// mixer effects, and the keys that send the channel to effect units 1 and 2.
+fn channel_effects(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelEffects,
+    deck: DeckId,
+    view: &View<'_>,
+) {
+    let texts = cx.texts;
+    let tokens = &cx.theme.tokens;
+    let letter = deck.letter().to_string();
+    let index = deck.index();
+    let mixer = view.engine.effects.mixer[index];
+    let effect = texts.get(crate::panels::effects::effect_key(Some(mixer.effect)));
+    let name = texts.format(
+        "effects.mixer_name",
+        &[("effect", effect), ("deck", &letter)],
+    );
+    let knob_rect = Rect::from_min_size(
+        origin + layout.knob.to_vec2(),
+        egui::vec2(MIXER_EFFECT_KNOB, MIXER_EFFECT_KNOB),
+    );
+    value::knob(
+        cx,
+        knob_rect,
+        id(("mixer-effect", index)),
+        KnobSpec {
+            value: ValueSpec {
+                name: &name,
+                position: mixer.amount,
+                default: 0.0,
+                steps: Steps::PERCENT,
+                enabled: true,
+            },
+            size: MIXER_EFFECT_KNOB,
+            centre_detent: false,
+            hide_arc: false,
+        },
+        |position| Command::MixerEffectSet { deck, position }.into(),
+    );
+    // The name of the effect, a key that looks like a label, opens the list.
+    let labels: Vec<&str> = EffectKind::MIXER
+        .iter()
+        .map(|kind| texts.get(crate::panels::effects::effect_key(Some(*kind))))
+        .collect();
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let select_name = texts.format("effects.mixer_select_name", &[("deck", &letter)]);
+    let label_rect = Rect::from_min_size(
+        egui::pos2(knob_rect.center().x - 20.0, knob_rect.bottom() + 1.0),
+        egui::vec2(40.0, 14.0),
+    );
+    choice::label_select(
+        cx,
+        label_rect,
+        id(("mixer-effect-select", index)),
+        SelectSpec {
+            name: &select_name,
+            choices: &choices,
+            current: EffectKind::MIXER
+                .iter()
+                .position(|kind| *kind == mixer.effect),
+            enabled: true,
+        },
+        |choice| {
+            let effect = EffectKind::MIXER
+                .get(choice)
+                .copied()
+                .unwrap_or(EffectKind::Reverb);
+            Command::MixerEffectSelect { deck, effect }.into()
+        },
+    );
+    for (row, unit) in FxUnit::ALL.into_iter().take(2).enumerate() {
+        let number = unit.number().to_string();
+        let name = texts.format(
+            "effects.assign_name",
+            &[("deck", &letter), ("unit", &number)],
+        );
+        let mut spec = KeySpec::text(&number);
+        spec.name = &name;
+        spec.text = Some(tokens.text.label);
+        spec.lit = view
+            .engine
+            .effects
+            .is_assigned(deck, unit)
+            .then_some(tokens.color.text_primary);
+        key::key(
+            cx,
+            Rect::from_min_size(
+                origin + layout.keys.to_vec2() + egui::vec2(0.0, 21.0 * row as f32),
+                ASSIGN_KEY,
+            ),
+            id(("mixer-fx-assign", index, row)),
+            spec,
+            Press::Click(Command::MixerFxAssignToggle { deck, unit }.into()),
+        );
+    }
+}
+
 fn channel(
     cx: &mut Cx<'_>,
     origin: Pos2,
@@ -320,6 +446,9 @@ fn channel(
     deck: DeckId,
     (view, state): (&View<'_>, &ViewState),
 ) {
+    if let Some(effects) = &layout.effects {
+        channel_effects(cx, origin, effects, deck, view);
+    }
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;

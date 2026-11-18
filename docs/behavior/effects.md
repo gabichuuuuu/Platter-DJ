@@ -87,9 +87,10 @@ or a unit is unassigned.
 
 ### Units and modes
 
-- Four units exist in the engine. The effect row shows units 1 and 2, in both layouts
-  (`docs/design/DESIGN.md`, *EffectUnit*). A preference of two or four units, on the Mixer
-  page, lets the header of each panel switch to unit 3 or 4.
+- Four units exist in the engine. The effect row of the four-deck layout shows units 1 and 2
+  (`docs/design/DESIGN.md`, *EffectUnit*). Not yet: the row in the two-deck layout, with the
+  assign keys of its mixer, and the preference of two or four units that lets the header of
+  each panel switch to unit 3 or 4.
 - Each unit is in `group` or `single` mode (`fx.unit.mode.set`). A unit starts in group mode
   with three empty slots.
 - Group mode: three slots, each with an effect (`fx.slot.effect.set`, or `none`), an amount
@@ -101,14 +102,17 @@ or a unit is unassigned.
   puts the three knobs and the two keys back to the defaults of the effect (`fx.unit.reset`).
 - Switching the mode keeps what each mode had, so switching back finds it again.
 - A newly selected effect starts from its defaults, or from its snapshot in that unit when
-  there is one (`fx.unit.snapshot.save`). Snapshots, modes, effects and values are kept in
-  the settings file.
+  there is one (`fx.unit.snapshot.save`, a command without a key yet: the context menu of the
+  unit title is still to come). Snapshots, modes, effects, values, routings, assignments and
+  the effect of each mixer effect knob are kept in the settings file, under `[effects]`;
+  the on keys and the mixer effect knobs are not, so Platter starts with every effect off.
 
 ### Assignment and routing
 
 - `mixer.fx_assign.toggle` (`deck`, `unit`) puts the channel through the unit, or takes it out.
   The assign keys 1 and 2 of each channel in the M4 screen are these keys.
 - Each unit has a routing (`fx.unit.routing.set`): `insert` (the default) or `post_fader`.
+  The routing has no control in the preferences yet; the command sets it.
 - Signal path of a channel: gain, equaliser, the units in insert routing it is assigned to,
   filter, fader, pan, the units in post-fader routing it is assigned to, meter. Then the
   crossfader. The manual places the insert just before the filter; in Platter's channel that
