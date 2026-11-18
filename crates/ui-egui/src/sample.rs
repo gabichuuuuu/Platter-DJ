@@ -8,8 +8,8 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, DeckSnapshot, EffectKind, Key, Mode, PreviewSnapshot, Snapshot, TrackAnalysis,
-    TrackInfo, Transposed, WaveformPeaks,
+    AnalysedTempo, DeckSnapshot, EffectControls, EffectKind, Key, Mode, PreviewSnapshot, Snapshot,
+    TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
@@ -536,6 +536,7 @@ pub fn playing() -> Scene {
         ..Snapshot::default()
     };
     engine.mixer.crossfader = 0.35;
+    m4_effects(&mut engine.effects);
     engine.mixer.master_gain_db = -2.0;
     engine.decks[1].controls.fader = 0.45;
     engine.decks[1].controls.pre_listen = true;
@@ -625,24 +626,9 @@ pub fn playing() -> Scene {
     }
 }
 
-/// The playing state in the four-deck layout: deck C plays under deck A, deck D is loaded and
-/// stopped under deck B.
-pub fn four_decks() -> Scene {
-    let mut scene = playing();
-    scene.settings.deck_layout = DeckLayout::Four;
-    let decks = &mut scene.engine.decks;
-    decks[2] = loaded_deck(2, 75.4, 1.0, [0.35, 0.33]);
-    decks[2].controls.fader = 0.8;
-    decks[3] = loaded_deck(3, 0.0, 1.0, [0.0, 0.0]);
-    decks[3].playing = false;
-    decks[3].controls.fader = 0.0;
-    // Decks A, B and C play at the gain autogain gives them; deck D waits for its analysis.
-    for deck in decks.iter_mut().take(3) {
-        deck.autogain_db = Some(deck.controls.gain_db);
-    }
-    // The effects of the M4 screen: delay on in unit 1, the gater on in unit 2, decks C and
-    // A through unit 1, deck B through unit 2, a mixer effect on each channel.
-    let effects = &mut scene.engine.effects;
+/// The effects of the M4 screen: delay on in unit 1, the gater on in unit 2, decks C and A
+/// through unit 1, deck B through unit 2, a mixer effect on each channel.
+fn m4_effects(effects: &mut EffectControls) {
     let one = &mut effects.units[0];
     one.slots = [
         Some(EffectKind::Delay),
@@ -674,6 +660,23 @@ pub fn four_decks() -> Scene {
         mixer.effect = effect;
     }
     effects.mixer[0].amount = 0.3;
+}
+
+/// The playing state in the four-deck layout: deck C plays under deck A, deck D is loaded and
+/// stopped under deck B.
+pub fn four_decks() -> Scene {
+    let mut scene = playing();
+    scene.settings.deck_layout = DeckLayout::Four;
+    let decks = &mut scene.engine.decks;
+    decks[2] = loaded_deck(2, 75.4, 1.0, [0.35, 0.33]);
+    decks[2].controls.fader = 0.8;
+    decks[3] = loaded_deck(3, 0.0, 1.0, [0.0, 0.0]);
+    decks[3].playing = false;
+    decks[3].controls.fader = 0.0;
+    // Decks A, B and C play at the gain autogain gives them; deck D waits for its analysis.
+    for deck in decks.iter_mut().take(3) {
+        deck.autogain_db = Some(deck.controls.gain_db);
+    }
     scene
 }
 

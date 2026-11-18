@@ -402,6 +402,12 @@ fn ids(actions: &[Action]) -> Vec<&'static str> {
 fn operate(stage: &mut Stage, control: &Control) -> Vec<Action> {
     let centre = control.rect.center();
     match control.kind {
+        // The list picks the row under the pointer, and a click on the row already selected
+        // changes nothing: the first row is the track of deck A, which is never the selection
+        // of the sample states.
+        ControlKind::Area if control.command == "browser.select" => {
+            stage.click(control.rect.left_top() + egui::vec2(control.rect.width() / 2.0, 6.0))
+        }
         ControlKind::Button | ControlKind::Area => stage.click(centre),
         ControlKind::Hold => {
             let mut actions = stage.pointer(centre, None);
@@ -1754,7 +1760,12 @@ fn the_general_page_chooses_four_decks() {
 /// `docs/behavior/effects.md`.
 #[test]
 fn the_effect_row_shows_both_units_in_either_mode_without_overlaps() {
-    let group = state_named("four-decks");
+    for layout in ["four-decks", "main"] {
+        effect_row_in(state_named(layout));
+    }
+}
+
+fn effect_row_in(group: State) {
     let mut single = group.clone();
     let unit = &mut single.scene.engine.effects.units[1];
     unit.values.mode = UnitMode::Single;
@@ -1826,6 +1837,16 @@ fn each_channel_of_the_four_deck_mixer_has_its_effect_controls() {
         };
         assert_eq!(found, expected, "{command}");
     }
+    // The two-deck mixer has the assign keys of decks A and B and no mixer effect knob.
+    let two = Stage::new(&state_named("main"));
+    let count = |command: &str| {
+        two.controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count("mixer.fx_assign.toggle"), 4);
+    assert_eq!(count("mixer.effect.set"), 0);
 }
 
 /// In external mixer mode the mixer effect knob and its name collapse with the channel, as

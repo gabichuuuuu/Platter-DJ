@@ -270,7 +270,13 @@ impl ChannelLayout {
             knob,
             pre_listen: Rect::from_min_size(egui::pos2(108.0, 143.0), egui::vec2(54.0, 22.0)),
             auto: None,
-            effects: None,
+            // The assign keys side by side, in the row of the crossfader assign keys. The
+            // channel has no room for the mixer effect knob.
+            effects: Some(ChannelEffects {
+                knob: None,
+                keys: egui::pos2(58.0, 294.0),
+                keys_step: egui::vec2(23.0, 0.0),
+            }),
             key: egui::vec2(24.0, 272.0),
             eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
             kill: egui::vec2(47.0, 19.0),
@@ -304,8 +310,9 @@ impl ChannelLayout {
                 egui::vec2(31.0, 18.0),
             )),
             effects: Some(ChannelEffects {
-                knob: egui::pos2(12.0, 277.0),
+                knob: Some(egui::pos2(12.0, 277.0)),
                 keys: egui::pos2(49.0, 280.0),
+                keys_step: egui::vec2(0.0, 21.0),
             }),
             key: egui::vec2(8.0, 327.0),
             eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
@@ -323,12 +330,14 @@ impl ChannelLayout {
     }
 }
 
-/// Where the effect controls of a narrow channel sit, from its top left corner.
+/// Where the effect controls of a channel sit, from its top left corner.
 struct ChannelEffects {
-    /// The top left corner of the 30 point mixer effect knob; its name goes under it.
-    knob: Pos2,
-    /// The top left corner of the key of unit 1; the key of unit 2 is under it.
+    /// The top left corner of the 30 point mixer effect knob, when the channel has one; its
+    /// name goes under it.
+    knob: Option<Pos2>,
+    /// The top left corner of the key of unit 1, and the step to the key of unit 2.
     keys: Pos2,
+    keys_step: Vec2,
 }
 
 const MIXER_EFFECT_KNOB: f32 = 30.0;
@@ -345,19 +354,16 @@ fn channel_effects(
     deck: DeckId,
     view: &View<'_>,
 ) {
-    if view.engine.mixer.mode == MixerMode::Internal {
-        mixer_effect(cx, origin, layout, deck, view);
+    if let Some(knob) = layout
+        .knob
+        .filter(|_| view.engine.mixer.mode == MixerMode::Internal)
+    {
+        mixer_effect(cx, origin + knob.to_vec2(), deck, view);
     }
     assign_keys(cx, origin, layout, deck, view);
 }
 
-fn mixer_effect(
-    cx: &mut Cx<'_>,
-    origin: Pos2,
-    layout: &ChannelEffects,
-    deck: DeckId,
-    view: &View<'_>,
-) {
+fn mixer_effect(cx: &mut Cx<'_>, at: Pos2, deck: DeckId, view: &View<'_>) {
     let texts = cx.texts;
     let letter = deck.letter().to_string();
     let index = deck.index();
@@ -367,10 +373,7 @@ fn mixer_effect(
         "effects.mixer_name",
         &[("effect", effect), ("deck", &letter)],
     );
-    let knob_rect = Rect::from_min_size(
-        origin + layout.knob.to_vec2(),
-        egui::vec2(MIXER_EFFECT_KNOB, MIXER_EFFECT_KNOB),
-    );
+    let knob_rect = Rect::from_min_size(at, egui::vec2(MIXER_EFFECT_KNOB, MIXER_EFFECT_KNOB));
     value::knob(
         cx,
         knob_rect,
@@ -456,7 +459,7 @@ fn assign_keys(
         key::key(
             cx,
             Rect::from_min_size(
-                origin + layout.keys.to_vec2() + egui::vec2(0.0, 21.0 * row as f32),
+                origin + layout.keys.to_vec2() + layout.keys_step * row as f32,
                 ASSIGN_KEY,
             ),
             id(("mixer-fx-assign", index, row)),

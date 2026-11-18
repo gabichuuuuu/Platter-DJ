@@ -219,8 +219,11 @@ The manual does not say how the window shares its room between two and four deck
   General page of the preferences, in the Layout section above the deck size, and kept in the
   settings file under `[decks]` as `layout`; four to begin with. Restoring the defaults goes
   back to four.
-- **Two decks.** The window is as before: the waveform lanes, deck A, the mixer with two
-  channels and deck B, in the size the deck size setting gives.
+- **The effect row.** In both layouts, 72 points under the status header: unit 1 over the left
+  column of decks, an empty panel over the mixer, unit 2 over the right column
+  (`docs/behavior/effects.md`). The decks move down and the browser gives up its height.
+- **Two decks.** The waveform lanes, deck A, the mixer with two channels and deck B, in the
+  size the deck size setting gives.
 - **Four decks.** `docs/design/DESIGN.md`, *Four-deck layout (M4)*: under the status header,
   the decks band of 580 points with deck A over deck C on the left, the mixer in the middle and
   deck B over deck D on the right, then the browser to the bottom of the window. There are no

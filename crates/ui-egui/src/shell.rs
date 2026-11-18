@@ -335,9 +335,7 @@ impl Shell {
                     DeckLayout::Four => deck::four_deck(&mut cx, rect, deck_id, view, &state),
                 }
             }
-            if let Some(row) = zones.effects {
-                effects::row(&mut cx, row, view);
-            }
+            effects::row(&mut cx, zones.effects, view);
             mixer::mixer(&mut cx, zones.mixer, view, &state);
             browser::browser(&mut cx, zones.browser, view, &mut state.browser);
             if cx.interactive {
@@ -548,9 +546,8 @@ struct Zones {
     notice: Option<Rect>,
     /// The waveform lanes, which only the two-deck layout has.
     lanes: Option<Rect>,
-    /// The effect row: unit 1, the panel over the mixer, unit 2. Only the four-deck layout
-    /// has it for now.
-    effects: Option<[Rect; 3]>,
+    /// The effect row: unit 1, the panel over the mixer, unit 2.
+    effects: [Rect; 3],
     /// The decks the window shows and where.
     decks: Vec<(DeckId, Rect)>,
     mixer: Rect,
@@ -572,8 +569,26 @@ impl Zones {
             top = rect.bottom() + seam;
             rect
         });
+        // The effect row, in both layouts: a unit over each column of decks, a panel over
+        // the mixer.
+        let column = deck_column(screen, seam);
+        let effects_band = |left: f32, right: f32| {
+            Rect::from_min_max(
+                egui::pos2(left, top),
+                egui::pos2(right, top + effects::ROW_HEIGHT),
+            )
+        };
+        let effects = [
+            effects_band(screen.left(), screen.left() + column),
+            effects_band(
+                screen.left() + column + seam,
+                screen.right() - column - seam,
+            ),
+            effects_band(screen.right() - column, screen.right()),
+        ];
+        top += effects::ROW_HEIGHT + seam;
         if view.settings.deck_layout == DeckLayout::Four {
-            return Self::four(screen, header, notice, top, seam);
+            return Self::four(screen, (header, notice, effects), top, seam);
         }
         let lanes = band(top, LANES_HEIGHT);
         top = lanes.bottom() + seam;
@@ -581,7 +596,6 @@ impl Zones {
             DeckSize::Full => DECKS_HEIGHT,
             DeckSize::Compact => COMPACT_DECKS_HEIGHT,
         };
-        let column = deck_column(screen, seam);
         let deck_a = Rect::from_min_size(
             egui::pos2(screen.left(), top),
             egui::vec2(column, decks_height),
@@ -603,7 +617,7 @@ impl Zones {
             header,
             notice,
             lanes: Some(lanes),
-            effects: None,
+            effects,
             decks: vec![(DeckId::A, deck_a), (DeckId::B, deck_b)],
             mixer,
             browser,
@@ -613,24 +627,13 @@ impl Zones {
     /// The four-deck layout: A over C on the left, the mixer, B over D on the right, and the
     /// browser under them. The mixer keeps its width; the two columns of decks share the rest
     /// of the window, and the browser takes the rest of its height.
-    fn four(screen: Rect, header: Rect, notice: Option<Rect>, top: f32, seam: f32) -> Self {
+    fn four(
+        screen: Rect,
+        (header, notice, effects): (Rect, Option<Rect>, [Rect; 3]),
+        top: f32,
+        seam: f32,
+    ) -> Self {
         let column = deck_column(screen, seam);
-        // The effect row: a unit over each column of decks, a panel over the mixer.
-        let band = |left: f32, right: f32| {
-            Rect::from_min_max(
-                egui::pos2(left, top),
-                egui::pos2(right, top + effects::ROW_HEIGHT),
-            )
-        };
-        let effects = [
-            band(screen.left(), screen.left() + column),
-            band(
-                screen.left() + column + seam,
-                screen.right() - column - seam,
-            ),
-            band(screen.right() - column, screen.right()),
-        ];
-        let top = top + effects::ROW_HEIGHT + seam;
         let deck_height = ((FOUR_DECKS_HEIGHT - seam) / 2.0).floor();
         let left = screen.left();
         let right = screen.right() - column;
@@ -649,7 +652,7 @@ impl Zones {
             header,
             notice,
             lanes: None,
-            effects: Some(effects),
+            effects,
             decks: vec![
                 (DeckId::A, place(left, 0.0)),
                 (DeckId::B, place(right, 0.0)),
@@ -748,6 +751,16 @@ mod tests {
             assert_eq!(zones.mixer.width(), MIXER_WIDTH, "{layout:?}");
             assert_eq!(zones.mixer.left(), a.right() + SEAM, "{layout:?}");
             assert_eq!(zones.browser.bottom(), 1080.0, "{layout:?}");
+            // The effect row follows the columns: a unit over each, the mixer width between.
+            let [left, middle, right] = zones.effects;
+            assert_eq!((left.left(), left.width()), (0.0, a.width()), "{layout:?}");
+            assert_eq!(middle.x_range(), zones.mixer.x_range(), "{layout:?}");
+            assert_eq!(
+                (right.right(), right.width()),
+                (1920.0, b.width()),
+                "{layout:?}"
+            );
+            assert!(left.bottom() < a.top(), "{layout:?}");
             if let Some(lanes) = zones.lanes {
                 assert_eq!(lanes.width(), 1920.0);
             }

@@ -87,10 +87,13 @@ or a unit is unassigned.
 
 ### Units and modes
 
-- Four units exist in the engine. The effect row of the four-deck layout shows units 1 and 2
-  (`docs/design/DESIGN.md`, *EffectUnit*). Not yet: the row in the two-deck layout, with the
-  assign keys of its mixer, and the preference of two or four units that lets the header of
-  each panel switch to unit 3 or 4.
+- Four units exist in the engine. The effect row, under the status header in both layouts,
+  shows units 1 and 2 (`docs/design/DESIGN.md`, *EffectUnit*). Not yet: the preference of two
+  or four units that lets the header of each panel switch to unit 3 or 4.
+- The two-deck mixer has the assign keys 1 and 2 of each channel, side by side in the row of
+  its crossfader assign keys, and no mixer effect knob: its channels have no room for one. The
+  mixer effect of decks A and B is turned in the four-deck layout, or by command. This
+  placement waits for the maintainer's review of its capture.
 - Each unit is in `group` or `single` mode (`fx.unit.mode.set`). A unit starts in group mode
   with three empty slots.
 - Group mode: three slots, each with an effect (`fx.slot.effect.set`, or `none`), an amount

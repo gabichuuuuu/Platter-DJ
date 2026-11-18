@@ -183,7 +183,7 @@ features = [
 id = "effects"
 title = "Effects"
 features = [
-  { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-engine --test effects; cargo test -p platter-ui-egui --test panels; the window shows units 1 and 2 in the four-deck layout only, see docs/behavior/effects.md" },
+  { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-engine --test effects; cargo test -p platter-ui-egui --test panels; the window shows units 1 and 2 in both layouts, see docs/behavior/effects.md" },
   { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-ui-egui --test panels; the snapshot is a command without a key yet, see docs/behavior/effects.md" },
   { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "planned" },
   { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test effects; insert and post fader, no send until the input routing of M5, set by command only, see docs/behavior/effects.md" },
