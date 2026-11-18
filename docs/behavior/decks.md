@@ -47,6 +47,9 @@ that only concerns decks C and D.
 - The snapshot holds the four decks, deck A first.
 - The window shows decks A and B. Decks C and D are driven through commands: the command line
   render script, MIDI mappings and, later, the four-deck layout.
+- The design system places the four channels of the mixer in the order C, A, B, D in the
+  four-deck layout (`docs/design/DESIGN.md`, *Four-deck layout (M4)*); the manual gives no
+  order. The engine keeps deck A first in every per-deck array: the order is the interface's.
 
 ## Differences
 
@@ -59,7 +62,8 @@ that only concerns decks C and D.
   above them. A routing with a pair per deck waits for the output routing of the four-deck
   layout.
 - The starting sides of the crossfader for decks C and D are Platter's choice, since the
-  manual gives none: each takes the side of the deck above it.
+  manual gives none: each takes the side of the deck above it. The maintainer confirmed it on
+  18 November 2026.
 
 ## Edge cases
 

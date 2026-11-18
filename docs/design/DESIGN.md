@@ -208,7 +208,8 @@ Top to bottom, separated by 2px seams of `bg-app`:
 2. Effect units, 72px (M4 only).
 3. Two scrolling waveform lanes, one per deck, playhead fixed at the centre, with the deck badge and zoom keys in a 32px gutter. In the
    four-deck layout the lanes move inside each deck.
-4. Deck A, mixer, deck B. Decks are 520px wide at 1440; the mixer takes the rest. Decks C and D sit under A and B in M4.
+4. Deck A, mixer, deck B. Decks are 520px wide at 1440; the mixer takes the rest. Decks C and D sit under A and B in M4
+   (*Four-deck layout (M4)* below).
 5. Browser: tree on the left (260px), list on the right, to the bottom of the window.
 
 When the window is wider than 1440 the browser list and the waveform lanes take the extra width; decks and mixer keep theirs. When it is
@@ -261,6 +262,39 @@ They follow the components below and the pattern of the nearest screen. Ask befo
 `M4-effects.html` covers effect units 1 and 2 in group mode, channel sends, the mixer effect knob per channel, the stems deck, four decks,
 the layout selector and the mix recorder. Not drawn: effect units 3 and 4, single mode, the loop recorder, smart playlists, the remaining
 layouts, and everything in M5 (remix decks, pattern sequencer, DVS, live input, broadcasting).
+
+### Four-deck layout (M4)
+
+Measured on `M4-effects.html` at 1440 × 900. Zones top to bottom, separated by 2px seams of `bg-app`:
+
+1. Status header, 40px, as in M3.
+2. Effect units row, 72px: FX 1 on the left (520px, over decks A and C), FX 2 on the right (520px, over decks B and D) and, in the
+   396px between them over the mixer, the layout selector (label `Layout`, a 150 × 28px choice, `Four decks` shown) and the mix
+   recorder (143px: Rec, elapsed time, Cut).
+3. Decks band, 580px: left column 520px with deck A on top and deck C below, the mixer 396px in the middle, right column 520px with
+   deck B on top and deck D below. Each deck is 289px tall.
+4. Browser, from the bottom of the decks band to the bottom of the window (202px at 900), as in M3.
+
+There are no parallel waveform lanes in this layout: each deck carries its own waveform.
+
+**Deck in the four-deck layout.** 10px padding. Header 40px: badge, cover, title with its type tag (`Track`, `Stems`), artist and
+album on one line, tempo with pitch offset and key, remaining time over total time. Body 221px: a 442px main column and the tempo
+column at the right (range, fader, pitch readout, nudge). The main column holds, top to bottom: the waveform with the stripe under it
+(88px; a stems deck shows its four stem lanes there instead), the SYNC, MASTER, phase and key row (24px), the transport and loop row
+(30px: play, CUE, CUP, Flux, reverse, loop size, In, Out, Active) and the eight hotcue pads (26px). No advanced panel and no beatjump
+row in this size.
+
+**Mixer in the four-deck layout.** Four channels of 75px on a 79px step, in the order C, A, B, D, then the master column (60px: master
+meter and level, limiter, phones mix and volume). Each channel keeps the M3 controls (gain with Auto, three bands with Kill, filter,
+key, pan, pre-listen, fader, L and R) and adds the M4 effect controls (sends 1 and 2, the mixer effect knob). The crossfader row
+(30px) spans the four channels under them, with the step keys and Auto at each end.
+
+**Still to decide before it is built:**
+
+- How the layout selector switches to and from the two-deck layout, and what each layout keeps (advanced panel, parallel lanes).
+- How tracks load into decks C and D: the browser draws only Load A and Load B.
+- The crossfader side decks C and D start on (the engine starts C on the left and D on the right).
+- Windows wider than 1440 and full screen: which zones take the extra width and height in this layout.
 
 ## Components
 
