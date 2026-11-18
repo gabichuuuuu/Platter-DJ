@@ -667,6 +667,8 @@ fn m4_effects(effects: &mut EffectControls) {
 pub fn four_decks() -> Scene {
     let mut scene = playing();
     scene.settings.deck_layout = DeckLayout::Four;
+    // The Limiter key lit, as the M4 screen draws it.
+    scene.engine.mixer.maximiser.on = true;
     let decks = &mut scene.engine.decks;
     decks[2] = loaded_deck(2, 75.4, 1.0, [0.35, 0.33]);
     decks[2].controls.fader = 0.8;

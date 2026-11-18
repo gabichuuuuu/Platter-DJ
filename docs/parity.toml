@@ -167,7 +167,7 @@ title = "Master"
 features = [
   { id = "volume-limiter-engine", name = "Main volume and safety limiter in the engine", milestone = "M1", status = "done", evidence = "cargo test -p platter-engine --test mixer" },
   { id = "volume-limiter-ui", name = "Main volume, limiter and master meter in the mixer", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test mixer main_volume; cargo test -p platter-ui-egui --test panels" },
-  { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "planned" },
+  { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --lib maximiser; cargo test -p platter-engine --test maximiser; cargo test -p platter-ui-egui --test panels limiter; set by command and kept in the settings file, no preferences controls yet, see docs/behavior/master.md" },
 ]
 
 [[area]]

@@ -830,6 +830,8 @@ fn channel(
 struct MasterLayout {
     meter: Rect,
     level: Vec2,
+    /// The Limiter key, the middle of its top edge, where the design system draws one.
+    limiter: Option<Vec2>,
     /// The line between the level and the headphones, its top.
     divider: f32,
     phones: f32,
@@ -845,6 +847,7 @@ impl MasterLayout {
     const TWO: Self = Self {
         meter: Rect::from_min_max(egui::pos2(361.0, 38.0), egui::pos2(373.0, 156.0)),
         level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0, 162.0),
+        limiter: None,
         divider: 221.0,
         phones: 230.0,
         mix: egui::vec2(330.0, 250.0),
@@ -857,6 +860,8 @@ impl MasterLayout {
     const FOUR: Self = Self {
         meter: Rect::from_min_max(egui::pos2(362.0, 32.0), egui::pos2(374.0, 142.0)),
         level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0 + 2.0, 150.0),
+        // 8 points under the name of the level knob, which ends at 201.
+        limiter: Some(egui::vec2(MASTER_CENTRE + 2.0, 209.0)),
         divider: 245.0,
         phones: 256.0,
         mix: egui::vec2(340.0, 278.0),
@@ -958,6 +963,33 @@ fn master(
             .into()
         },
     );
+
+    if let Some(top) = layout.limiter {
+        // Lit while the maximiser is in the path: `docs/behavior/master.md`.
+        let label = texts.get("mixer.limiter");
+        let text = paint::text_width(cx.painter(), theme, label, tokens.text.label);
+        let width = (text + 2.0 * (tokens.space.s2 + 1.0)).ceil().max(28.0);
+        let rect = Rect::from_min_size(
+            panel.min + top - egui::vec2(width / 2.0, 0.0),
+            egui::vec2(width, 18.0),
+        );
+        let spec = KeySpec {
+            face: Face::Text(label),
+            name: label,
+            lit: mixer.maximiser.on.then_some(color.text_primary),
+            held: None,
+            enabled: true,
+            keeps_led: false,
+            text: Some(tokens.text.label),
+        };
+        key::key(
+            cx,
+            rect,
+            id("mixer-limiter"),
+            spec,
+            Press::Click(Command::MasterLimiterToggle.into()),
+        );
+    }
 
     let painter = cx.painter();
     painter.hline(
