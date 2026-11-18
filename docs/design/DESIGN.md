@@ -286,7 +286,7 @@ column at the right (range, fader, pitch readout, nudge). The main column holds,
 (30px: play, CUE, CUP, Flux, reverse, loop size, In, Out, Active) and the eight hotcue pads (26px). No advanced panel and no beatjump
 row in this size.
 
-**Mixer in the four-deck layout.** Four channels of 75px on a 79px step, in the order C, A, B, D, then the master column (60px: master
+**Mixer in the four-deck layout.** Four channels of 75px on a 79px step, in the order A, B, C, D, then the master column (60px: master
 meter and level, limiter, phones mix and volume). Each channel keeps the M3 controls (gain with Auto, three bands with Kill, filter,
 key, pan, pre-listen, fader, L and R) and adds the M4 effect controls (sends 1 and 2, the mixer effect knob). The crossfader row
 (30px) spans the four channels under them, with the step keys and Auto at each end.
@@ -294,7 +294,8 @@ key, pan, pre-listen, fader, L and R) and adds the M4 effect controls (sends 1 a
 **Decided on 18 November 2026:**
 
 - The layout is chosen in Preferences, General page, Layout section: `Decks`, a segmented choice of `Two` and `Four`, above the deck
-  size. It is kept in the settings file. The two-deck layout keeps the advanced panel and the parallel lanes; the four-deck layout
+  size. It is kept in the settings file. Four is the default (decided later the same day, with the channel order A, B, C, D in
+  place of the C, A, B, D the screen draws). The two-deck layout keeps the advanced panel and the parallel lanes; the four-deck layout
   has neither.
 - Loading: in the four-deck layout the browser draws Load A, Load B, Load C and Load D, left to right; dragging a track onto any of
   the four decks also loads it.

@@ -48,9 +48,9 @@ that only concerns decks C and D.
 - The window shows decks A and B, or the four decks in the four-deck layout chosen in the
   preferences (`docs/behavior/interface.md`, *Deck layout*). With two decks shown, decks C and
   D are driven through commands: the command line render script and MIDI mappings.
-- The design system places the four channels of the mixer in the order C, A, B, D in the
-  four-deck layout (`docs/design/DESIGN.md`, *Four-deck layout (M4)*); the manual gives no
-  order. The engine keeps deck A first in every per-deck array: the order is the interface's.
+- The four channels of the mixer go in the order A, B, C, D in the four-deck layout, as the
+  maintainer decided on 18 November 2026 (`docs/design/DESIGN.md`, *Four-deck layout (M4)*);
+  the manual gives no order. The engine keeps deck A first in every per-deck array: the order is the interface's.
 
 ## Differences
 

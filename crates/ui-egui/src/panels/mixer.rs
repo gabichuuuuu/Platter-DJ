@@ -1070,7 +1070,7 @@ struct CrossfaderRow {
 
 /// The channels of the four-deck layout, left to right: `docs/design/DESIGN.md`, *Four-deck
 /// layout (M4)*.
-const FOUR_ORDER: [DeckId; DeckId::COUNT] = [DeckId::C, DeckId::A, DeckId::B, DeckId::D];
+const FOUR_ORDER: [DeckId; DeckId::COUNT] = DeckId::ALL;
 /// Distance between the left edges of two channels of the four-deck layout.
 const FOUR_STEP: f32 = 79.0;
 const FOUR_PADDING: f32 = 10.0;

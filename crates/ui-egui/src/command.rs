@@ -753,9 +753,9 @@ impl DeckSize {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DeckLayout {
     /// Decks A and B, with the waveform lanes above them.
-    #[default]
     Two,
     /// Decks A to D, C under A and D under B, each with its own waveform.
+    #[default]
     Four,
 }
 

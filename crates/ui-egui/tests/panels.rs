@@ -1665,7 +1665,7 @@ fn rect_of(found: &[(DeckId, Rect)], deck: DeckId) -> Rect {
 }
 
 /// `docs/behavior/interface.md`, *Deck layout*: A over C on the left, B over D on the right,
-/// the channels in the order C, A, B, D, and a load key per deck.
+/// the channels in the order A, B, C, D, and a load key per deck.
 #[test]
 fn the_four_deck_layout_puts_c_under_a_and_d_under_b() {
     let four = state_named("four-decks");
@@ -1681,7 +1681,7 @@ fn the_four_deck_layout_puts_c_under_a_and_d_under_b() {
     let mut faders = decks_of(&four, "mixer.fader.set");
     faders.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));
     let order: Vec<DeckId> = faders.iter().map(|(deck, _)| *deck).collect();
-    assert_eq!(order, [DeckId::C, DeckId::A, DeckId::B, DeckId::D]);
+    assert_eq!(order, DeckId::ALL);
 
     let mut loads = decks_of(&four, "browser.load_selected");
     loads.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));

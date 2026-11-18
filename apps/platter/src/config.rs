@@ -156,7 +156,7 @@ impl Default for Settings {
             fullscreen_at_start: false,
             tempo_range: 8,
             deck_size: DeckSize::Full,
-            deck_layout: DeckLayout::Two,
+            deck_layout: DeckLayout::Four,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
             key_notation: KeyNotation::default(),
@@ -695,7 +695,7 @@ min_playtime = {written}
         );
         assert_eq!(Settings::default().columns, ListColumn::SHOWN_AT_FIRST);
         let unknown = Settings::parse("[decks]\nlayout = \"six\"\n");
-        assert_eq!(unknown.deck_layout, DeckLayout::Two);
+        assert_eq!(unknown.deck_layout, DeckLayout::Four);
         let unknown = Settings::parse("[decks]\ntempo_range = 10\n");
         assert_eq!(unknown.tempo_range, 8);
         let written = Settings::parse("[decks]\nbpm_min = 85\nbpm_max = 175\n");

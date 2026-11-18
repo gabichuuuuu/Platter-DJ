@@ -217,8 +217,8 @@ The manual does not say how the window shares its room between two and four deck
 
 - **The setting.** Two decks or four (`app.deck_layout.set`, `two` or `four`), chosen on the
   General page of the preferences, in the Layout section above the deck size, and kept in the
-  settings file under `[decks]` as `layout`; two to begin with. Restoring the defaults goes
-  back to two.
+  settings file under `[decks]` as `layout`; four to begin with. Restoring the defaults goes
+  back to four.
 - **Two decks.** The window is as before: the waveform lanes, deck A, the mixer with two
   channels and deck B, in the size the deck size setting gives.
 - **Four decks.** `docs/design/DESIGN.md`, *Four-deck layout (M4)*: under the status header,
@@ -233,7 +233,7 @@ The manual does not say how the window shares its room between two and four deck
   right, with its range, fader, reading and the two bend keys side by side. There is no advanced panel and no beatjump row in this size,
   and the deck size setting does not apply to it. The zoom of the waveform is the one of the
   deck, kept from the two-deck layout.
-- **The mixer of the four-deck layout.** Four narrow channels in the order C, A, B, D, each
+- **The mixer of the four-deck layout.** Four narrow channels in the order A, B, C, D, each
   with gain and its Auto key (`mixer.gain.restore`, lit while the gain is the autogain value
   of the track, disabled until the analysis has found it), the three bands with their kill
   keys, its meter, the filter, key and pan, pre-listen, the fader and the assign keys; the
