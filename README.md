@@ -132,6 +132,10 @@ Everything known to be missing, unfinished or not yet listened to.
   ones, and it has not run on a device with four outputs feeding a hardware mixer
   (`docs/behavior/external-mixer.md`).
 - Nobody has listened to flux or reverse yet (`docs/behavior/flux.md`).
+- The maximiser of the master is switched by the Limiter key, which only the four-deck mixer
+  draws, and set by commands and the settings file: it has no controls in the preferences and
+  no gain reduction meter. Its ceiling is on sample peaks, and nobody has listened to it
+  (`docs/behavior/master.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
   header and the cover each track carries, with a colour tag and a rating the menu of a track
   sets, a dialog that edits title, artist, album, genre, comment and rating of one track or

@@ -389,6 +389,21 @@ pub enum Command {
     MasterTestTone {
         output: Output,
     },
+    /// The Limiter key: switches the maximiser of the master in or out
+    /// (`docs/behavior/master.md`).
+    MasterLimiterToggle,
+    /// Gain before the maximiser, `0.0..=12.0` dB.
+    MasterMaximiserDriveSet {
+        db: f64,
+    },
+    /// Highest sample peak the maximiser lets out, `-12.0..=0.0` dB of full scale.
+    MasterMaximiserCeilingSet {
+        db: f64,
+    },
+    /// Time the maximiser takes to recover 90 % of its gain reduction, `10.0..=1000.0` ms.
+    MasterMaximiserReleaseSet {
+        ms: f64,
+    },
     DeckSyncToggle {
         deck: DeckId,
     },
@@ -507,6 +522,12 @@ pub const MAX_CHANNEL_GAIN_DB: f64 = 12.0;
 pub const MAX_MASTER_GAIN_DB: f64 = 12.0;
 pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
 const MIN_GAIN_DB: f64 = -90.0;
+/// The ranges of the maximiser: `docs/behavior/master.md`.
+pub const MAX_DRIVE_DB: f64 = 12.0;
+pub const MIN_CEILING_DB: f64 = -12.0;
+pub const MAX_CEILING_DB: f64 = 0.0;
+pub const MIN_RELEASE_MS: f64 = 10.0;
+pub const MAX_RELEASE_MS: f64 = 1_000.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
@@ -1269,6 +1290,26 @@ pub const SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "master.limiter.toggle",
+        label: "Limiter",
+        params: &[],
+    },
+    CommandSpec {
+        id: "master.maximiser.drive.set",
+        label: "Set maximiser drive",
+        params: &[number("db", 0.0, MAX_DRIVE_DB)],
+    },
+    CommandSpec {
+        id: "master.maximiser.ceiling.set",
+        label: "Set maximiser ceiling",
+        params: &[number("db", MIN_CEILING_DB, MAX_CEILING_DB)],
+    },
+    CommandSpec {
+        id: "master.maximiser.release.set",
+        label: "Set maximiser release",
+        params: &[number("ms", MIN_RELEASE_MS, MAX_RELEASE_MS)],
+    },
+    CommandSpec {
         id: "deck.sync.toggle",
         label: "Sync",
         params: &[DECK],
@@ -1894,6 +1935,16 @@ impl Command {
             "mixer.cue.volume.set" => Self::MixerCueVolumeSet {
                 db: read.number("db")?,
             },
+            "master.limiter.toggle" => Self::MasterLimiterToggle,
+            "master.maximiser.drive.set" => Self::MasterMaximiserDriveSet {
+                db: read.number("db")?,
+            },
+            "master.maximiser.ceiling.set" => Self::MasterMaximiserCeilingSet {
+                db: read.number("db")?,
+            },
+            "master.maximiser.release.set" => Self::MasterMaximiserReleaseSet {
+                ms: read.number("ms")?,
+            },
             "master.test_tone.play" => Self::MasterTestTone {
                 output: read.output()?,
             },
@@ -2089,6 +2140,10 @@ impl Command {
             Self::MixerEffectSet { .. } => "mixer.effect.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
+            Self::MasterLimiterToggle => "master.limiter.toggle",
+            Self::MasterMaximiserDriveSet { .. } => "master.maximiser.drive.set",
+            Self::MasterMaximiserCeilingSet { .. } => "master.maximiser.ceiling.set",
+            Self::MasterMaximiserReleaseSet { .. } => "master.maximiser.release.set",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
             Self::DeckBeatTickToggle { .. } => "deck.tick.toggle",

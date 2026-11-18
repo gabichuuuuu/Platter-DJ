@@ -24,10 +24,11 @@ use platter_dsp::filter::FilterModel;
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
-    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
-    MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS,
-    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize,
-    SizeStep, SyncMode,
+    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CEILING_DB,
+    MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT,
+    MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_RELEASE_MS, MAX_SEEK_SECONDS,
+    MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep,
+    SyncMode,
 };
 use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
@@ -163,6 +164,8 @@ pub struct MixerControls {
     /// Beats of the master clock an automatic fade across the whole travel takes.
     pub fade_beats: f64,
     pub master_gain_db: f64,
+    /// The maximiser of the master, which the Limiter key switches.
+    pub maximiser: MaximiserControls,
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
     pub headphone_gain_db: f64,
@@ -188,12 +191,49 @@ impl Default for MixerControls {
             crossfader_sides: CROSSFADER_SIDES,
             fade_beats: 8.0,
             master_gain_db: 0.0,
+            maximiser: MaximiserControls::default(),
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
             autogain: true,
             mode: MixerMode::Internal,
             external_eq_gain: false,
             external_master_volume: false,
+        }
+    }
+}
+
+/// The maximiser of the master: `docs/behavior/master.md`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MaximiserControls {
+    /// The Limiter key is lit: the master goes through the maximiser.
+    pub on: bool,
+    /// Gain before limiting, in decibels.
+    pub drive_db: f64,
+    /// Highest sample peak of the master, in decibels of full scale.
+    pub ceiling_db: f64,
+    /// Time to recover 90 % of a gain reduction, in milliseconds.
+    pub release_ms: f64,
+}
+
+impl Default for MaximiserControls {
+    fn default() -> Self {
+        Self {
+            on: false,
+            drive_db: 0.0,
+            ceiling_db: -1.0,
+            release_ms: 100.0,
+        }
+    }
+}
+
+impl MaximiserControls {
+    fn command(&self) -> RtCommand {
+        let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
+        RtCommand::Maximiser {
+            on: self.on,
+            drive: linear(self.drive_db),
+            ceiling: linear(self.ceiling_db),
+            release_seconds: (self.release_ms / 1_000.0) as f32,
         }
     }
 }
@@ -327,6 +367,8 @@ pub struct Snapshot {
     pub master_levels: [f32; 2],
     /// Gain the safety limiter is applying; below one while it works.
     pub limiter_gain: f32,
+    /// Gain the maximiser is applying; one while it is off or idle.
+    pub maximiser_gain: f32,
 }
 
 #[derive(Default)]
@@ -1030,6 +1072,31 @@ impl Engine {
                 self.mixer.master_gain_db = db.max(Gain::MIN_DB);
             }
             Command::MasterTestTone { output } => self.send(RtCommand::TestTone { output })?,
+            Command::MasterLimiterToggle => self.set_maximiser(MaximiserControls {
+                on: !self.mixer.maximiser.on,
+                ..self.mixer.maximiser
+            })?,
+            Command::MasterMaximiserDriveSet { db } => {
+                let drive_db = ValueError::check("db", db, 0.0, MAX_DRIVE_DB)?;
+                self.set_maximiser(MaximiserControls {
+                    drive_db,
+                    ..self.mixer.maximiser
+                })?;
+            }
+            Command::MasterMaximiserCeilingSet { db } => {
+                let ceiling_db = ValueError::check("db", db, MIN_CEILING_DB, MAX_CEILING_DB)?;
+                self.set_maximiser(MaximiserControls {
+                    ceiling_db,
+                    ..self.mixer.maximiser
+                })?;
+            }
+            Command::MasterMaximiserReleaseSet { ms } => {
+                let release_ms = ValueError::check("ms", ms, MIN_RELEASE_MS, MAX_RELEASE_MS)?;
+                self.set_maximiser(MaximiserControls {
+                    release_ms,
+                    ..self.mixer.maximiser
+                })?;
+            }
             Command::MixerAutogainToggle => {
                 let on = !self.mixer.autogain;
                 self.mixer.autogain = on;
@@ -1066,6 +1133,12 @@ impl Engine {
     fn set_external(&mut self, mixer: MixerControls) -> Result<(), EngineError> {
         self.send(mixer.external())?;
         self.mixer = mixer;
+        Ok(())
+    }
+
+    fn set_maximiser(&mut self, maximiser: MaximiserControls) -> Result<(), EngineError> {
+        self.send(maximiser.command())?;
+        self.mixer.maximiser = maximiser;
         Ok(())
     }
 
@@ -1689,6 +1762,7 @@ impl Engine {
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
+            maximiser_gain: shared.maximiser_gain.get(),
             load_marker: self.load_marker,
             preview: PreviewSnapshot {
                 track: self.preview.track.clone(),
@@ -1783,6 +1857,7 @@ impl MixerControls {
             RtCommand::HeadphoneGain {
                 linear: linear(self.headphone_gain_db),
             },
+            self.maximiser.command(),
             self.external(),
         ];
         assigns.into_iter().chain(rest)

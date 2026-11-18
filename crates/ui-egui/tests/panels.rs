@@ -624,7 +624,7 @@ fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
                 .controls()
                 .into_iter()
                 .filter(|control| {
-                    control.command.starts_with("mixer.") || control.command == "master.gain.set"
+                    control.command.starts_with("mixer.") || control.command.starts_with("master.")
                 })
                 .collect();
             assert!(
@@ -1427,6 +1427,7 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "mixer.crossfader.curve.set",
         "master.gain.set",
         "master.test_tone.play",
+        "master.limiter.toggle",
     ] {
         assert!(
             emitted.contains(command),
@@ -1841,6 +1842,45 @@ fn effect_row_in(group: State) {
             }
         }
     }
+}
+
+/// The master column of the four-deck mixer has the Limiter key under the level knob and
+/// above the headphones, as `docs/design/screens/M4-effects.html` draws it; the two-deck
+/// mixer has none (`docs/behavior/master.md`, *Differences*).
+#[test]
+fn the_four_deck_master_column_has_the_limiter_key() {
+    for language in Language::ALL {
+        let four = state_named("four-decks");
+        let mut stage = Stage::with_texts(&four, Texts::load(language).unwrap());
+        stage.frame(Vec::new());
+        let controls = stage.controls();
+        let find = |command: &str| {
+            let found: Vec<&Control> = controls
+                .iter()
+                .filter(|control| control.command == command)
+                .collect();
+            assert_eq!(found.len(), 1, "{language:?}: {command}");
+            found[0].rect
+        };
+        let key = find("master.limiter.toggle");
+        let level = find("master.gain.set");
+        let mix = find("mixer.cue.mix.set");
+        assert!(
+            key.top() > level.bottom() && key.bottom() < mix.top(),
+            "{key:?}"
+        );
+        assert!((key.center().x - level.center().x).abs() < 0.5, "{key:?}");
+        assert_eq!(key.height(), 18.0);
+        // Inside the master column, right of its divider.
+        let column = Rect::from_x_y_ranges(522.0 + 324.0..=918.0, 0.0..=DESIGN_HEIGHT);
+        assert!(column.contains_rect(key), "{language:?}: {key:?}");
+    }
+    let two = Stage::new(&state_named("main"));
+    assert!(
+        two.controls()
+            .iter()
+            .all(|control| control.command != "master.limiter.toggle")
+    );
 }
 
 /// Each narrow channel sends its deck to units 1 and 2 and turns its mixer effect.

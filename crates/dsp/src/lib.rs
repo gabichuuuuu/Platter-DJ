@@ -12,6 +12,7 @@ pub mod eq;
 pub mod filter;
 pub mod interpolate;
 pub mod limiter;
+pub mod maximiser;
 pub mod meter;
 pub mod smooth;
 pub mod stretch;

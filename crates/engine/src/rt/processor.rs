@@ -7,6 +7,7 @@ use platter_core::{DeckId, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::limiter::Limiter;
+use platter_dsp::maximiser::{Aligner, Maximiser};
 use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
 use rtrb::{Consumer, Producer};
@@ -54,6 +55,10 @@ pub struct Processor {
     /// The length of one frame in minutes.
     frame_minutes: f64,
     master_gain: Smoothed,
+    /// Before the safety limiter, while the Limiter key is lit: `docs/behavior/master.md`.
+    maximiser: Maximiser,
+    /// Keeps what the headphones take beside the master in time with it.
+    aligner: Aligner,
     limiter: Limiter,
     master_meter: PeakMeter,
     headphone_mix: Smoothed,
@@ -101,6 +106,9 @@ impl Processor {
             fade: None,
             frame_minutes: 1.0 / (rate.as_f64() * 60.0),
             master_gain: parameter(1.0),
+            // Off; every command to it carries all of its settings.
+            maximiser: Maximiser::new(rate, PARAMETER_RAMP_MS, 1.0, 0.1),
+            aligner: Aligner::new(rate),
             limiter: Limiter::new(rate),
             master_meter: PeakMeter::new(rate),
             headphone_mix: parameter(0.0),
@@ -291,6 +299,17 @@ impl Processor {
                 self.retarget_crossfader();
             }
             RtCommand::MasterGain { linear } => self.master_gain.set(linear),
+            RtCommand::Maximiser {
+                on,
+                drive,
+                ceiling,
+                release_seconds,
+            } => {
+                self.maximiser.set_on(on);
+                self.maximiser.set_drive(drive);
+                self.maximiser.set_ceiling(ceiling);
+                self.maximiser.set_release(release_seconds);
+            }
             RtCommand::HeadphoneMix { position } => self.headphone_mix.set(position),
             RtCommand::HeadphoneGain { linear } => self.headphone_gain.set(linear),
             RtCommand::TestTone { output } => self.tone.play(output),
@@ -405,14 +424,27 @@ impl Processor {
             });
         }
         let tone = self.tone.next(Output::Master);
+        // The test tone comes after the maximiser, so its drive does not change its level.
+        let maximised = self.maximiser.process([mix[0] * gain, mix[1] * gain]);
         let master = self
             .limiter
-            .process([mix[0] * gain + tone, mix[1] * gain + tone]);
+            .process([maximised[0] + tone, maximised[1] + tone]);
         // The preview plays on, heard or not, so its position moves as it would.
         let preview = self.preview.next();
+        // The pre-listened decks and the ticks wait as long as the master does, so a deck
+        // heard in both does not comb in the headphones. The aligner runs every frame, so it
+        // holds nothing stale when the headphones come back.
+        let clicks = if two_pairs {
+            click + ticks.iter().sum::<f32>()
+        } else {
+            0.0
+        };
+        let [left, right, clicks] = self.aligner.process(
+            [pre_listened[0], pre_listened[1], clicks],
+            self.maximiser.weight(),
+        );
         let headphones = if two_pairs {
-            let clicks = click + ticks.iter().sum::<f32>();
-            self.headphones(pre_listened, master, clicks, preview)
+            self.headphones([left, right], master, clicks, preview)
         } else {
             [0.0; 2]
         };
@@ -535,6 +567,7 @@ impl Processor {
             self.limiter.gain()
         };
         self.shared.limiter_gain.set(limiter);
+        self.shared.maximiser_gain.set(self.maximiser.gain());
     }
 }
 

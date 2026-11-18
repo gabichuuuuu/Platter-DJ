@@ -267,6 +267,14 @@ pub enum RtCommand {
     MasterGain {
         linear: f32,
     },
+    /// The maximiser of the master: switched in or out, its drive and ceiling, linear, and
+    /// its release.
+    Maximiser {
+        on: bool,
+        drive: f32,
+        ceiling: f32,
+        release_seconds: f32,
+    },
     /// Sends each deck to its own outputs instead of mixing them, and which controls of the
     /// mixer still act then.
     ExternalMixer {

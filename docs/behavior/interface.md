@@ -240,7 +240,9 @@ The manual does not say how the window shares its room between two and four deck
   with gain and its Auto key (`mixer.gain.restore`, lit while the gain is the autogain value
   of the track, disabled until the analysis has found it), the three bands with their kill
   keys, its meter, the filter, key and pan, pre-listen, the fader and the assign keys; the
-  master column with its meter, level and, one under the other, the headphone mix and volume;
+  master column with its meter, level, the Limiter key (`master.limiter.toggle`, lit while the
+  maximiser is in the path: `docs/behavior/master.md`) and, one under the other, the headphone
+  mix and volume;
   the crossfader row under the four channels, its ends marked L and R.
 - **Loading.** The browser shows Load A, Load B, Load C and Load D, left to right; a file
   dragged onto any of the four decks loads into it, and a file dropped from outside away from
@@ -259,7 +261,7 @@ The manual does not say how the window shares its room between two and four deck
 - One layout for the four decks instead of a size per pair: the design system gives the decks
   of the four-deck layout one size.
 - The controls the design system draws for later functions are left out: the effect sends and
-  the effect knob of each channel, the limiter key, the mix recorder and the stem lanes. Their
+  the effect knob of each channel, the mix recorder and the stem lanes. Their
   place in the mixer stays empty.
 
 ### Edge cases

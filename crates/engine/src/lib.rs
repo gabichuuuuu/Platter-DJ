@@ -22,11 +22,13 @@ pub use analyser::{
 };
 pub use command::{
     BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
-    Direction, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize, SizeStep, SyncMode,
+    Direction, MAX_CEILING_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB,
+    MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep, SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
-    FINE_MOVE_SECONDS, MixerControls, PreviewSnapshot, Recall, Snapshot, TEMPO_RANGES, TrackInfo,
+    FINE_MOVE_SECONDS, MaximiserControls, MixerControls, PreviewSnapshot, Recall, Snapshot,
+    TEMPO_RANGES, TrackInfo,
 };
 pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;
