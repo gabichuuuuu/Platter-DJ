@@ -335,7 +335,9 @@ const MIXER_EFFECT_KNOB: f32 = 30.0;
 const ASSIGN_KEY: Vec2 = egui::vec2(20.0, 18.0);
 
 /// The mixer effect knob with the name of its effect under it, which opens the list of the
-/// mixer effects, and the keys that send the channel to effect units 1 and 2.
+/// mixer effects, and the keys that send the channel to effect units 1 and 2. In external
+/// mixer mode the knob and its name collapse with the channel, as the filter does; the keys
+/// stay, since a unit in insert routing still acts on the deck before its output.
 fn channel_effects(
     cx: &mut Cx<'_>,
     origin: Pos2,
@@ -343,8 +345,20 @@ fn channel_effects(
     deck: DeckId,
     view: &View<'_>,
 ) {
+    if view.engine.mixer.mode == MixerMode::Internal {
+        mixer_effect(cx, origin, layout, deck, view);
+    }
+    assign_keys(cx, origin, layout, deck, view);
+}
+
+fn mixer_effect(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelEffects,
+    deck: DeckId,
+    view: &View<'_>,
+) {
     let texts = cx.texts;
-    let tokens = &cx.theme.tokens;
     let letter = deck.letter().to_string();
     let index = deck.index();
     let mixer = view.engine.effects.mixer[index];
@@ -412,6 +426,19 @@ fn channel_effects(
             Command::MixerEffectSelect { deck, effect }.into()
         },
     );
+}
+
+fn assign_keys(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelEffects,
+    deck: DeckId,
+    view: &View<'_>,
+) {
+    let texts = cx.texts;
+    let tokens = &cx.theme.tokens;
+    let letter = deck.letter().to_string();
+    let index = deck.index();
     for (row, unit) in FxUnit::ALL.into_iter().take(2).enumerate() {
         let number = unit.number().to_string();
         let name = texts.format(

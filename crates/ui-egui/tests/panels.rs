@@ -13,7 +13,7 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
-use platter_engine::{ClockMode, Command, EffectKind, UnitMode};
+use platter_engine::{ClockMode, Command, EffectKind, MixerMode, UnitMode};
 use platter_library::{NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
@@ -1826,4 +1826,25 @@ fn each_channel_of_the_four_deck_mixer_has_its_effect_controls() {
         };
         assert_eq!(found, expected, "{command}");
     }
+}
+
+/// In external mixer mode the mixer effect knob and its name collapse with the channel, as
+/// the filter does; the assign keys stay, since a unit in insert routing still acts on the
+/// deck before its output (`docs/behavior/effects.md`, *Assignment and routing*).
+#[test]
+fn the_mixer_effect_collapses_with_the_channel_in_external_mode() {
+    let mut external = state_named("four-decks");
+    external.scene.engine.mixer.mode = MixerMode::External;
+    let stage = Stage::new(&external);
+    let count = |command: &str| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count("mixer.filter.set"), 0);
+    assert_eq!(count("mixer.effect.set"), 0);
+    assert_eq!(count("mixer.effect.select"), 0);
+    assert_eq!(count("mixer.fx_assign.toggle"), 8);
 }

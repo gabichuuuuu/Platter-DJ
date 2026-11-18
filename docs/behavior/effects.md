@@ -178,6 +178,8 @@ follow the tempo and the beat of the master clock (`docs/behavior/sync.md`).
   at 1/8 beat.
 - **No list of preselected effects** per unit for now: every selector offers all eight.
 - **The mixer effect has no on key**: the M4 screen draws none, and the knob at zero is off.
+- In external mixer mode the mixer effect knob and its name collapse with the channel, as the
+  filter does. The assign keys stay: a unit in insert routing still acts on the deck.
 
 ## Decided
 
