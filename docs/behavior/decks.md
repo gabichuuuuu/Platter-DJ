@@ -45,21 +45,23 @@ that only concerns decks C and D.
   (`docs/behavior/external-mixer.md`). With a device that cannot carry the headphones the four
   decks share the master outputs.
 - The snapshot holds the four decks, deck A first.
-- The window shows decks A and B. Decks C and D are driven through commands: the command line
-  render script, MIDI mappings and, later, the four-deck layout.
+- The window shows decks A and B, or the four decks in the four-deck layout chosen in the
+  preferences (`docs/behavior/interface.md`, *Deck layout*). With two decks shown, decks C and
+  D are driven through commands: the command line render script and MIDI mappings.
+- The design system places the four channels of the mixer in the order C, A, B, D in the
+  four-deck layout (`docs/design/DESIGN.md`, *Four-deck layout (M4)*); the manual gives no
+  order. The engine keeps deck A first in every per-deck array: the order is the interface's.
 
 ## Differences
 
-- The window does not show decks C and D yet, and there is no option to show or hide them. The
-  design system places them under decks A and B in the four-deck layout of M4, whose component
-  sections are not written yet (`docs/design/DESIGN.md`, *Still to define*). Until then decks
-  C and D are not muted when they are not shown: a track loaded into them by a command or a
-  mapping plays and is heard.
+- Decks C and D are not muted while the two-deck layout hides them: a track loaded into them
+  by a command or a mapping plays and is heard.
 - The external mode has no pair of its own for decks C and D: they share the pairs of the decks
   above them. A routing with a pair per deck waits for the output routing of the four-deck
   layout.
 - The starting sides of the crossfader for decks C and D are Platter's choice, since the
-  manual gives none: each takes the side of the deck above it.
+  manual gives none: each takes the side of the deck above it. The maintainer confirmed it on
+  18 November 2026.
 
 ## Edge cases
 
@@ -69,7 +71,7 @@ that only concerns decks C and D.
 | Decks A and C both on the left with the crossfader at the far right | Both are silent in the master |
 | Four decks playing at full scale | The safety limiter of the master holds the peak |
 | External mode, decks A and C playing, with a four-output device | Both are heard on the first pair, summed |
-| A file dropped on the window away from the decks, with decks A and B loaded | It loads into deck A, never into a deck the window does not show |
+| A file dropped on the window away from the decks, with decks A and B loaded and two decks shown | It loads into deck A, never into a deck the window does not show |
 | A history entry stored with a deck number Platter does not know | It reads as deck A |
 | A MIDI mapping or a render script written for two decks | It loads as before |
 

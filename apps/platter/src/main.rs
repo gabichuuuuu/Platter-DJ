@@ -27,7 +27,9 @@ use crate::config::{SETTINGS_FILE, Settings};
 
 const USAGE: &str = "Usage:
   platter                                  open the application
-  platter --capture <state> <file.png>     save a picture of one state of the interface
+  platter --capture <state> <file.png> [<width>x<height>]
+                                           save a picture of one state of the interface,
+                                           1440x900 unless a size is given
   platter --help                           show this text
 
 States: main, startup, preferences-audio, preferences-general";
@@ -68,7 +70,9 @@ fn main() -> ExitCode {
     let arguments: Vec<&str> = arguments.iter().map(String::as_str).collect();
     let result = match arguments.as_slice() {
         [] => run(),
-        ["--capture", state, file] => capture::run(state, PathBuf::from(file)),
+        ["--capture", state, file] => capture::run(state, PathBuf::from(file), None),
+        ["--capture", state, file, size] => capture::size_of(size)
+            .and_then(|size| capture::run(state, PathBuf::from(file), Some(size))),
         ["--help" | "-h"] => {
             println!("{USAGE}");
             Ok(())

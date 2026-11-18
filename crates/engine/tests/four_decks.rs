@@ -8,7 +8,7 @@ mod common;
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
 use platter_engine::command::{Args, Value};
-use platter_engine::{Command, CrossfaderSide, MixerMode};
+use platter_engine::{Command, CrossfaderSide, Engine, MixerMode};
 use platter_testkit::measure::sine_fit;
 use platter_testkit::signal::channel;
 
@@ -135,4 +135,35 @@ fn four_decks_at_full_scale_stay_under_the_ceiling() {
     assert!(peak <= 1.0, "{peak}");
     let snapshot = rig.engine.snapshot();
     assert!(snapshot.limiter_gain < 0.5, "{}", snapshot.limiter_gain);
+}
+
+#[test]
+fn an_engine_at_another_rate_keeps_the_sides_of_decks_c_and_d() {
+    let mut rig = Rig::new();
+    // Deck D moved to the left and the crossfader there: D is heard only if the new
+    // processor keeps its side.
+    rig.send(Command::MixerCrossfaderAssign {
+        deck: DeckId::D,
+        side: CrossfaderSide::Left,
+    });
+    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    let rate = platter_core::SampleRate::new(44_100).unwrap();
+    let (mut engine, mut processor) = Engine::with_controls_of(rate, &rig.engine);
+    engine
+        .dispatch(Command::DeckLoad {
+            deck: DeckId::D,
+            path: sine_file("four-carry-d", 900.0, 4.0, LEVEL, 44_100),
+        })
+        .unwrap();
+    engine.wait_for_loads();
+    engine
+        .dispatch(Command::DeckPlay { deck: DeckId::D })
+        .unwrap();
+    let mut output = vec![0.0f32; 44_100 * 2];
+    for block in output.chunks_mut(512) {
+        processor.process(block, 2);
+    }
+    let left = channel(&output, 2, 0);
+    let amplitude = sine_fit(&left[22_050..], 900.0, 44_100.0).amplitude;
+    assert!((amplitude - f64::from(LEVEL)).abs() < 0.002, "{amplitude}");
 }

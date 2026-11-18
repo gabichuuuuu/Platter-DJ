@@ -2,7 +2,8 @@
 //! one function the application calls to draw a frame.
 //!
 //! The layout follows `docs/design/DESIGN.md`, "Layout of the main window": status header,
-//! two waveform lanes, deck A, mixer and deck B, and the file selector to the bottom.
+//! two waveform lanes, deck A, mixer and deck B, and the file selector to the bottom; or, in
+//! the four-deck layout, decks A and C, mixer, decks B and D, and the file selector.
 
 use egui::emath::GuiRounding as _;
 use egui::{CornerRadius, Key, Rect, Sense};
@@ -10,13 +11,13 @@ use platter_core::DeckId;
 use platter_engine::Command;
 
 use crate::command::{
-    Action, AppCommand, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen, MeterId,
-    SettingsPage, TrackDetails,
+    Action, AppCommand, DeckLayout, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen,
+    MeterId, SettingsPage, TrackDetails,
 };
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
-use crate::model::{AudioState, CollectionView, FileRow, RowKind, SHOWN_DECKS, View};
+use crate::model::{AudioState, CollectionView, FileRow, RowKind, View};
 use crate::panels::browser::BrowserMemory;
 use crate::panels::details::{DetailsEdit, DetailsForm};
 use crate::panels::settings::{DIALOG_SIZE, SettingsMemory};
@@ -37,6 +38,8 @@ const DECKS_HEIGHT: f32 = 388.0;
 /// down, with the padding of a panel under it.
 const COMPACT_DECKS_HEIGHT: f32 = 356.0;
 const DECK_WIDTH: f32 = 520.0;
+/// The band of the four-deck layout: two decks of 289 points, one over the other.
+const FOUR_DECKS_HEIGHT: f32 = 580.0;
 /// How much of the window shows through the veil behind the preferences.
 const DIALOG_VEIL: f32 = 0.55;
 
@@ -321,9 +324,14 @@ impl Shell {
             if let (Some(rect), AudioState::Stopped(problem)) = (zones.notice, &view.audio.state) {
                 header::audio_notice(&mut cx, rect, *problem);
             }
-            waveform::lanes(&mut cx, zones.lanes, &engine.decks, state.zoom);
-            for (deck_id, rect) in SHOWN_DECKS.into_iter().zip(zones.decks) {
-                deck::deck(&mut cx, rect, deck_id, view, &state);
+            if let Some(lanes) = zones.lanes {
+                waveform::lanes(&mut cx, lanes, &engine.decks, state.zoom);
+            }
+            for (deck_id, rect) in zones.decks.iter().copied() {
+                match view.settings.deck_layout {
+                    DeckLayout::Two => deck::deck(&mut cx, rect, deck_id, view, &state),
+                    DeckLayout::Four => deck::four_deck(&mut cx, rect, deck_id, view, &state),
+                }
             }
             mixer::mixer(&mut cx, zones.mixer, view, &state);
             browser::browser(&mut cx, zones.browser, view, &mut state.browser);
@@ -533,8 +541,10 @@ fn details_of(view: &View<'_>, position: usize, edits: &[DetailsEdit]) -> Option
 struct Zones {
     header: Rect,
     notice: Option<Rect>,
-    lanes: Rect,
-    decks: [Rect; SHOWN_DECKS.len()],
+    /// The waveform lanes, which only the two-deck layout has.
+    lanes: Option<Rect>,
+    /// The decks the window shows and where.
+    decks: Vec<(DeckId, Rect)>,
     mixer: Rect,
     browser: Rect,
 }
@@ -554,21 +564,23 @@ impl Zones {
             top = rect.bottom() + seam;
             rect
         });
+        if view.settings.deck_layout == DeckLayout::Four {
+            return Self::four(screen, header, notice, top, seam);
+        }
         let lanes = band(top, LANES_HEIGHT);
         top = lanes.bottom() + seam;
         let decks_height = match view.settings.deck_size {
             DeckSize::Full => DECKS_HEIGHT,
             DeckSize::Compact => COMPACT_DECKS_HEIGHT,
         };
-        // Decks and mixer keep their width; in a wider window they stay in the middle.
-        let left = (screen.center().x - DESIGN_WIDTH / 2.0)
-            .max(screen.left())
-            .round();
-        let deck_a =
-            Rect::from_min_size(egui::pos2(left, top), egui::vec2(DECK_WIDTH, decks_height));
+        let column = deck_column(screen, seam);
+        let deck_a = Rect::from_min_size(
+            egui::pos2(screen.left(), top),
+            egui::vec2(column, decks_height),
+        );
         let deck_b = Rect::from_min_size(
-            egui::pos2(left + DESIGN_WIDTH - DECK_WIDTH, top),
-            egui::vec2(DECK_WIDTH, decks_height),
+            egui::pos2(screen.right() - column, top),
+            egui::vec2(column, decks_height),
         );
         let mixer = Rect::from_min_max(
             egui::pos2(deck_a.right() + seam, top),
@@ -582,12 +594,59 @@ impl Zones {
         Self {
             header,
             notice,
-            lanes,
-            decks: [deck_a, deck_b],
+            lanes: Some(lanes),
+            decks: vec![(DeckId::A, deck_a), (DeckId::B, deck_b)],
             mixer,
             browser,
         }
     }
+
+    /// The four-deck layout: A over C on the left, the mixer, B over D on the right, and the
+    /// browser under them. The mixer keeps its width; the two columns of decks share the rest
+    /// of the window, and the browser takes the rest of its height.
+    fn four(screen: Rect, header: Rect, notice: Option<Rect>, top: f32, seam: f32) -> Self {
+        let column = deck_column(screen, seam);
+        let deck_height = ((FOUR_DECKS_HEIGHT - seam) / 2.0).floor();
+        let left = screen.left();
+        let right = screen.right() - column;
+        let place = |x: f32, row: f32| {
+            Rect::from_min_size(
+                egui::pos2(x, top + row * (deck_height + seam)),
+                egui::vec2(column, deck_height),
+            )
+        };
+        let mixer = Rect::from_min_max(
+            egui::pos2(left + column + seam, top),
+            egui::pos2(right - seam, top + FOUR_DECKS_HEIGHT),
+        );
+        let browser_top = top + FOUR_DECKS_HEIGHT + seam;
+        Self {
+            header,
+            notice,
+            lanes: None,
+            decks: vec![
+                (DeckId::A, place(left, 0.0)),
+                (DeckId::B, place(right, 0.0)),
+                (DeckId::C, place(left, 1.0)),
+                (DeckId::D, place(right, 1.0)),
+            ],
+            mixer,
+            browser: Rect::from_min_max(
+                egui::pos2(screen.left(), browser_top),
+                screen.max.max(egui::pos2(screen.left(), browser_top)),
+            ),
+        }
+    }
+}
+
+/// The width of each column of decks: the mixer keeps its width and the two columns share the
+/// rest of the window, 520 points each at the designed width. `docs/behavior/interface.md`,
+/// *Window size*.
+fn deck_column(screen: Rect, seam: f32) -> f32 {
+    let mixer_width = DESIGN_WIDTH - 2.0 * (DECK_WIDTH + seam);
+    ((screen.width() - mixer_width) / 2.0 - seam)
+        .max(DECK_WIDTH)
+        .floor()
 }
 
 /// Files dropped on the window from outside are loaded into the deck under the pointer;
@@ -606,15 +665,18 @@ fn dropped_files(cx: &mut Cx<'_>, zones: &Zones, view: &View<'_>) {
         return;
     };
     let under_pointer = pointer.and_then(|pos| {
-        SHOWN_DECKS
-            .into_iter()
-            .zip(zones.decks)
+        zones
+            .decks
+            .iter()
             .find(|(_, rect)| rect.contains(pos))
-            .map(|(deck, _)| deck)
+            .map(|(deck, _)| *deck)
     });
     let deck = under_pointer.unwrap_or_else(|| {
-        SHOWN_DECKS
-            .into_iter()
+        view.settings
+            .deck_layout
+            .decks()
+            .iter()
+            .copied()
             .find(|deck| {
                 let snapshot = &view.engine.decks[deck.index()];
                 snapshot.track.is_none() && !snapshot.loading
@@ -622,4 +684,62 @@ fn dropped_files(cx: &mut Cx<'_>, zones: &Zones, view: &View<'_>) {
             .unwrap_or(DeckId::A)
     });
     cx.out.emit(Command::DeckLoad { deck, path });
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Rect, pos2, vec2};
+    use platter_core::DeckId;
+
+    use super::{DECK_WIDTH, DESIGN_WIDTH, Zones};
+    use crate::command::DeckLayout;
+    use crate::sample;
+
+    const SEAM: f32 = 2.0;
+    const MIXER_WIDTH: f32 = DESIGN_WIDTH - 2.0 * (DECK_WIDTH + SEAM);
+
+    /// `docs/behavior/interface.md`, *Window size*: in a window wider than 1440 points the
+    /// mixer keeps its width, the decks share the rest and reach the edges of the window.
+    #[test]
+    fn a_wide_window_widens_the_decks_and_keeps_the_mixer() {
+        for layout in DeckLayout::ALL {
+            let mut scene = sample::playing();
+            scene.settings.deck_layout = layout;
+            let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 1080.0));
+            let zones = Zones::of(screen, &scene.view(), SEAM);
+            let deck = |id: DeckId| {
+                zones
+                    .decks
+                    .iter()
+                    .find(|(of, _)| *of == id)
+                    .map(|(_, rect)| *rect)
+                    .unwrap()
+            };
+            let (a, b) = (deck(DeckId::A), deck(DeckId::B));
+            assert_eq!(a.left(), 0.0, "{layout:?}");
+            assert_eq!(b.right(), 1920.0, "{layout:?}");
+            assert_eq!(a.width(), b.width(), "{layout:?}");
+            assert_eq!(zones.mixer.width(), MIXER_WIDTH, "{layout:?}");
+            assert_eq!(zones.mixer.left(), a.right() + SEAM, "{layout:?}");
+            assert_eq!(zones.browser.bottom(), 1080.0, "{layout:?}");
+            if let Some(lanes) = zones.lanes {
+                assert_eq!(lanes.width(), 1920.0);
+            }
+        }
+    }
+
+    /// At the designed size nothing moves: decks of 520 points and the mixer between them.
+    #[test]
+    fn the_designed_window_keeps_decks_of_520_points() {
+        for layout in DeckLayout::ALL {
+            let mut scene = sample::playing();
+            scene.settings.deck_layout = layout;
+            let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(DESIGN_WIDTH, 900.0));
+            let zones = Zones::of(screen, &scene.view(), SEAM);
+            for (_, rect) in &zones.decks {
+                assert_eq!(rect.width(), DECK_WIDTH, "{layout:?}");
+            }
+            assert_eq!(zones.mixer.width(), MIXER_WIDTH, "{layout:?}");
+        }
+    }
 }

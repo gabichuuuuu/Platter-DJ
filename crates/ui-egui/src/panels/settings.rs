@@ -11,7 +11,7 @@ use platter_engine::command::{CommandSpec, ParamKind, SPECS};
 use platter_engine::{Command, CrossfaderCurve, MixerMode, Output, SyncMode};
 
 use crate::collection::TagWriting;
-use crate::command::{Action, AppCommand, DeckSize, RouteSlot, SettingsPage};
+use crate::command::{Action, AppCommand, DeckLayout, DeckSize, RouteSlot, SettingsPage};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::i18n::{Language, Texts};
@@ -597,6 +597,41 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     );
 
     let top = section(cx, page, 210.0, "settings.layout_section");
+    let control = setting(cx, page, top, "settings.deck_layout");
+    let labels = DeckLayout::ALL.map(|layout| {
+        texts.get(match layout {
+            DeckLayout::Two => "settings.decks_two",
+            DeckLayout::Four => "settings.decks_four",
+        })
+    });
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-deck-layout"),
+        &choices,
+        DeckLayout::ALL
+            .iter()
+            .position(|layout| *layout == view.settings.deck_layout),
+        |index| {
+            Action::App(AppCommand::DeckLayoutSet {
+                layout: DeckLayout::ALL[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.deck_layout_help"),
+    );
+
+    let top = top + 50.0;
     let control = setting(cx, page, top, "settings.deck_size");
     let labels = DeckSize::ALL.map(|size| {
         texts.get(match size {
