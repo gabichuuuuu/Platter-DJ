@@ -9,7 +9,8 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, EqModel, FilterModel, MixerMode, MoveMode, Output, SizeStep, SyncMode,
+    CueStep, Direction, EffectKind, EqModel, FilterModel, FxRouting, FxUnit, MixerMode, MoveMode,
+    Output, SizeStep, SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -18,6 +19,8 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 fn commands() -> Vec<Command> {
     use DeckId::{A, B, C, D};
+    let one = FxUnit::ALL[0];
+    let two = FxUnit::ALL[1];
     vec![
         // Decks C and D play beside A and B, C with key lock and D in sync.
         Command::DeckKeyLockToggle { deck: C },
@@ -59,6 +62,48 @@ fn commands() -> Vec<Command> {
         // An automatic fade runs through all of it.
         Command::MixerCrossfaderAutoFade {
             direction: CrossfaderDirection::Right,
+        },
+        // Effects on decks A and B, built on this side and swapped while the decks play.
+        Command::MixerFxAssignToggle { deck: A, unit: one },
+        Command::MixerFxAssignToggle { deck: B, unit: two },
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 0,
+            effect: Some(EffectKind::Delay),
+        },
+        Command::FxSlotToggle { unit: one, slot: 0 },
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 1,
+            effect: Some(EffectKind::Slicer),
+        },
+        Command::FxSlotToggle { unit: one, slot: 1 },
+        Command::FxUnitModeSet {
+            unit: two,
+            mode: UnitMode::Single,
+        },
+        Command::FxSingleEffectSet {
+            unit: two,
+            effect: Some(EffectKind::Reverb),
+        },
+        Command::FxSingleToggle { unit: two },
+        Command::FxUnitRoutingSet {
+            unit: two,
+            routing: FxRouting::PostFader,
+        },
+        Command::MixerEffectSelect {
+            deck: A,
+            effect: EffectKind::Gater,
+        },
+        Command::MixerEffectSet {
+            deck: A,
+            position: 0.6,
+        },
+        // A swap while the effect before it still fades out.
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 0,
+            effect: Some(EffectKind::Flanger),
         },
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },

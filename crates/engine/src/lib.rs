@@ -8,6 +8,7 @@
 mod analyser;
 pub mod command;
 mod control;
+pub mod effects;
 mod peaks;
 mod render;
 pub mod rt;
@@ -27,9 +28,12 @@ pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
     FINE_MOVE_SECONDS, MixerControls, PreviewSnapshot, Recall, Snapshot, TEMPO_RANGES, TrackInfo,
 };
+pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;
 pub use platter_analysis::{Key, Mode, TempoRange, Transposed};
 pub use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
+pub use platter_dsp::effects::unit::{UnitMode, UnitValues};
+pub use platter_dsp::effects::{Controls, EffectKind};
 pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};

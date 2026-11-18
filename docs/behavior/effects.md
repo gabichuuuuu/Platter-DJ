@@ -204,8 +204,15 @@ The maintainer approved these on 18 November 2026; `docs/design/DESIGN.md` recor
 
 ## Tests
 
-To be written with the code: `crates/dsp/tests/effects.rs` (each effect against synthesised
-signals: transparency at dry/wet 0, the delay time at a known tempo, the tail after switching
-off, no non-finite output), `crates/engine/tests/effects.rs` (assignment and order of units,
-insert and post-fader positions, pre-listening, external mode, restart) and
-`crates/engine/tests/realtime_memory.rs` (no allocation while effects run and change).
+- `crates/dsp/tests/effects.rs`: every effect stays finite and bounded while its controls
+  sweep; a chain at dry/wet 0 passes its input bit for bit; the delay echoes half a beat later
+  at 120 beats per minute; a delay rings on after its slot switches off and a flanger does
+  not; an effect switched off passes its input exactly; a value that is not a number gives
+  silence; the gater opens on every step; the middle of the one-knob filter leaves the signal
+  alone; the bitcrusher at one bit; the slicer repeats its slice; a swapped effect fades out
+  and comes back to be freed; single mode; the mixer effect at zero.
+- `crates/engine/tests/effects.rs`: a unit acts only on the channels assigned to it; a delay
+  after the fader rings on when the fader closes and an insert does not; an engine at another
+  rate keeps the effects and their assignments; commands out of range change nothing.
+- `crates/engine/tests/realtime_memory.rs`: effects built, swapped and switched while the
+  decks play, without an allocation in the callback.

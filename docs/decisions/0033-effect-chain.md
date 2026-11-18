@@ -40,11 +40,12 @@ Two facts from the mixer models (`docs/decisions/0032-mixer-models.md`) bound th
 
 ## Choice
 
-- **Instances per channel and unit.** The processor keeps, for each channel, a boxed
-  `ChannelEffects` with one entry per unit: the instances of the unit's slots (group mode) or
-  of its single effect, and their ramps. `Processor` holds only the boxes, so its inline size
-  grows by a few pointers. A test keeps `size_of::<Processor>()` under a bound, so the next
-  addition that grows it inline fails there rather than in the renderer.
+- **Instances per channel and unit.** The processor keeps one box with, for each channel, a
+  chain per unit (the three slots of group mode and the place of single mode, with their
+  ramps) and the mixer effect. A chain holds effects only for the channels assigned to its
+  unit. `Processor` holds only the box, so its inline size grows by a pointer. A test keeps
+  `size_of::<Processor>()` under 64 KB, so the next addition that grows it inline fails there
+  rather than in the renderer.
 - **Instances are built on the control thread.** Selecting an effect, assigning a channel to a
   unit or switching the mode builds the instances the processor needs, with their buffers, and
   sends them through the command queue. The processor puts them in place and sends what they

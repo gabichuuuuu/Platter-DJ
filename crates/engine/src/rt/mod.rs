@@ -14,6 +14,7 @@
 
 mod clock;
 mod deck;
+mod effects;
 mod lock;
 mod looper;
 mod metronome;
@@ -31,9 +32,13 @@ use platter_core::{
 };
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
+use platter_dsp::effects::Effect;
+use platter_dsp::effects::unit::{Place, UnitValues};
 use platter_dsp::eq::{Band, EqModel};
 use platter_dsp::filter::FilterModel;
 use rtrb::{Consumer, Producer, RingBuffer};
+
+pub use effects::{FxRouting, UNITS};
 
 pub use lock::Stretcher;
 pub use processor::Processor;
@@ -341,6 +346,39 @@ pub enum RtCommand {
         on: bool,
     },
     /// A click on every beat of the clock, on the headphones.
+    /// The values of an effect unit, for every channel it is assigned to.
+    FxValues {
+        unit: usize,
+        values: UnitValues,
+    },
+    FxRouting {
+        unit: usize,
+        routing: FxRouting,
+    },
+    /// Puts the channel through the unit, or takes it out, with a short fade.
+    FxAssign {
+        deck: DeckId,
+        unit: usize,
+        on: bool,
+    },
+    /// Puts an effect, built on the control side, in a place of a channel's chain; `None`
+    /// empties it. Exactly one item comes back through the retired queue per command.
+    FxPlace {
+        deck: DeckId,
+        unit: usize,
+        place: Place,
+        effect: Option<Box<Effect>>,
+    },
+    /// Puts an effect behind the mixer effect knob of a channel; as [`Self::FxPlace`].
+    MixerEffectPlace {
+        deck: DeckId,
+        effect: Option<Box<Effect>>,
+    },
+    /// The mixer effect knob of a channel, 0 to 1.
+    MixerEffectAmount {
+        deck: DeckId,
+        amount: f32,
+    },
     Metronome {
         on: bool,
     },
@@ -454,7 +492,11 @@ pub struct LoopState {
 
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
-pub struct Retired(pub Option<DeckTrack>, pub Option<Box<TrackMemory>>);
+pub struct Retired(
+    pub Option<DeckTrack>,
+    pub Option<Box<TrackMemory>>,
+    pub Option<Box<Effect>>,
+);
 
 /// What changed in a deck that the control side keeps a copy of: each part is there when it
 /// changed since the report before.

@@ -54,6 +54,7 @@ impl PreviewPlayer {
                 start: None,
             }),
             memory,
+            None,
         );
         if let Err(rtrb::PushError::Full(item)) = retired.push(item) {
             std::mem::forget(item);

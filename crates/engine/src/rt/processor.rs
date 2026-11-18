@@ -13,6 +13,7 @@ use rtrb::{Consumer, Producer};
 
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
+use super::effects::Effects;
 use super::metronome::Metronome;
 use super::preview::PreviewPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
@@ -70,6 +71,7 @@ pub struct Processor {
     external_master_volume: Smoothed,
     /// The limiters of the first and the second pair in external mode.
     pair_limiters: [Limiter; 2],
+    effects: Effects,
 }
 
 impl Processor {
@@ -111,6 +113,7 @@ impl Processor {
             external_eq_gain: parameter(0.0),
             external_master_volume: parameter(0.0),
             pair_limiters: [Limiter::new(rate), Limiter::new(rate)],
+            effects: Effects::new(rate),
         }
     }
 
@@ -146,6 +149,7 @@ impl Processor {
             }
         }
         frames.into_remainder().fill(0.0);
+        self.effects.collect(&mut self.retired);
         self.publish();
     }
 
@@ -221,6 +225,23 @@ impl Processor {
                 }
             }
             RtCommand::Metronome { on } => self.metronome.set_on(on),
+            RtCommand::FxValues { unit, values } => self.effects.set_values(unit, values),
+            RtCommand::FxRouting { unit, routing } => self.effects.set_routing(unit, routing),
+            RtCommand::FxAssign { deck, unit, on } => self.effects.set_assigned(deck, unit, on),
+            RtCommand::FxPlace {
+                deck,
+                unit,
+                place,
+                effect,
+            } => self
+                .effects
+                .place(deck, unit, place, effect, &mut self.retired),
+            RtCommand::MixerEffectPlace { deck, effect } => {
+                self.effects.mixer_place(deck, effect, &mut self.retired);
+            }
+            RtCommand::MixerEffectAmount { deck, amount } => {
+                self.effects.set_mixer_amount(deck, amount);
+            }
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -343,13 +364,17 @@ impl Processor {
         let pulse = self.clock.tick(lead);
         let click = self.metronome.next(pulse.phase);
         self.advance_fade(pulse.bpm);
+        self.effects.follow(pulse);
+        let effects = &mut self.effects;
         let channels = DeckId::ALL.into_iter().zip(&mut self.channels);
         for (index, (deck, channel)) in channels.enumerate() {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
             channel.player.follow(clock, self.keep_beat);
             let played = channel.player.next(&mut self.retired);
-            let strip = channel.strip.process(played);
+            let strip = channel.strip.process(played, |stage, frame| {
+                effects.process(deck, stage, frame, metered_outside)
+            });
             let side = channel.crossfade.advance();
             mix[0] += strip.post[0] * side;
             mix[1] += strip.post[1] * side;
@@ -365,7 +390,10 @@ impl Processor {
                 pre_listened[1] += strip.pre[1] * send;
             }
             let sent = |side: usize| {
-                let source = played[side] + (strip.equalised[side] - played[side]) * eq_gain;
+                // The effects of the insert point act whether the equaliser does or not.
+                let source = played[side]
+                    + (strip.equalised[side] - played[side]) * eq_gain
+                    + (strip.inserted[side] - strip.equalised[side]);
                 source * external_gain
             };
             decks[index] = [sent(0), sent(1)];
@@ -516,4 +544,18 @@ impl Processor {
 struct Fade {
     to: f32,
     beats: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Processor;
+
+    /// The processor is built on the stack of the thread that starts the engine, 1 MB on the
+    /// main thread of Windows. At 70 KB a debug build overflowed it
+    /// (`docs/decisions/0033-effect-chain.md`); what grows goes in a box.
+    #[test]
+    fn the_processor_stays_small_enough_to_build_on_any_stack() {
+        let size = std::mem::size_of::<Processor>();
+        assert!(size <= 64 * 1024, "the processor takes {size} bytes");
+    }
 }

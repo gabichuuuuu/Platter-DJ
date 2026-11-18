@@ -17,6 +17,8 @@ use platter_core::{
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
+use platter_dsp::effects::unit::Place;
+use platter_dsp::effects::{Controls, DEFAULT_AMOUNT, Effect, EffectKind};
 use platter_dsp::eq::{Band, EqModel, band_gain};
 use platter_dsp::filter::FilterModel;
 
@@ -27,6 +29,7 @@ use crate::command::{
     MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize,
     SizeStep, SyncMode,
 };
+use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
 use crate::rt::{
     self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
@@ -317,6 +320,8 @@ pub struct Snapshot {
     pub load_marker: bool,
     pub preview: PreviewSnapshot,
     pub mixer: MixerControls,
+    /// The effect units and the mixer effects: `docs/behavior/effects.md`.
+    pub effects: EffectControls,
     pub clock: ClockSnapshot,
     /// Peak level of the left and the right side of the master output, linear.
     pub master_levels: [f32; 2],
@@ -409,6 +414,7 @@ pub struct Engine {
     decks: [DeckControl; DeckId::COUNT],
     preview: PreviewControl,
     mixer: MixerControls,
+    effects: EffectControls,
     /// The tempo master is chosen automatically.
     clock_auto: bool,
     sync_mode: SyncMode,
@@ -457,6 +463,7 @@ impl Engine {
             decks: Default::default(),
             preview: PreviewControl::default(),
             mixer: MixerControls::default(),
+            effects: EffectControls::default(),
             clock_auto: true,
             sync_mode: SyncMode::default(),
             snap: false,
@@ -473,6 +480,9 @@ impl Engine {
             recall: None,
             rate,
         };
+        let mut engine = engine;
+        // The mixer effect of every channel starts on its effect; a fresh queue has room.
+        let _ = engine.replay_effects(&EffectControls::default());
         (engine, processor)
     }
 
@@ -554,6 +564,8 @@ impl Engine {
         engine.quantize = previous.quantize;
         engine.metronome = previous.metronome;
         engine.load_marker = previous.load_marker;
+        // A fresh queue has room for all of it: see `docs/decisions/0033-effect-chain.md`.
+        let _ = engine.replay_effects(&previous.effects);
         (engine, processor)
     }
 
@@ -1029,6 +1041,21 @@ impl Engine {
                 }
                 self.send_pending_analyses();
             }
+            effect @ (Command::FxUnitModeSet { .. }
+            | Command::FxUnitDryWetSet { .. }
+            | Command::FxUnitRoutingSet { .. }
+            | Command::FxUnitReset { .. }
+            | Command::FxUnitSnapshotSave { .. }
+            | Command::FxSlotEffectSet { .. }
+            | Command::FxSlotAmountSet { .. }
+            | Command::FxSlotToggle { .. }
+            | Command::FxSingleEffectSet { .. }
+            | Command::FxSingleKnobSet { .. }
+            | Command::FxSingleKeyToggle { .. }
+            | Command::FxSingleToggle { .. }
+            | Command::MixerFxAssignToggle { .. }
+            | Command::MixerEffectSelect { .. }
+            | Command::MixerEffectSet { .. }) => self.dispatch_effects(effect)?,
             // Every other command is handled before this point.
             _ => {}
         }
@@ -1090,6 +1117,248 @@ impl Engine {
         while self.ends.retired.pop().is_ok() {
             self.swaps_in_flight = self.swaps_in_flight.saturating_sub(1);
         }
+    }
+
+    /// Applies a command of the effect units or of a mixer effect: `docs/behavior/effects.md`.
+    fn dispatch_effects(&mut self, command: Command) -> Result<(), EngineError> {
+        let unit_value = |position: f64| ValueError::check("position", position, 0.0, 1.0);
+        match command {
+            Command::FxUnitModeSet { unit, mode } => {
+                self.update_unit(unit, |controls| controls.values.mode = mode)
+            }
+            Command::FxUnitDryWetSet { unit, position } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| controls.values.dry_wet = position)
+            }
+            Command::FxUnitRoutingSet { unit, routing } => {
+                self.send(RtCommand::FxRouting {
+                    unit: unit.index(),
+                    routing,
+                })?;
+                self.effects.units[unit.index()].routing = routing;
+                Ok(())
+            }
+            Command::FxUnitReset { unit } => self.update_unit(unit, |controls| {
+                if let Some(kind) = controls.single {
+                    controls.values.single.controls = kind.defaults();
+                }
+            }),
+            Command::FxUnitSnapshotSave { unit } => {
+                let controls = &mut self.effects.units[unit.index()];
+                if let Some(index) = controls
+                    .single
+                    .and_then(|kind| EffectKind::ALL.iter().position(|each| *each == kind))
+                {
+                    controls.snapshots[index] = Some(controls.values.single.controls);
+                }
+                Ok(())
+            }
+            Command::FxSlotEffectSet { unit, slot, effect } => {
+                self.set_place(unit, Place::Group(slot), effect)
+            }
+            Command::FxSlotAmountSet {
+                unit,
+                slot,
+                position,
+            } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| {
+                    if let Some(values) = controls.values.slots.get_mut(slot) {
+                        values.amount = position;
+                    }
+                })
+            }
+            Command::FxSlotToggle { unit, slot } => self.update_unit(unit, |controls| {
+                if let Some(values) = controls.values.slots.get_mut(slot) {
+                    values.on = !values.on;
+                }
+            }),
+            Command::FxSingleEffectSet { unit, effect } => {
+                self.set_place(unit, Place::Single, effect)
+            }
+            Command::FxSingleKnobSet {
+                unit,
+                knob,
+                position,
+            } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| {
+                    if let Some(value) = controls.values.single.controls.knobs.get_mut(knob) {
+                        *value = position;
+                    }
+                })
+            }
+            Command::FxSingleKeyToggle { unit, key } => self.update_unit(unit, |controls| {
+                if let Some(value) = controls.values.single.controls.keys.get_mut(key) {
+                    *value = !*value;
+                }
+            }),
+            Command::FxSingleToggle { unit } => self.update_unit(unit, |controls| {
+                controls.values.single.on = !controls.values.single.on;
+            }),
+            Command::MixerFxAssignToggle { deck, unit } => self.toggle_assign(deck, unit),
+            Command::MixerEffectSelect { deck, effect } => {
+                self.ensure_swap_room(1)?;
+                self.send_effect_swap(RtCommand::MixerEffectPlace {
+                    deck,
+                    effect: Some(self.build_effect(effect)),
+                })?;
+                self.effects.mixer[deck.index()].effect = effect;
+                Ok(())
+            }
+            Command::MixerEffectSet { deck, position } => {
+                let position = unit_value(position)?;
+                self.send(RtCommand::MixerEffectAmount {
+                    deck,
+                    amount: position as f32,
+                })?;
+                self.effects.mixer[deck.index()].amount = position;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Changes the values of a unit and sends them; nothing changes if they cannot be sent.
+    fn update_unit(
+        &mut self,
+        unit: FxUnit,
+        change: impl FnOnce(&mut UnitControls),
+    ) -> Result<(), EngineError> {
+        let mut controls = self.effects.units[unit.index()].clone();
+        change(&mut controls);
+        self.send(RtCommand::FxValues {
+            unit: unit.index(),
+            values: controls.values,
+        })?;
+        self.effects.units[unit.index()] = controls;
+        Ok(())
+    }
+
+    /// Puts `effect` in a place of a unit, built for every channel the unit is assigned to.
+    fn set_place(
+        &mut self,
+        unit: FxUnit,
+        place: Place,
+        effect: Option<EffectKind>,
+    ) -> Result<(), EngineError> {
+        let decks: Vec<DeckId> = self.effects.decks_of(unit).collect();
+        self.ensure_swap_room(decks.len())?;
+        for deck in decks {
+            self.send_effect_swap(RtCommand::FxPlace {
+                deck,
+                unit: unit.index(),
+                place,
+                effect: effect.map(|kind| self.build_effect(kind)),
+            })?;
+        }
+        self.update_unit(unit, |controls| match place {
+            Place::Group(slot) => {
+                if let Some(kind) = controls.slots.get_mut(slot) {
+                    *kind = effect;
+                }
+                if let Some(values) = controls.values.slots.get_mut(slot) {
+                    values.amount = DEFAULT_AMOUNT;
+                }
+            }
+            Place::Single => {
+                controls.single = effect;
+                controls.values.single.controls =
+                    effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+            }
+        })
+    }
+
+    /// Puts a channel through a unit, with the unit's effects built for it, or takes it out.
+    fn toggle_assign(&mut self, deck: DeckId, unit: FxUnit) -> Result<(), EngineError> {
+        let on = !self.effects.is_assigned(deck, unit);
+        let places: Vec<(Place, EffectKind)> = self.effects.unit(unit).places().collect();
+        self.ensure_swap_room(places.len())?;
+        self.send(RtCommand::FxAssign {
+            deck,
+            unit: unit.index(),
+            on,
+        })?;
+        for (place, kind) in places {
+            self.send_effect_swap(RtCommand::FxPlace {
+                deck,
+                unit: unit.index(),
+                place,
+                effect: on.then(|| self.build_effect(kind)),
+            })?;
+        }
+        self.effects.assigned[deck.index()][unit.index()] = on;
+        Ok(())
+    }
+
+    /// Sends the whole state of the effects to the processor, building every instance it
+    /// needs: at the start, and after a restart, which loses them.
+    fn replay_effects(&mut self, effects: &EffectControls) -> Result<(), EngineError> {
+        self.effects = effects.clone();
+        for unit in FxUnit::ALL {
+            let controls = self.effects.unit(unit).clone();
+            self.send(RtCommand::FxValues {
+                unit: unit.index(),
+                values: controls.values,
+            })?;
+            self.send(RtCommand::FxRouting {
+                unit: unit.index(),
+                routing: controls.routing,
+            })?;
+            for deck in DeckId::ALL {
+                if !self.effects.is_assigned(deck, unit) {
+                    continue;
+                }
+                self.send(RtCommand::FxAssign {
+                    deck,
+                    unit: unit.index(),
+                    on: true,
+                })?;
+                for (place, kind) in controls.places() {
+                    self.send_effect_swap(RtCommand::FxPlace {
+                        deck,
+                        unit: unit.index(),
+                        place,
+                        effect: Some(self.build_effect(kind)),
+                    })?;
+                }
+            }
+        }
+        for deck in DeckId::ALL {
+            let mixer = self.effects.mixer[deck.index()];
+            self.send_effect_swap(RtCommand::MixerEffectPlace {
+                deck,
+                effect: Some(self.build_effect(mixer.effect)),
+            })?;
+            self.send(RtCommand::MixerEffectAmount {
+                deck,
+                amount: mixer.amount as f32,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Builds an effect for the rate of the engine, with its buffers, on this thread.
+    fn build_effect(&self, kind: EffectKind) -> Box<Effect> {
+        Box::new(Effect::new(kind, self.rate))
+    }
+
+    /// Fails at once when `count` more swaps would not fit, so a command is sent whole or not
+    /// at all.
+    fn ensure_swap_room(&mut self, count: usize) -> Result<(), EngineError> {
+        self.collect_retired();
+        if self.swaps_in_flight + count > COMMAND_CAPACITY {
+            Err(EngineError::Busy)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn send_effect_swap(&mut self, command: RtCommand) -> Result<(), EngineError> {
+        self.ensure_swap_room(1)?;
+        self.send(command)?;
+        self.swaps_in_flight += 1;
+        Ok(())
     }
 
     fn start_load(&mut self, deck: DeckId, path: PathBuf) -> Result<(), EngineError> {
@@ -1402,6 +1671,7 @@ impl Engine {
                 crossfader: self.crossfader(),
                 ..self.mixer.clone()
             },
+            effects: self.effects.clone(),
             clock: ClockSnapshot {
                 auto: self.clock_auto,
                 sync_mode: self.sync_mode,

@@ -9,6 +9,8 @@ use platter_dsp::filter::{FilterModel, OneKnobFilter};
 use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
 
+use super::effects::Stage;
+
 /// Ramp of every mixer parameter: short enough to feel immediate, long enough not to click.
 pub(super) const PARAMETER_RAMP_MS: f32 = 10.0;
 
@@ -20,6 +22,8 @@ pub(super) struct StripFrame {
     pub(super) pre: Frame,
     /// After the gain and the equaliser only: what external mixer mode can send.
     pub(super) equalised: Frame,
+    /// After the effects of the insert point.
+    pub(super) inserted: Frame,
 }
 
 pub(super) struct ChannelStrip {
@@ -99,7 +103,12 @@ impl ChannelStrip {
         self.balance[1].set(right);
     }
 
-    pub(super) fn process(&mut self, input: Frame) -> StripFrame {
+    /// Processes one frame; `effects` gives the frame after the effects of each stage.
+    pub(super) fn process(
+        &mut self,
+        input: Frame,
+        mut effects: impl FnMut(Stage, Frame) -> Frame,
+    ) -> StripFrame {
         let gain = self.gain.advance();
         let gains = [
             self.eq_gains[0].advance(),
@@ -107,18 +116,24 @@ impl ChannelStrip {
             self.eq_gains[2].advance(),
         ];
         let equalised = self.eq.process([input[0] * gain, input[1] * gain], gains);
-        let pre = self
+        let inserted = effects(Stage::Insert, equalised);
+        let filtered = self
             .filter
-            .process(equalised, self.filter_position.advance());
+            .process(inserted, self.filter_position.advance());
+        let pre = effects(Stage::Filtered, filtered);
         let fader = self.fader.advance();
-        let post = [
-            pre[0] * fader * self.balance[0].advance(),
-            pre[1] * fader * self.balance[1].advance(),
-        ];
+        let post = effects(
+            Stage::PostFader,
+            [
+                pre[0] * fader * self.balance[0].advance(),
+                pre[1] * fader * self.balance[1].advance(),
+            ],
+        );
         StripFrame {
             post,
             pre,
             equalised,
+            inserted,
         }
     }
 
