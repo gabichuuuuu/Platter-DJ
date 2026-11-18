@@ -18,7 +18,7 @@ features = [
   { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the clock waits for the local time zone, see docs/behavior/interface.md" },
   { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test midi_indicator; no real MIDI controller tried yet, see ROADMAP.md" },
   { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
-  { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "planned" },
+  { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; two or four decks, chosen in the preferences, see docs/behavior/interface.md" },
   { id = "fullscreen", name = "Full screen", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the real window has not been looked at in full screen, see ROADMAP.md" },
   { id = "tooltips", name = "Tooltips", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tooltips; a disabled control shows no reason yet, see docs/behavior/interface.md" },
   { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test deck_size --test settings_mixer; two sizes, not five, see docs/behavior/interface.md" },
@@ -32,7 +32,7 @@ id = "decks"
 title = "Decks"
 features = [
   { id = "decks-a-b", name = "Decks A and B", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels" },
-  { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "in_progress", evidence = "cargo test -p platter-engine --test four_decks" },
+  { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test four_decks; cargo test -p platter-ui-egui --test panels; hidden decks are not muted, see docs/behavior/decks.md" },
   { id = "track-deck", name = "Track deck", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-engine --test transport" },
   { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "planned" },
   { id = "remix-deck", name = "Remix deck", milestone = "M5", status = "planned" },

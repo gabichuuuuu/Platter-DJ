@@ -12,14 +12,10 @@ use platter_engine::Snapshot;
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckSize, ListColumn, SortColumn};
+use crate::command::{DeckLayout, DeckSize, ListColumn, SortColumn};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
-
-/// The decks the window shows. Decks C and D wait for the four-deck layout:
-/// `docs/behavior/decks.md`.
-pub const SHOWN_DECKS: [DeckId; 2] = [DeckId::A, DeckId::B];
 
 /// Time of day for the clock of the status header.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +124,8 @@ pub struct SettingsView {
     pub tempo_range: u32,
     /// The size of decks A and B.
     pub deck_size: DeckSize,
+    /// Two decks or four.
+    pub deck_layout: DeckLayout,
     /// Names of the files of the user, as the pages mention them.
     pub settings_file: String,
     pub keymap_file: String,

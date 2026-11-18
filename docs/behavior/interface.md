@@ -193,3 +193,77 @@ whether a smaller deck gives room to the browser.
 
 `crates/ui-egui/tests/deck_size.rs`: the compact header, what it leaves out, the band and the
 double click. `crates/ui-egui/tests/settings_mixer.rs` for the setting.
+
+## Deck layout
+
+### What the public manual says
+
+Sections of the public manual, read on 17 and 18 November 2026:
+
+- *Preferences*, section *Decks Layout page*, *Deck Layout*
+- *Setting up*, section *Switching Deck Layouts*
+
+The decks layout page of the preferences has an option that shows decks C and D below decks A
+and B, with a size for decks A and B and another for C and D. A deck that is hidden is muted.
+The manual does not say how the window shares its room between two and four decks.
+
+### What Platter does
+
+- **The setting.** Two decks or four (`app.deck_layout.set`, `two` or `four`), chosen on the
+  General page of the preferences, in the Layout section above the deck size, and kept in the
+  settings file under `[decks]` as `layout`; two to begin with. Restoring the defaults goes
+  back to two.
+- **Two decks.** The window is as before: the waveform lanes, deck A, the mixer with two
+  channels and deck B, in the size the deck size setting gives.
+- **Four decks.** `docs/design/DESIGN.md`, *Four-deck layout (M4)*: under the status header,
+  the decks band of 580 points with deck A over deck C on the left, the mixer in the middle and
+  deck B over deck D on the right, then the browser to the bottom of the window. There are no
+  waveform lanes: each deck carries its own.
+- **The deck of the four-deck layout.** A header of two lines (the letter, the cover, the
+  title over the artist and album, the tempo over its offset and key, the large time over the
+  next one), the scrolling waveform with the overview under it, the row of sync with the key
+  controls, one row with the transport and the loop keys, and the eight hotcues in one row;
+  the tempo column at the right. There is no advanced panel and no beatjump row in this size,
+  and the deck size setting does not apply to it. The zoom of the waveform is the one of the
+  deck, kept from the two-deck layout.
+- **The mixer of the four-deck layout.** Four narrow channels in the order C, A, B, D, each
+  with gain, the three bands with their kill keys, its meter, the filter, key and pan,
+  pre-listen, the fader and the assign keys; the master column as with two decks; the
+  crossfader row under the four channels, its ends marked L and R.
+- **Loading.** The browser shows Load A, Load B, Load C and Load D, left to right; a file
+  dragged onto any of the four decks loads into it, and a file dropped from outside away from
+  the decks goes to the first empty deck of the four, or deck A.
+- **A larger window.** The mixer keeps its width, the two columns of decks share the rest of
+  the width, and the browser takes the rest of the height (decided by the maintainer on
+  18 November 2026).
+
+### Differences
+
+- The selector is in the preferences, not in the row of effects above the decks where the
+  design system draws it: the maintainer chose it on 18 November 2026, and the row of effects
+  waits for the effect units. Without them the four-deck layout has no row of effects and the
+  browser takes its height.
+- Decks C and D are not muted while the two-deck layout hides them: a track loaded into them by
+  a command or a mapping plays and is heard (`docs/behavior/decks.md`).
+- One layout for the four decks instead of a size per pair: the design system gives the decks
+  of the four-deck layout one size.
+- The controls the design system draws for later functions are left out: the effect sends and
+  the effect knob of each channel, the limiter key, the mix recorder and the stem lanes. Their
+  place in the mixer stays empty.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| A layout other than `two` or `four` in the settings file | Two decks |
+| The layout changes while decks C and D play | They keep playing; the window shows or hides them |
+| A window narrower than 1440 points | The whole interface is scaled down, as with two decks |
+| A deck of the four-deck layout shows a notice | The notice takes the place of its transport and hotcues |
+
+### Tests
+
+`crates/ui-egui/tests/panels.rs`: the four-deck state goes through every check of the panels
+(each control emits its command, no text out of the translations, no colour out of the tokens,
+no overlap in English and Spanish), the place of each deck and channel, the load keys, the drops
+and the setting on the General page. `crates/ui-egui/src/command.rs` for the command and
+`apps/platter/src/config.rs` for the settings file.

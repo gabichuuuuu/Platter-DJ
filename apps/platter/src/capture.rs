@@ -21,12 +21,13 @@ const SETTLE_FRAMES: u32 = 4;
 const GIVE_UP_FRAMES: u32 = 120;
 
 /// The states that can be captured: one per reference screen of M2, the main window with compact
-/// decks, the Decks, Mixer and Library pages of the preferences with the maintenance of the
-/// collection, a playlist and a history shown in the browser, and the details of one track and
-/// of two.
-pub const STATES: [&str; 13] = [
+/// decks and with four decks, the Decks, Mixer and Library pages of the preferences with the
+/// maintenance of the collection, a playlist and a history shown in the browser, and the details
+/// of one track and of two.
+pub const STATES: [&str; 14] = [
     "main",
     "compact",
+    "four-decks",
     "playlist",
     "history",
     "startup",
@@ -48,6 +49,7 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
             scene.settings.deck_size = DeckSize::Compact;
             Some((scene, None))
         }
+        "four-decks" => Some((sample::four_decks(), None)),
         "playlist" | "details" => Some((sample::playlist(), None)),
         "details-several" => {
             let mut scene = sample::playlist();

@@ -303,6 +303,10 @@ pub enum AppCommand {
     DeckSizeSet {
         size: DeckSize,
     },
+    /// Shows two decks or four: `docs/behavior/interface.md`, *Deck layout*.
+    DeckLayoutSet {
+        layout: DeckLayout,
+    },
     /// Sets the range every tempo fader gets, in percent: `docs/behavior/settings.md`.
     TempoRangeSet {
         percent: u32,
@@ -745,7 +749,37 @@ impl DeckSize {
     }
 }
 
+/// How many decks the window shows: `docs/behavior/interface.md`, *Deck layout*.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeckLayout {
+    /// Decks A and B, with the waveform lanes above them.
+    #[default]
+    Two,
+    /// Decks A to D, C under A and D under B, each with its own waveform.
+    Four,
+}
+
+impl DeckLayout {
+    pub const ALL: [Self; 2] = [Self::Two, Self::Four];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Two => "two",
+            Self::Four => "four",
+        }
+    }
+
+    /// The decks the window shows, left column first in each row.
+    pub fn decks(self) -> &'static [DeckId] {
+        match self {
+            Self::Two => &[DeckId::A, DeckId::B],
+            Self::Four => &DeckId::ALL,
+        }
+    }
+}
+
 pub const DECK_SIZES: &[&str] = &["full", "compact"];
+pub const DECK_LAYOUTS: &[&str] = &["two", "four"];
 
 /// The columns of the browser list that can be shown or hidden: all but the badge of a deck,
 /// the cover and the title. `docs/behavior/browser.md`, *Sorting*.
@@ -908,6 +942,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.deck_size.set",
         label: "Size of the decks",
         params: &[choice("size", DECK_SIZES)],
+    },
+    CommandSpec {
+        id: "app.deck_layout.set",
+        label: "Two or four decks",
+        params: &[choice("layout", DECK_LAYOUTS)],
     },
     CommandSpec {
         id: "app.tempo_range.set",
@@ -1554,6 +1593,9 @@ impl AppCommand {
             "app.deck_size.set" => Self::DeckSizeSet {
                 size: read.choice("size", &DeckSize::ALL, DeckSize::name, "full, compact")?,
             },
+            "app.deck_layout.set" => Self::DeckLayoutSet {
+                layout: read.choice("layout", &DeckLayout::ALL, DeckLayout::name, "two, four")?,
+            },
             "app.tempo_range.set" => Self::TempoRangeSet {
                 percent: u32::try_from(read.integer("percent")?).unwrap_or(0),
             },
@@ -1861,6 +1903,7 @@ impl AppCommand {
             Self::TooltipsToggle => "app.tooltips.toggle",
             Self::FullscreenAtStartToggle => "app.fullscreen_at_start.toggle",
             Self::DeckSizeSet { .. } => "app.deck_size.set",
+            Self::DeckLayoutSet { .. } => "app.deck_layout.set",
             Self::TempoRangeSet { .. } => "app.tempo_range.set",
             Self::MinPlaytimeSet { .. } => "app.min_playtime.set",
             Self::KeyNotationSet { .. } => "app.key_notation.set",
@@ -2012,11 +2055,12 @@ mod tests {
     use platter_engine::command::{Args, CommandError, CommandSpec, ParamKind, Value};
     use platter_library::{NodeId, SessionId};
 
-    use platter_core::ValueError;
+    use platter_core::{DeckId, ValueError};
 
     use super::{
-        APP_SPECS, Action, AppCommand, BrowserNode, DETAIL_FIELDS, DetailField, DetailFields,
-        NEW_ITEMS, NODES, NewItem, PAGES, SORT_COLUMNS, SettingsPage, SortColumn,
+        APP_SPECS, Action, AppCommand, BrowserNode, DECK_LAYOUTS, DETAIL_FIELDS, DeckLayout,
+        DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, SORT_COLUMNS, SettingsPage,
+        SortColumn,
     };
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
@@ -2095,6 +2139,30 @@ mod tests {
         assert_eq!(columns, SORT_COLUMNS);
         let items: Vec<_> = NewItem::ALL.into_iter().map(NewItem::name).collect();
         assert_eq!(items, NEW_ITEMS);
+        let layouts: Vec<_> = DeckLayout::ALL.into_iter().map(DeckLayout::name).collect();
+        assert_eq!(layouts, DECK_LAYOUTS);
+    }
+
+    /// `docs/behavior/interface.md`, *Deck layout*, edge cases.
+    #[test]
+    fn the_deck_layout_takes_two_or_four() {
+        let args =
+            |layout: &str| Args::from([("layout".to_owned(), Value::Text(layout.to_owned()))]);
+        assert_eq!(
+            Action::from_args("app.deck_layout.set", &args("four")),
+            Ok(Action::App(AppCommand::DeckLayoutSet {
+                layout: DeckLayout::Four
+            }))
+        );
+        assert!(matches!(
+            Action::from_args("app.deck_layout.set", &args("three")),
+            Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "layout",
+                ..
+            }))
+        ));
+        assert_eq!(DeckLayout::Four.decks(), DeckId::ALL);
+        assert_eq!(DeckLayout::Two.decks(), [DeckId::A, DeckId::B]);
     }
 
     #[test]

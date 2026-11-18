@@ -1058,6 +1058,10 @@ impl PlatterApp {
                 self.settings.deck_size = size;
                 self.save_settings();
             }
+            AppCommand::DeckLayoutSet { layout } => {
+                self.settings.deck_layout = layout;
+                self.save_settings();
+            }
             AppCommand::TempoRangeSet { percent } => {
                 if TEMPO_RANGE_PERCENTS.contains(&percent) {
                     self.settings.tempo_range = percent;
@@ -1391,6 +1395,7 @@ impl PlatterApp {
             fullscreen_at_start: self.settings.fullscreen_at_start,
             tempo_range: self.settings.tempo_range,
             deck_size: self.settings.deck_size,
+            deck_layout: self.settings.deck_layout,
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
             library_file: LIBRARY_FILE.to_owned(),

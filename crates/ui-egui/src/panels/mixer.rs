@@ -5,20 +5,21 @@
 //! placement from `docs/design/screens/M2-main.html`. Behaviour notes:
 //! `docs/behavior/mixer.md` and `docs/behavior/master.md`.
 
-use egui::{Align2, Color32, CornerRadius, Id, Rect, Role, Sense, WidgetInfo};
+use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Role, Sense, Vec2, WidgetInfo};
 use platter_core::DeckId;
 use platter_dsp::eq::band_gain;
 use platter_engine::{Band, Command, CrossfaderDirection, CrossfaderSide, FADER_UNITY, MixerMode};
 
+use crate::command::DeckLayout;
 use crate::command::{Action, AppCommand, MeterId};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
-use crate::model::{SHOWN_DECKS, View};
+use crate::model::View;
 use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::shell::ViewState;
-use crate::tokens::TextStyle;
+use crate::tokens::{TextStyle, Tokens};
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec, scale_position};
 use crate::widgets::value::{
@@ -225,20 +226,105 @@ const ASSIGN_STEP: f32 = 28.0;
 const FADE_STEP_WIDTH: f32 = 24.0;
 const FADE_AUTO_WIDTH: f32 = 44.0;
 
-fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
+/// Where the controls of a channel sit, from the top left corner of the channel. Knob
+/// positions are the top left corners of the knobs.
+struct ChannelLayout {
+    badge: Vec2,
+    /// The channel is named beside its badge.
+    title: bool,
+    gain: Vec2,
+    /// Diameter of the gain and equaliser knobs.
+    knob: f32,
+    pre_listen: Rect,
+    key: Vec2,
+    eq: [Vec2; 3],
+    /// Where each kill key sits from the top left corner of its knob.
+    kill: Vec2,
+    meter: Rect,
+    filter: Vec2,
+    filter_size: f32,
+    pan: Vec2,
+    /// The left assign key, the step to the right one, and the width of each.
+    assign: Vec2,
+    assign_step: f32,
+    assign_width: f32,
+    fader: Vec2,
+    fader_height: f32,
+}
+
+impl ChannelLayout {
+    /// Two channels side by side, as `docs/design/screens/M2-main.html` places them.
+    fn two(tokens: &Tokens) -> Self {
+        let knob = tokens.size.knob;
+        Self {
+            badge: egui::vec2(50.0, 12.0),
+            title: true,
+            gain: egui::vec2(16.0, 35.0),
+            knob,
+            pre_listen: Rect::from_min_size(egui::pos2(108.0, 143.0), egui::vec2(54.0, 22.0)),
+            key: egui::vec2(24.0, 272.0),
+            eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
+            kill: egui::vec2(47.0, 19.0),
+            // The meter runs beside the equaliser, from the top of the high knob to the name
+            // of the low one; its clip cell takes the first 6px.
+            meter: Rect::from_min_max(
+                egui::pos2(94.0, EQ_TOPS[0] + 6.0),
+                egui::pos2(104.0, EQ_TOPS[2] + knob + 15.0),
+            ),
+            filter: egui::vec2(113.0, 35.0),
+            filter_size: FILTER_KNOB,
+            pan: egui::vec2(123.0, 99.0),
+            assign: egui::vec2(108.0, 294.0),
+            assign_step: ASSIGN_STEP,
+            assign_width: ASSIGN_WIDTH,
+            fader: egui::vec2(112.0, 170.0),
+            fader_height: tokens.size.fader_track,
+        }
+    }
+
+    /// One of four narrow channels, as `docs/design/screens/M4-effects.html` places them.
+    fn four() -> Self {
+        Self {
+            badge: egui::vec2(29.0, 0.0),
+            title: false,
+            gain: egui::vec2(6.0, 23.0),
+            knob: 30.0,
+            pre_listen: Rect::from_min_size(egui::pos2(9.0, 371.0), egui::vec2(58.0, 20.0)),
+            key: egui::vec2(8.0, 327.0),
+            eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
+            kill: egui::vec2(34.0, 14.0),
+            meter: Rect::from_min_size(egui::pos2(69.0, 79.0), egui::vec2(6.0, 135.0)),
+            filter: egui::vec2(19.0, 219.0),
+            filter_size: 38.0,
+            pan: egui::vec2(44.0, 327.0),
+            assign: egui::vec2(16.0, 497.0),
+            assign_step: 22.0,
+            assign_width: 20.0,
+            fader: egui::vec2(15.0, 396.0),
+            fader_height: 96.0,
+        }
+    }
+}
+
+fn channel(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelLayout,
+    deck: DeckId,
+    (view, state): (&View<'_>, &ViewState),
+) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
     let color = &tokens.color;
-    let left = panel.left() + deck.index() as f32 * CHANNEL_STEP;
-    let at = |x: f32, y: f32| egui::pos2(left + x, panel.top() + y);
+    let at = |offset: Vec2| origin + offset;
     let snapshot = &view.engine.decks[deck.index()];
     let controls = &snapshot.controls;
     let letter = deck.letter().to_string();
-    let knob = tokens.size.knob;
+    let knob = layout.knob;
     let index = deck.index();
 
-    let badge = Rect::from_min_size(at(50.0, 12.0), egui::vec2(18.0, 18.0));
+    let badge = Rect::from_min_size(at(layout.badge), egui::vec2(18.0, 18.0));
     paint::badge(
         cx.painter(),
         theme,
@@ -246,21 +332,26 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         deck.letter(),
         deck_color(theme, deck),
     );
-    let title = texts.format("mixer.channel", &[("deck", &letter)]);
-    let title_rect = Rect::from_min_size(at(74.0, 12.0), egui::vec2(90.0, 18.0));
-    paint::text(
-        cx.painter(),
-        theme,
-        title_rect,
-        Align2::LEFT_CENTER,
-        &title,
-        tokens.text.label,
-        color.text_secondary,
-    );
+    if layout.title {
+        let title = texts.format("mixer.channel", &[("deck", &letter)]);
+        let title_rect = Rect::from_min_size(
+            badge.right_top() + egui::vec2(6.0, 0.0),
+            egui::vec2(90.0, 18.0),
+        );
+        paint::text(
+            cx.painter(),
+            theme,
+            title_rect,
+            Align2::LEFT_CENTER,
+            &title,
+            tokens.text.label,
+            color.text_secondary,
+        );
+    }
 
     knob_cell(
         cx,
-        at(16.0, 35.0),
+        at(layout.gain),
         id(("mixer-gain", index)),
         KnobCell {
             name: "mixer.gain",
@@ -293,7 +384,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     key::key(
         cx,
-        Rect::from_min_size(at(108.0, 143.0), egui::vec2(54.0, 22.0)),
+        layout.pre_listen.translate(origin.to_vec2()),
         id(("mixer-pre-listen", index)),
         spec,
         Press::Click(Command::MixerCueToggle { deck }.into()),
@@ -308,7 +399,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     knob_cell(
         cx,
-        at(24.0, 272.0),
+        at(layout.key),
         id(("mixer-key", index)),
         KnobCell {
             name: "mixer.key",
@@ -336,11 +427,11 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     }
 
     let bands = [
-        (Band::High, "mixer.high", EQ_TOPS[0]),
-        (Band::Mid, "mixer.mid", EQ_TOPS[1]),
-        (Band::Low, "mixer.low", EQ_TOPS[2]),
+        (Band::High, "mixer.high", layout.eq[0]),
+        (Band::Mid, "mixer.mid", layout.eq[1]),
+        (Band::Low, "mixer.low", layout.eq[2]),
     ];
-    for (band, name, top) in bands {
+    for (band, name, spot) in bands {
         let position = controls.eq[band as usize];
         let killed = controls.eq_kill[band as usize];
         let reading = if killed || position <= 0.0 {
@@ -350,7 +441,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         };
         knob_cell(
             cx,
-            at(16.0, top),
+            at(spot),
             id(("mixer-eq", index, band as usize)),
             KnobCell {
                 name,
@@ -373,7 +464,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         );
         let kill = texts.get("mixer.kill");
         let width = key::width_for(cx, kill, 28.0).clamp(28.0, 30.0);
-        let rect = Rect::from_min_size(at(63.0, top + 19.0), egui::vec2(width, 18.0));
+        let rect = Rect::from_min_size(at(spot + layout.kill), egui::vec2(width, 18.0));
         let name = texts.format(
             "mixer.kill_name",
             &[("band", texts.get(name)), ("deck", &letter)],
@@ -396,12 +487,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         );
     }
 
-    // The channel meter runs beside the equaliser, from the top of the high knob to the
-    // name of the low one; its clip cell takes the first 6px.
-    let meter_rect = Rect::from_min_max(
-        at(94.0, EQ_TOPS[0] + 6.0),
-        at(104.0, EQ_TOPS[2] + knob + 15.0),
-    );
+    let meter_rect = layout.meter.translate(origin.to_vec2());
     let label = Rect::from_center_size(
         egui::pos2(meter_rect.center().x, meter_rect.bottom() + 9.0),
         egui::vec2(28.0, 14.0),
@@ -432,7 +518,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     knob_cell(
         cx,
-        at(113.0, 35.0),
+        at(layout.filter),
         id(("mixer-filter", index)),
         KnobCell {
             name: "mixer.filter",
@@ -442,7 +528,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
             centre_detent: true,
             hide_arc: false,
             enabled: true,
-            size: FILTER_KNOB,
+            size: layout.filter_size,
         },
         |position| {
             Command::MixerFilterSet {
@@ -465,7 +551,7 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
     };
     knob_cell(
         cx,
-        at(123.0, 99.0),
+        at(layout.pan),
         id(("mixer-pan", index)),
         KnobCell {
             name: "mixer.pan",
@@ -504,8 +590,8 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
         let label = texts.get(label);
         let name = texts.format(name, &[("deck", &letter)]);
         let rect = Rect::from_min_size(
-            at(108.0 + place as f32 * ASSIGN_STEP, 294.0),
-            egui::vec2(ASSIGN_WIDTH, 18.0),
+            at(layout.assign + egui::vec2(place as f32 * layout.assign_step, 0.0)),
+            egui::vec2(layout.assign_width, 18.0),
         );
         let spec = KeySpec {
             face: Face::Text(label),
@@ -533,8 +619,8 @@ fn channel(cx: &mut Cx<'_>, panel: Rect, deck: DeckId, view: &View<'_>, state: &
 
     let name = texts.format("mixer.fader", &[("deck", &letter)]);
     let track = Rect::from_min_size(
-        at(112.0, 170.0),
-        egui::vec2(CHANNEL_FADER_WIDTH, tokens.size.fader_track),
+        at(layout.fader),
+        egui::vec2(CHANNEL_FADER_WIDTH, layout.fader_height),
     );
     value::fader(
         cx,
@@ -743,35 +829,105 @@ fn master(cx: &mut Cx<'_>, panel: Rect, view: &View<'_>, state: &ViewState) {
     }
 }
 
+/// The crossfader row: the track, what marks its two ends, and the step and automatic fade keys
+/// outside them. Positions from the top left corner of the mixer.
+struct CrossfaderRow {
+    track: Vec2,
+    /// Where the marks of the two sides go: the badges of decks A and B with two decks, the L
+    /// and R of the assign keys with four.
+    ends: [Vec2; 2],
+    deck_badges: bool,
+    steps: [Vec2; 2],
+    autos: [Vec2; 2],
+}
+
+/// The channels of the four-deck layout, left to right: `docs/design/DESIGN.md`, *Four-deck
+/// layout (M4)*.
+const FOUR_ORDER: [DeckId; DeckId::COUNT] = [DeckId::C, DeckId::A, DeckId::B, DeckId::D];
+/// Distance between the left edges of two channels of the four-deck layout.
+const FOUR_STEP: f32 = 79.0;
+const FOUR_PADDING: f32 = 10.0;
+
 pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
     let theme = cx.theme;
     let tokens = &theme.tokens;
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, tokens.color.surface_panel);
-    for deck in SHOWN_DECKS {
-        channel(cx, rect, deck, view, state);
-    }
+    let row = match view.settings.deck_layout {
+        DeckLayout::Two => {
+            let layout = ChannelLayout::two(tokens);
+            for deck in DeckLayout::Two.decks() {
+                let origin = rect.min + egui::vec2(deck.index() as f32 * CHANNEL_STEP, 0.0);
+                channel(cx, origin, &layout, *deck, (view, state));
+            }
+            CrossfaderRow {
+                track: egui::vec2(118.0, 315.0),
+                ends: [egui::vec2(88.0, 320.0), egui::vec2(290.0, 320.0)],
+                deck_badges: true,
+                steps: [egui::vec2(8.0, 317.0), egui::vec2(364.0, 317.0)],
+                autos: [egui::vec2(36.0, 317.0), egui::vec2(314.0, 317.0)],
+            }
+        }
+        DeckLayout::Four => {
+            let layout = ChannelLayout::four();
+            for (slot, deck) in FOUR_ORDER.into_iter().enumerate() {
+                let origin =
+                    rect.min + egui::vec2(FOUR_PADDING + slot as f32 * FOUR_STEP, FOUR_PADDING);
+                channel(cx, origin, &layout, deck, (view, state));
+            }
+            CrossfaderRow {
+                track: egui::vec2(117.0, 541.0),
+                ends: [egui::vec2(98.0, 546.0), egui::vec2(281.0, 546.0)],
+                deck_badges: false,
+                steps: [egui::vec2(13.0, 543.0), egui::vec2(355.0, 543.0)],
+                autos: [egui::vec2(49.0, 543.0), egui::vec2(301.0, 543.0)],
+            }
+        }
+    };
     master(cx, rect, view, state);
 
     if view.engine.mixer.mode == MixerMode::External {
         return;
     }
-    let at = |x: f32, y: f32| rect.min + egui::vec2(x, y);
+    crossfader(cx, rect, &row, view);
+}
+
+fn crossfader(cx: &mut Cx<'_>, rect: Rect, row: &CrossfaderRow, view: &View<'_>) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let at = |offset: Vec2| rect.min + offset;
     let track = Rect::from_min_size(
-        at(118.0, 315.0),
+        at(row.track),
         egui::vec2(tokens.size.crossfader_track, 28.0),
     );
-    for (deck, x) in [(DeckId::A, 88.0), (DeckId::B, 290.0)] {
-        let badge = Rect::from_min_size(at(x, 320.0), egui::vec2(18.0, 18.0));
-        paint::badge(
-            cx.painter(),
-            theme,
-            badge,
-            deck.letter(),
-            deck_color(theme, deck),
-        );
+    let marks = [
+        (DeckId::A, "mixer.assign_left"),
+        (DeckId::B, "mixer.assign_right"),
+    ];
+    for ((deck, side), end) in marks.into_iter().zip(row.ends) {
+        let mark = Rect::from_min_size(at(end), egui::vec2(18.0, 18.0));
+        if row.deck_badges {
+            paint::badge(
+                cx.painter(),
+                theme,
+                mark,
+                deck.letter(),
+                deck_color(theme, deck),
+            );
+        } else {
+            paint::text(
+                cx.painter(),
+                theme,
+                mark,
+                Align2::CENTER_CENTER,
+                texts.get(side),
+                tokens.text.label,
+                tokens.color.text_secondary,
+            );
+        }
     }
-    let name = cx.texts.get("mixer.crossfader");
+    let name = texts.get("mixer.crossfader");
     value::crossfader(
         cx,
         track,
@@ -786,33 +942,26 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         |position| Command::MixerCrossfaderSet { position }.into(),
     );
 
-    // Outside each badge: a step towards that side, then a fade to it by itself.
-    let texts = cx.texts;
+    // Outside each end: a step towards that side, then a fade to it by itself.
     let fades = [
         (
             CrossfaderDirection::Left,
             Glyph::ChevronLeft,
             "mixer.fade_step_a",
-            at(8.0, 317.0),
-            at(36.0, 317.0),
             "mixer.fade_auto_a",
         ),
         (
             CrossfaderDirection::Right,
             Glyph::ChevronRight,
             "mixer.fade_step_b",
-            at(364.0, 317.0),
-            at(314.0, 317.0),
             "mixer.fade_auto_b",
         ),
     ];
-    for (place, (direction, glyph, step_name, step_at, auto_at, auto_name)) in
-        fades.into_iter().enumerate()
-    {
+    for (place, (direction, glyph, step_name, auto_name)) in fades.into_iter().enumerate() {
         let name = texts.get(step_name);
         key::key(
             cx,
-            Rect::from_min_size(step_at, egui::vec2(FADE_STEP_WIDTH, 24.0)),
+            Rect::from_min_size(at(row.steps[place]), egui::vec2(FADE_STEP_WIDTH, 24.0)),
             id(("mixer-fade-step", place)),
             KeySpec::icon(glyph, 14.0, name),
             Press::Click(Command::MixerCrossfaderStep { direction }.into()),
@@ -823,7 +972,7 @@ pub fn mixer(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
         spec.text = Some(tokens.text.label);
         key::key(
             cx,
-            Rect::from_min_size(auto_at, egui::vec2(FADE_AUTO_WIDTH, 24.0)),
+            Rect::from_min_size(at(row.autos[place]), egui::vec2(FADE_AUTO_WIDTH, 24.0)),
             id(("mixer-fade-auto", place)),
             spec,
             Press::Click(Command::MixerCrossfaderAutoFade { direction }.into()),

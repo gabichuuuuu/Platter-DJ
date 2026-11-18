@@ -14,7 +14,7 @@ use platter_engine::{
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::DeckSize;
+use crate::command::{DeckLayout, DeckSize};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -459,6 +459,7 @@ fn settings() -> SettingsView {
         fullscreen_at_start: false,
         tempo_range: 8,
         deck_size: DeckSize::Full,
+        deck_layout: DeckLayout::Two,
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
         library_file: "library.sqlite".to_owned(),
@@ -622,6 +623,20 @@ pub fn playing() -> Scene {
             active: false,
         },
     }
+}
+
+/// The playing state in the four-deck layout: deck C plays under deck A, deck D is loaded and
+/// stopped under deck B.
+pub fn four_decks() -> Scene {
+    let mut scene = playing();
+    scene.settings.deck_layout = DeckLayout::Four;
+    let decks = &mut scene.engine.decks;
+    decks[2] = loaded_deck(2, 75.4, 1.0, [0.35, 0.33]);
+    decks[2].controls.fader = 0.8;
+    decks[3] = loaded_deck(3, 0.0, 1.0, [0.0, 0.0]);
+    decks[3].playing = false;
+    decks[3].controls.fader = 0.0;
+    scene
 }
 
 /// The main state with the playlist *Friday warm-up* shown in the list.

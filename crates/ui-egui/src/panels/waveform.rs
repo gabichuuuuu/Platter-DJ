@@ -13,11 +13,10 @@ use egui::{
 use platter_core::{DeckId, LoopSize};
 use platter_engine::{Command, DeckSnapshot, WaveformPeaks};
 
-use crate::command::AppCommand;
+use crate::command::{AppCommand, DeckLayout};
 use crate::cx::{ControlKind, Cx, id};
 use crate::i18n::Texts;
 use crate::icons::Glyph;
-use crate::model::SHOWN_DECKS;
 use crate::paint;
 use crate::theme::Theme;
 use crate::widgets::key::{self, KeySpec, Press};
@@ -378,7 +377,7 @@ pub fn lanes(
     let color = &tokens.color;
     let seam = tokens.space.s1;
     let lane_height = (rect.height() - seam) / 2.0;
-    for (row, deck) in SHOWN_DECKS.into_iter().enumerate() {
+    for (row, &deck) in DeckLayout::Two.decks().iter().enumerate() {
         let top = rect.top() + row as f32 * (lane_height + seam);
         let row = Rect::from_min_size(
             egui::pos2(rect.left(), top),
@@ -433,6 +432,17 @@ pub fn lanes(
             .interact(lane, id(("lane", deck.index())), Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(Role::Image, true, &name));
     }
+}
+
+/// The scrolling waveform of one deck inside the deck itself, as the four-deck layout draws it.
+pub fn deck_lane(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoom: usize) {
+    scrolling(cx, rect, deck, snapshot, zoom);
+    let letter = deck.letter().to_string();
+    let name = cx.texts.format("deck.lane", &[("deck", &letter)]);
+    let response = cx
+        .ui
+        .interact(rect, id(("lane", deck.index())), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Image, true, &name));
 }
 
 /// Draws the overview of a deck in `rect` and emits `deck.seek` when it is clicked.

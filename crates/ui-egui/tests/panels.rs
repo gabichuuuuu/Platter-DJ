@@ -16,7 +16,7 @@ use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{ClockMode, Command};
 use platter_library::{NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckPage, SettingsPage};
+use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::DeckNotice;
@@ -251,6 +251,7 @@ fn states() -> Vec<State> {
         importing,
         details,
         details_several,
+        state("four-decks", sample::four_decks(), None),
         state(
             "preferences-library",
             sample::playing(),
@@ -1626,4 +1627,124 @@ fn the_window_draws_with_decks_c_and_d_in_use_and_drops_only_onto_a_shown_deck()
         })
         .collect();
     assert_eq!(loads, [DeckId::A]);
+}
+
+/// The deck each control of `command` acts on, with where it is, found by clicking each one.
+fn decks_of(state: &State, command: &str) -> Vec<(DeckId, Rect)> {
+    let controls: Vec<Control> = Stage::new(state)
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == command)
+        .collect();
+    controls
+        .iter()
+        .map(|control| {
+            let mut stage = Stage::new(state);
+            let deck = stage
+                .click(control.rect.center())
+                .iter()
+                .find_map(|action| match action {
+                    Action::Engine(
+                        Command::DeckPlayPause { deck } | Command::MixerFaderSet { deck, .. },
+                    ) => Some(*deck),
+                    Action::App(AppCommand::BrowserLoadSelected { deck }) => Some(*deck),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{command} at {:?} names no deck", control.rect));
+            (deck, control.rect)
+        })
+        .collect()
+}
+
+fn rect_of(found: &[(DeckId, Rect)], deck: DeckId) -> Rect {
+    found
+        .iter()
+        .find(|(of, _)| *of == deck)
+        .map(|(_, rect)| *rect)
+        .unwrap_or_else(|| panic!("no control of deck {deck:?}"))
+}
+
+/// `docs/behavior/interface.md`, *Deck layout*: A over C on the left, B over D on the right,
+/// the channels in the order C, A, B, D, and a load key per deck.
+#[test]
+fn the_four_deck_layout_puts_c_under_a_and_d_under_b() {
+    let four = state_named("four-decks");
+    let plays = decks_of(&four, "deck.play_pause");
+    assert_eq!(plays.len(), 4);
+    let [a, b, c, d] = DeckId::ALL.map(|deck| rect_of(&plays, deck));
+    assert_eq!(c.left(), a.left());
+    assert!(c.top() > a.bottom());
+    assert_eq!(d.left(), b.left());
+    assert!(d.top() > b.bottom());
+    assert!(b.left() > a.right());
+
+    let mut faders = decks_of(&four, "mixer.fader.set");
+    faders.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));
+    let order: Vec<DeckId> = faders.iter().map(|(deck, _)| *deck).collect();
+    assert_eq!(order, [DeckId::C, DeckId::A, DeckId::B, DeckId::D]);
+
+    let mut loads = decks_of(&four, "browser.load_selected");
+    loads.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));
+    let order: Vec<DeckId> = loads.iter().map(|(deck, _)| *deck).collect();
+    assert_eq!(order, DeckId::ALL);
+
+    // With two decks the window keeps decks A and B only, with their lanes above them.
+    let two = state_named("main");
+    let plays: Vec<DeckId> = decks_of(&two, "deck.play_pause")
+        .into_iter()
+        .map(|(deck, _)| deck)
+        .collect();
+    assert_eq!(plays, [DeckId::A, DeckId::B]);
+    assert_eq!(decks_of(&two, "browser.load_selected").len(), 2);
+}
+
+/// A file dropped on deck D loads into it; dropped away from the decks it goes to the first
+/// empty deck of the four.
+#[test]
+fn a_file_dropped_in_the_four_deck_layout_reaches_decks_c_and_d() {
+    let four = state_named("four-decks");
+    let plays = decks_of(&four, "deck.play_pause");
+    let loads = |stage: &mut Stage, events: Vec<Event>| -> Vec<DeckId> {
+        stage.dropped = vec![Arc::new(Dropped(PathBuf::from("dropped.wav")))];
+        stage
+            .frame(events)
+            .0
+            .iter()
+            .filter_map(|action| match action {
+                Action::Engine(Command::DeckLoad { deck, .. }) => Some(*deck),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut stage = Stage::new(&four);
+    let over_d = rect_of(&plays, DeckId::D).center();
+    assert_eq!(
+        loads(&mut stage, vec![Event::PointerMoved(over_d)]),
+        [DeckId::D]
+    );
+
+    let mut empty_c = four.clone();
+    empty_c.scene.engine.decks[DeckId::C.index()] = platter_engine::DeckSnapshot::default();
+    let mut stage = Stage::new(&empty_c);
+    stage.frame(vec![Event::PointerGone]);
+    assert_eq!(loads(&mut stage, Vec::new()), [DeckId::C]);
+}
+
+/// The General page of the preferences chooses two or four decks.
+#[test]
+fn the_general_page_chooses_four_decks() {
+    let mut stage = Stage::new(&state_named("preferences-general"));
+    let mut keys: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "app.deck_layout.set")
+        .collect();
+    keys.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    assert_eq!(keys.len(), 2);
+    assert_eq!(
+        stage.click(keys[1].rect.center()),
+        [Action::App(AppCommand::DeckLayoutSet {
+            layout: DeckLayout::Four
+        })]
+    );
 }

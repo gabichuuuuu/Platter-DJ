@@ -13,7 +13,7 @@ use platter_engine::{
     CrossfaderCurve, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{DeckSize, ListColumn, MAX_OUTPUTS};
+use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
 use platter_ui_egui::played::{DEFAULT_PLAYTIME, MAX_PLAYTIME, MIN_PLAYTIME};
@@ -91,6 +91,8 @@ pub struct Settings {
     pub tempo_range: u32,
     /// The size of decks A and B.
     pub deck_size: DeckSize,
+    /// Two decks or four.
+    pub deck_layout: DeckLayout,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
     pub mixer_mode: MixerMode,
     /// The sync mode of the Decks page.
@@ -144,6 +146,7 @@ impl Default for Settings {
             fullscreen_at_start: false,
             tempo_range: 8,
             deck_size: DeckSize::Full,
+            deck_layout: DeckLayout::Two,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
             key_notation: KeyNotation::default(),
@@ -205,6 +208,13 @@ impl Settings {
             deck_size: text(table("decks"), "size")
                 .and_then(|name| DeckSize::ALL.into_iter().find(|size| size.name() == name))
                 .unwrap_or(defaults.deck_size),
+            deck_layout: text(table("decks"), "layout")
+                .and_then(|name| {
+                    DeckLayout::ALL
+                        .into_iter()
+                        .find(|layout| layout.name() == name)
+                })
+                .unwrap_or(defaults.deck_layout),
             device: text(audio, "device").filter(|name| !name.is_empty()),
             sample_rate: number(audio, "sample_rate")
                 .filter(|rate| SAMPLE_RATES.contains(rate))
@@ -380,6 +390,10 @@ impl Settings {
             "size".to_owned(),
             toml::Value::String(self.deck_size.name().to_owned()),
         );
+        decks.insert(
+            "layout".to_owned(),
+            toml::Value::String(self.deck_layout.name().to_owned()),
+        );
         // The ranges offered are whole tempos.
         decks.insert(
             "bpm_min".to_owned(),
@@ -507,7 +521,7 @@ mod tests {
     use platter_audio_io::Routing;
     use platter_engine::{CrossfaderCurve, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
-    use platter_ui_egui::command::{DeckSize, ListColumn};
+    use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn};
     use platter_ui_egui::i18n::Language;
     use platter_ui_egui::keys::KeyNotation;
 
@@ -529,6 +543,7 @@ mod tests {
             fullscreen_at_start: true,
             tempo_range: 16,
             deck_size: DeckSize::Compact,
+            deck_layout: DeckLayout::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
             key_notation: KeyNotation::Sharps,
@@ -643,6 +658,8 @@ min_playtime = {written}
                 .is_empty()
         );
         assert_eq!(Settings::default().columns, ListColumn::SHOWN_AT_FIRST);
+        let unknown = Settings::parse("[decks]\nlayout = \"six\"\n");
+        assert_eq!(unknown.deck_layout, DeckLayout::Two);
         let unknown = Settings::parse("[decks]\ntempo_range = 10\n");
         assert_eq!(unknown.tempo_range, 8);
         let written = Settings::parse("[decks]\nbpm_min = 85\nbpm_max = 175\n");

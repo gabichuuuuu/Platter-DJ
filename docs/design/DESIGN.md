@@ -269,8 +269,9 @@ Measured on `M4-effects.html` at 1440 × 900. Zones top to bottom, separated by 
 
 1. Status header, 40px, as in M3.
 2. Effect units row, 72px: FX 1 on the left (520px, over decks A and C), FX 2 on the right (520px, over decks B and D) and, in the
-   396px between them over the mixer, the layout selector (label `Layout`, a 150 × 28px choice, `Four decks` shown) and the mix
-   recorder (143px: Rec, elapsed time, Cut).
+   396px between them over the mixer, the mix recorder (143px: Rec, elapsed time, Cut). The screen also draws the layout selector
+   there; it lives in Preferences instead (*Decided on 18 November 2026* below). Until the effect units exist the row is left out
+   and the browser takes its height.
 3. Decks band, 580px: left column 520px with deck A on top and deck C below, the mixer 396px in the middle, right column 520px with
    deck B on top and deck D below. Each deck is 289px tall.
 4. Browser, from the bottom of the decks band to the bottom of the window (202px at 900), as in M3.
@@ -289,12 +290,16 @@ meter and level, limiter, phones mix and volume). Each channel keeps the M3 cont
 key, pan, pre-listen, fader, L and R) and adds the M4 effect controls (sends 1 and 2, the mixer effect knob). The crossfader row
 (30px) spans the four channels under them, with the step keys and Auto at each end.
 
-**Still to decide before it is built:**
+**Decided on 18 November 2026:**
 
-- How the layout selector switches to and from the two-deck layout, and what each layout keeps (advanced panel, parallel lanes).
-- How tracks load into decks C and D: the browser draws only Load A and Load B.
-- The crossfader side decks C and D start on (the engine starts C on the left and D on the right).
-- Windows wider than 1440 and full screen: which zones take the extra width and height in this layout.
+- The layout is chosen in Preferences, General page, Layout section: `Decks`, a segmented choice of `Two` and `Four`, above the deck
+  size. It is kept in the settings file. The two-deck layout keeps the advanced panel and the parallel lanes; the four-deck layout
+  has neither.
+- Loading: in the four-deck layout the browser draws Load A, Load B, Load C and Load D, left to right; dragging a track onto any of
+  the four decks also loads it.
+- The crossfader starts with deck C on the left and deck D on the right.
+- Windows wider than 1440 and full screen: the mixer keeps its 396px, the two deck columns share the extra width, and the browser
+  takes the extra height.
 
 ## Components
 
@@ -316,7 +321,7 @@ The strip across the top of the window: Platter's name, live status indicators, 
   - **MIDI** (M3) and **Rec** (M4) indicators join the same row later.
 - Master level: a horizontal `Meter`, 120px long.
 - Clock: system time, `readout` style.
-- Layout selector (M4) and the settings button at the right end.
+- The settings button at the right end. The layout of the decks is chosen in Preferences, not here (*Four-deck layout (M4)*).
 
 Height 32px, `surface-panel` fill, `line-divider` bottom border, `space-4` side padding, indicators `space-5` apart.
 

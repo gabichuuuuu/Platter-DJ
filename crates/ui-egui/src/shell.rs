@@ -2,7 +2,8 @@
 //! one function the application calls to draw a frame.
 //!
 //! The layout follows `docs/design/DESIGN.md`, "Layout of the main window": status header,
-//! two waveform lanes, deck A, mixer and deck B, and the file selector to the bottom.
+//! two waveform lanes, deck A, mixer and deck B, and the file selector to the bottom; or, in
+//! the four-deck layout, decks A and C, mixer, decks B and D, and the file selector.
 
 use egui::emath::GuiRounding as _;
 use egui::{CornerRadius, Key, Rect, Sense};
@@ -10,13 +11,13 @@ use platter_core::DeckId;
 use platter_engine::Command;
 
 use crate::command::{
-    Action, AppCommand, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen, MeterId,
-    SettingsPage, TrackDetails,
+    Action, AppCommand, DeckLayout, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen,
+    MeterId, SettingsPage, TrackDetails,
 };
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
 use crate::keymap::KeymapState;
-use crate::model::{AudioState, CollectionView, FileRow, RowKind, SHOWN_DECKS, View};
+use crate::model::{AudioState, CollectionView, FileRow, RowKind, View};
 use crate::panels::browser::BrowserMemory;
 use crate::panels::details::{DetailsEdit, DetailsForm};
 use crate::panels::settings::{DIALOG_SIZE, SettingsMemory};
@@ -37,6 +38,8 @@ const DECKS_HEIGHT: f32 = 388.0;
 /// down, with the padding of a panel under it.
 const COMPACT_DECKS_HEIGHT: f32 = 356.0;
 const DECK_WIDTH: f32 = 520.0;
+/// The band of the four-deck layout: two decks of 289 points, one over the other.
+const FOUR_DECKS_HEIGHT: f32 = 580.0;
 /// How much of the window shows through the veil behind the preferences.
 const DIALOG_VEIL: f32 = 0.55;
 
@@ -321,9 +324,14 @@ impl Shell {
             if let (Some(rect), AudioState::Stopped(problem)) = (zones.notice, &view.audio.state) {
                 header::audio_notice(&mut cx, rect, *problem);
             }
-            waveform::lanes(&mut cx, zones.lanes, &engine.decks, state.zoom);
-            for (deck_id, rect) in SHOWN_DECKS.into_iter().zip(zones.decks) {
-                deck::deck(&mut cx, rect, deck_id, view, &state);
+            if let Some(lanes) = zones.lanes {
+                waveform::lanes(&mut cx, lanes, &engine.decks, state.zoom);
+            }
+            for (deck_id, rect) in zones.decks.iter().copied() {
+                match view.settings.deck_layout {
+                    DeckLayout::Two => deck::deck(&mut cx, rect, deck_id, view, &state),
+                    DeckLayout::Four => deck::four_deck(&mut cx, rect, deck_id, view, &state),
+                }
             }
             mixer::mixer(&mut cx, zones.mixer, view, &state);
             browser::browser(&mut cx, zones.browser, view, &mut state.browser);
@@ -533,8 +541,10 @@ fn details_of(view: &View<'_>, position: usize, edits: &[DetailsEdit]) -> Option
 struct Zones {
     header: Rect,
     notice: Option<Rect>,
-    lanes: Rect,
-    decks: [Rect; SHOWN_DECKS.len()],
+    /// The waveform lanes, which only the two-deck layout has.
+    lanes: Option<Rect>,
+    /// The decks the window shows and where.
+    decks: Vec<(DeckId, Rect)>,
     mixer: Rect,
     browser: Rect,
 }
@@ -554,6 +564,9 @@ impl Zones {
             top = rect.bottom() + seam;
             rect
         });
+        if view.settings.deck_layout == DeckLayout::Four {
+            return Self::four(screen, header, notice, top, seam);
+        }
         let lanes = band(top, LANES_HEIGHT);
         top = lanes.bottom() + seam;
         let decks_height = match view.settings.deck_size {
@@ -582,10 +595,50 @@ impl Zones {
         Self {
             header,
             notice,
-            lanes,
-            decks: [deck_a, deck_b],
+            lanes: Some(lanes),
+            decks: vec![(DeckId::A, deck_a), (DeckId::B, deck_b)],
             mixer,
             browser,
+        }
+    }
+
+    /// The four-deck layout: A over C on the left, the mixer, B over D on the right, and the
+    /// browser under them. The mixer keeps its width; the two columns of decks share the rest
+    /// of the window, and the browser takes the rest of its height.
+    fn four(screen: Rect, header: Rect, notice: Option<Rect>, top: f32, seam: f32) -> Self {
+        let mixer_width = DESIGN_WIDTH - 2.0 * (DECK_WIDTH + seam);
+        let column = ((screen.width() - mixer_width) / 2.0 - seam)
+            .max(DECK_WIDTH)
+            .floor();
+        let deck_height = ((FOUR_DECKS_HEIGHT - seam) / 2.0).floor();
+        let left = screen.left();
+        let right = screen.right() - column;
+        let place = |x: f32, row: f32| {
+            Rect::from_min_size(
+                egui::pos2(x, top + row * (deck_height + seam)),
+                egui::vec2(column, deck_height),
+            )
+        };
+        let mixer = Rect::from_min_max(
+            egui::pos2(left + column + seam, top),
+            egui::pos2(right - seam, top + FOUR_DECKS_HEIGHT),
+        );
+        let browser_top = top + FOUR_DECKS_HEIGHT + seam;
+        Self {
+            header,
+            notice,
+            lanes: None,
+            decks: vec![
+                (DeckId::A, place(left, 0.0)),
+                (DeckId::B, place(right, 0.0)),
+                (DeckId::C, place(left, 1.0)),
+                (DeckId::D, place(right, 1.0)),
+            ],
+            mixer,
+            browser: Rect::from_min_max(
+                egui::pos2(screen.left(), browser_top),
+                screen.max.max(egui::pos2(screen.left(), browser_top)),
+            ),
         }
     }
 }
@@ -606,15 +659,18 @@ fn dropped_files(cx: &mut Cx<'_>, zones: &Zones, view: &View<'_>) {
         return;
     };
     let under_pointer = pointer.and_then(|pos| {
-        SHOWN_DECKS
-            .into_iter()
-            .zip(zones.decks)
+        zones
+            .decks
+            .iter()
             .find(|(_, rect)| rect.contains(pos))
-            .map(|(deck, _)| deck)
+            .map(|(deck, _)| *deck)
     });
     let deck = under_pointer.unwrap_or_else(|| {
-        SHOWN_DECKS
-            .into_iter()
+        view.settings
+            .deck_layout
+            .decks()
+            .iter()
+            .copied()
             .find(|deck| {
                 let snapshot = &view.engine.decks[deck.index()];
                 snapshot.track.is_none() && !snapshot.loading

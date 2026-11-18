@@ -2102,10 +2102,14 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, focus_search: bool) {
         );
         right = key_rect.left() - tokens.space.s4;
     }
-    for (deck, glyph, label) in [
-        (DeckId::B, Glyph::LoadRight, "browser.load_b"),
-        (DeckId::A, Glyph::LoadLeft, "browser.load_a"),
-    ] {
+    // One key per deck the window shows, A first; the arrow points to the column of the deck.
+    for &deck in view.settings.deck_layout.decks().iter().rev() {
+        let (glyph, label) = match deck {
+            DeckId::A => (Glyph::LoadLeft, "browser.load_a"),
+            DeckId::B => (Glyph::LoadRight, "browser.load_b"),
+            DeckId::C => (Glyph::LoadLeft, "browser.load_c"),
+            DeckId::D => (Glyph::LoadRight, "browser.load_d"),
+        };
         let label = texts.get(label);
         let width = key::width_for(cx, label, 0.0) + 14.0 + tokens.space.s2 + tokens.space.s1;
         let key_rect = Rect::from_min_size(

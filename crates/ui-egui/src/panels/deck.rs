@@ -107,27 +107,7 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, color.surface_panel);
     let inner = rect.shrink(tokens.space.s4);
-
-    // A track dragged from the file list and released here is loaded.
-    let drop = cx
-        .ui
-        .interact(rect, id(("deck-drop", deck.index())), Sense::hover());
-    if cx.interactive {
-        if drop.dnd_hover_payload::<PathBuf>().is_some() {
-            cx.painter().rect_stroke(
-                rect,
-                CornerRadius::ZERO,
-                paint::hairline(theme, color.text_primary),
-                StrokeKind::Inside,
-            );
-        }
-        if let Some(path) = drop.dnd_release_payload::<PathBuf>() {
-            cx.out.emit(Command::DeckLoad {
-                deck,
-                path: path.as_ref().clone(),
-            });
-        }
-    }
+    drop_target(cx, rect, deck);
 
     let compact = view.settings.deck_size == DeckSize::Compact;
     let overview = if compact {
@@ -190,9 +170,25 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         left
     };
     if view.notices[deck.index()].is_none() {
-        hotcue_pads(cx, above_pages, deck, snapshot, mapping);
+        hotcue_pads(
+            cx,
+            &PadGrid::above_loop(above_pages, tokens),
+            deck,
+            snapshot,
+            mapping,
+        );
     }
-    transport(cx, left, deck, snapshot);
+    let transport_row = Rect::from_min_max(
+        egui::pos2(left.left(), left.bottom() - tokens.size.transport_h),
+        left.max,
+    );
+    transport(
+        cx,
+        transport_row,
+        tokens.size.button_transport,
+        deck,
+        snapshot,
+    );
     loop_controls(cx, above_pages, deck, snapshot);
     if !compact {
         let page = state.deck_page[deck.index()];
@@ -204,6 +200,290 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
         page_selector(cx, left, deck, page);
     }
     tempo(cx, tempo_column, deck, snapshot);
+}
+
+/// A track dragged from the file list and released on the deck is loaded into it.
+fn drop_target(cx: &mut Cx<'_>, rect: Rect, deck: DeckId) {
+    let theme = cx.theme;
+    let drop = cx
+        .ui
+        .interact(rect, id(("deck-drop", deck.index())), Sense::hover());
+    if !cx.interactive {
+        return;
+    }
+    if drop.dnd_hover_payload::<PathBuf>().is_some() {
+        cx.painter().rect_stroke(
+            rect,
+            CornerRadius::ZERO,
+            paint::hairline(theme, theme.tokens.color.text_primary),
+            StrokeKind::Inside,
+        );
+    }
+    if let Some(path) = drop.dnd_release_payload::<PathBuf>() {
+        cx.out.emit(Command::DeckLoad {
+            deck,
+            path: path.as_ref().clone(),
+        });
+    }
+}
+
+/// Padding of a deck in the four-deck layout and the sizes of its rows:
+/// `docs/design/DESIGN.md`, *Four-deck layout (M4)*.
+const FOUR_PADDING: f32 = 10.0;
+const FOUR_HEADER_HEIGHT: f32 = 40.0;
+const FOUR_LANE_HEIGHT: f32 = 64.0;
+const FOUR_STRIPE_HEIGHT: f32 = 18.0;
+const FOUR_ROW_HEIGHT: f32 = 30.0;
+const FOUR_PAD_HEIGHT: f32 = 26.0;
+const FOUR_TEMPO_WIDTH: f32 = 48.0;
+const FOUR_KEY_WIDTH: f32 = 40.0;
+const FOUR_COVER_SIDE: f32 = 38.0;
+const FOUR_LOOP_SIZE_WIDTH: f32 = 30.0;
+const FOUR_LOOP_KEY_WIDTH: f32 = 32.0;
+const NARROW_REVERSE_WIDTH: f32 = 28.0;
+
+/// A deck of the four-deck layout: a header of two lines, the scrolling waveform with the
+/// overview under it, the row of sync, the transport and loop row and the eight hotcues in one
+/// row, with the tempo column at the right. No advanced panel and no beatjump.
+/// `docs/behavior/interface.md`, *Deck layout*.
+pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let snapshot = &view.engine.decks[deck.index()];
+    cx.painter()
+        .rect_filled(rect, CornerRadius::ZERO, tokens.color.surface_panel);
+    let inner = rect.shrink(FOUR_PADDING);
+    drop_target(cx, rect, deck);
+
+    four_header(
+        cx,
+        Rect::from_min_size(inner.min, egui::vec2(inner.width(), FOUR_HEADER_HEIGHT)),
+        deck,
+        view,
+        state,
+    );
+    let body = Rect::from_min_max(
+        egui::pos2(
+            inner.left(),
+            inner.top() + FOUR_HEADER_HEIGHT + FOUR_PADDING,
+        ),
+        inner.max,
+    );
+    let tempo_column = Rect::from_min_max(
+        egui::pos2(body.right() - FOUR_TEMPO_WIDTH, body.top()),
+        body.max,
+    );
+    let main = Rect::from_min_max(
+        body.min,
+        egui::pos2(tempo_column.left() - FOUR_PADDING, body.bottom()),
+    );
+    let lane = Rect::from_min_size(main.min, egui::vec2(main.width(), FOUR_LANE_HEIGHT));
+    waveform::deck_lane(cx, lane, deck, snapshot, state.zoom[deck.index()]);
+    let stripe = Rect::from_min_size(
+        egui::pos2(
+            main.left(),
+            lane.bottom() + tokens.space.s2 + tokens.space.s1,
+        ),
+        egui::vec2(main.width(), FOUR_STRIPE_HEIGHT),
+    );
+    waveform::overview(cx, stripe, deck, snapshot);
+
+    // From the bottom up: the hotcues, the transport and loop row, then the row of sync.
+    let pads = Rect::from_min_max(
+        egui::pos2(main.left(), main.bottom() - FOUR_PAD_HEIGHT),
+        main.max,
+    );
+    let row = Rect::from_min_size(
+        egui::pos2(
+            main.left(),
+            pads.top() - tokens.space.s5 - tokens.space.s1 - FOUR_ROW_HEIGHT,
+        ),
+        egui::vec2(main.width(), FOUR_ROW_HEIGHT),
+    );
+    let sync_row = Rect::from_min_max(
+        egui::pos2(
+            main.left(),
+            stripe.bottom() + tokens.space.s5 + tokens.space.s1,
+        ),
+        egui::pos2(main.right(), row.top()),
+    );
+    sync_controls(cx, sync_row, deck, view);
+    // A notice takes the place of the transport and the hotcues for as long as it shows.
+    if let Some(notice) = view.notices[deck.index()] {
+        deck_notice(cx, Rect::from_min_max(row.min, pads.max), deck, notice);
+    } else {
+        hotcue_pads(
+            cx,
+            &PadGrid {
+                area: pads,
+                columns: HotcueSlot::ALL.len(),
+                height: FOUR_PAD_HEIGHT,
+            },
+            deck,
+            snapshot,
+            state.cue_map[deck.index()],
+        );
+        let end = transport(cx, row, FOUR_KEY_WIDTH, deck, snapshot);
+        let gap = tokens.space.s2;
+        // The loop keys end at the right of the row when they fit there: the size between its
+        // arrows, In, Out and the wider Active.
+        let width = 2.0 * ARROW_WIDTH
+            + FOUR_LOOP_SIZE_WIDTH
+            + tokens.space.s3
+            + 2.0 * FOUR_LOOP_KEY_WIDTH
+            + 52.0
+            + 5.0 * gap;
+        loop_keys(
+            cx,
+            Row {
+                x: (row.right() - width).max(end + tokens.space.s3),
+                top: row.top(),
+                height: row.height(),
+                gap,
+            },
+            (FOUR_LOOP_SIZE_WIDTH, FOUR_LOOP_KEY_WIDTH),
+            deck,
+            snapshot,
+        );
+    }
+    tempo(cx, tempo_column, deck, snapshot);
+}
+
+/// The header of a deck of the four-deck layout: the letter, the cover, the title over the
+/// artist and album, the tempo over its offset and key, the large time over the next one.
+fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &ViewState) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let snapshot = &view.engine.decks[deck.index()];
+    let loaded = is_ready(snapshot);
+    let badge = Rect::from_min_size(rect.min, egui::vec2(22.0, 22.0));
+    paint::badge(
+        cx.painter(),
+        theme,
+        badge,
+        deck.letter(),
+        deck_color(theme, deck),
+    );
+    let cover = Rect::from_min_size(
+        egui::pos2(badge.right() + FOUR_PADDING, rect.top()),
+        egui::vec2(FOUR_COVER_SIDE, FOUR_COVER_SIDE),
+    );
+    paint_cover(cx, cover, deck, view);
+    let time_block = Rect::from_min_max(egui::pos2(rect.right() - 92.0, rect.top()), rect.max);
+    let tempo_block = Rect::from_min_max(
+        egui::pos2(time_block.left() - FOUR_PADDING - 64.0, rect.top()),
+        egui::pos2(time_block.left() - FOUR_PADDING, rect.bottom()),
+    );
+    let text_block = Rect::from_min_max(
+        egui::pos2(cover.right() + FOUR_PADDING, rect.top()),
+        egui::pos2(tempo_block.left() - FOUR_PADDING, rect.bottom()),
+    );
+    let line = |block: Rect, top: f32, height: f32| {
+        Rect::from_min_size(
+            egui::pos2(block.left(), block.top() + top),
+            egui::vec2(block.width(), height),
+        )
+    };
+    let title_line = line(text_block, 0.0, 18.0);
+    match title_of(snapshot) {
+        Some(title) => {
+            let elided = paint::text_elided(
+                cx.painter(),
+                theme,
+                title_line,
+                &title,
+                tokens.text.title,
+                color.text_primary,
+            );
+            let response =
+                cx.ui
+                    .interact(title_line, id(("deck-title", deck.index())), Sense::hover());
+            response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &title));
+            if elided {
+                response.on_hover_text(title);
+            }
+            let tags = snapshot.track.as_ref().map(|track| &track.tags);
+            let artist = tags
+                .and_then(|tags| tags.artist.as_deref())
+                .filter(|artist| !artist.is_empty());
+            let album = tags
+                .and_then(|tags| tags.album.as_deref())
+                .filter(|album| !album.is_empty());
+            let second = match (snapshot.loading, artist, album) {
+                (true, _, _) => texts.get("deck.loading").to_owned(),
+                (false, Some(artist), Some(album)) => {
+                    texts.format("deck.artist_album", &[("artist", artist), ("album", album)])
+                }
+                (false, artist, album) => artist.or(album).unwrap_or_default().to_owned(),
+            };
+            paint::text_elided(
+                cx.painter(),
+                theme,
+                line(text_block, 18.0, 18.0),
+                &second,
+                tokens.text.body,
+                color.text_secondary,
+            );
+        }
+        None => {
+            let waiting = texts.get(if snapshot.loading {
+                "deck.loading"
+            } else {
+                "deck.empty_title"
+            });
+            paint::text_elided(
+                cx.painter(),
+                theme,
+                title_line,
+                waiting,
+                tokens.text.title,
+                color.text_secondary,
+            );
+        }
+    }
+
+    let readings = Readings::of(cx, snapshot, state.remaining_large[deck.index()]);
+    let painter = cx.painter();
+    paint::text(
+        painter,
+        theme,
+        line(tempo_block, 0.0, 22.0),
+        Align2::RIGHT_CENTER,
+        &readings.tempo,
+        tokens.text.tempo,
+        readings.tempo_ink,
+    );
+    paint::text(
+        painter,
+        theme,
+        line(tempo_block, 22.0, 14.0),
+        Align2::RIGHT_CENTER,
+        &readings.detail,
+        tokens.text.readout,
+        readings.small_ink,
+    );
+    time_key(cx, time_block, deck, loaded);
+    let painter = cx.painter();
+    paint::text(
+        painter,
+        theme,
+        line(time_block, 0.0, 26.0),
+        Align2::RIGHT_CENTER,
+        &readings.large,
+        tokens.text.time,
+        readings.large_ink,
+    );
+    paint::text(
+        painter,
+        theme,
+        line(time_block, 26.0, 14.0),
+        Align2::RIGHT_CENTER,
+        &readings.second,
+        tokens.text.readout,
+        readings.small_ink,
+    );
 }
 
 /// The row of sync at the top of `area`: SYNC, MASTER, the phase meter and, beside it on the
@@ -499,84 +779,22 @@ fn loop_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnaps
     let tokens = &theme.tokens;
     let letter = deck.letter().to_string();
     let named = |key: &str| texts.format(key, &[("deck", &letter)]);
-    let controls = &snapshot.controls;
-    let looping = &snapshot.looping;
     let loaded = is_ready(snapshot);
-    let has_tempo = snapshot.grid.bpm().is_some();
-    let on = looping.region.is_some();
-    let lit = tokens.color.loop_region;
     let (first_top, _) = page_rows(area, tokens);
     let top = first_top - tokens.space.s3 - LOOP_ROW_HEIGHT;
     let gap = tokens.space.s2;
-    let mut row = Row {
-        x: area.left(),
-        top,
-        height: LOOP_ROW_HEIGHT,
-        gap,
-    };
-
-    let size = controls.loop_size;
-    let size_text = waveform::size_text(texts, size);
-    let smaller = named("deck.loop_smaller_name");
-    let larger = named("deck.loop_larger_name");
-    let step = |direction| Command::DeckLoopSizeStep { deck, direction }.into();
-    stepper(
+    loop_keys(
         cx,
-        &mut row,
-        ("deck-loop-size", deck.index()),
-        (&size_text, tokens.text.tempo, LOOP_SIZE_WIDTH),
-        [
-            Arrow {
-                name: &smaller,
-                enabled: size.smaller().is_some(),
-                action: step(SizeStep::Down),
-            },
-            Arrow {
-                name: &larger,
-                enabled: size.larger().is_some(),
-                action: step(SizeStep::Up),
-            },
-        ],
+        Row {
+            x: area.left(),
+            top,
+            height: LOOP_ROW_HEIGHT,
+            gap,
+        },
+        (LOOP_SIZE_WIDTH, 36.0),
+        deck,
+        snapshot,
     );
-    row.x += tokens.space.s3;
-    let keys = [
-        (
-            "deck.loop_in",
-            "deck.loop_in_name",
-            Command::DeckLoopIn { deck },
-            loaded,
-            looping.in_point.is_some(),
-        ),
-        (
-            "deck.loop_out",
-            "deck.loop_out_name",
-            Command::DeckLoopOut { deck },
-            loaded && (on || looping.in_point.is_some()),
-            false,
-        ),
-        (
-            "deck.loop_active",
-            "deck.loop_active_name",
-            Command::DeckLoopToggle { deck },
-            loaded && (on || has_tempo),
-            on,
-        ),
-    ];
-    for (index, (label, name, command, enabled, is_lit)) in keys.into_iter().enumerate() {
-        let label = texts.get(label);
-        let rect = row.place(key::width_for(cx, label, 36.0));
-        let name = named(name);
-        let mut spec = KeySpec::text(label).enabled(enabled);
-        spec.name = &name;
-        spec.lit = is_lit.then_some(lit);
-        key::key(
-            cx,
-            rect,
-            id(("deck-loop-key", deck.index(), index)),
-            spec,
-            Press::Click(command.into()),
-        );
-    }
 
     // The beatjump: back, the move size, forward, at the right end of the row.
     let jump = loaded && step_has_length(snapshot);
@@ -623,6 +841,90 @@ fn loop_controls(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnaps
             id(("deck-jump", deck.index(), index)),
             spec,
             Press::Click(Command::DeckBeatjump { deck, direction }.into()),
+        );
+    }
+}
+
+/// The loop size between its arrows, then In, Out and Active, from the left of `row`. The size
+/// reading is `size_width` wide and each key at least `key_width`.
+fn loop_keys(
+    cx: &mut Cx<'_>,
+    mut row: Row,
+    (size_width, key_width): (f32, f32),
+    deck: DeckId,
+    snapshot: &DeckSnapshot,
+) {
+    let theme = cx.theme;
+    let texts = cx.texts;
+    let tokens = &theme.tokens;
+    let letter = deck.letter().to_string();
+    let named = |key: &str| texts.format(key, &[("deck", &letter)]);
+    let controls = &snapshot.controls;
+    let looping = &snapshot.looping;
+    let loaded = is_ready(snapshot);
+    let has_tempo = snapshot.grid.bpm().is_some();
+    let on = looping.region.is_some();
+    let lit = tokens.color.loop_region;
+    let size = controls.loop_size;
+    let size_text = waveform::size_text(texts, size);
+    let smaller = named("deck.loop_smaller_name");
+    let larger = named("deck.loop_larger_name");
+    let step = |direction| Command::DeckLoopSizeStep { deck, direction }.into();
+    stepper(
+        cx,
+        &mut row,
+        ("deck-loop-size", deck.index()),
+        (&size_text, tokens.text.tempo, size_width),
+        [
+            Arrow {
+                name: &smaller,
+                enabled: size.smaller().is_some(),
+                action: step(SizeStep::Down),
+            },
+            Arrow {
+                name: &larger,
+                enabled: size.larger().is_some(),
+                action: step(SizeStep::Up),
+            },
+        ],
+    );
+    row.x += tokens.space.s3;
+    let keys = [
+        (
+            "deck.loop_in",
+            "deck.loop_in_name",
+            Command::DeckLoopIn { deck },
+            loaded,
+            looping.in_point.is_some(),
+        ),
+        (
+            "deck.loop_out",
+            "deck.loop_out_name",
+            Command::DeckLoopOut { deck },
+            loaded && (on || looping.in_point.is_some()),
+            false,
+        ),
+        (
+            "deck.loop_active",
+            "deck.loop_active_name",
+            Command::DeckLoopToggle { deck },
+            loaded && (on || has_tempo),
+            on,
+        ),
+    ];
+    for (index, (label, name, command, enabled, is_lit)) in keys.into_iter().enumerate() {
+        let label = texts.get(label);
+        let rect = row.place(label_width(cx, label, key_width, key_width < 36.0));
+        let name = named(name);
+        let mut spec = KeySpec::text(label).enabled(enabled);
+        spec.name = &name;
+        spec.lit = is_lit.then_some(lit);
+        key::key(
+            cx,
+            rect,
+            id(("deck-loop-key", deck.index(), index)),
+            spec,
+            Press::Click(command.into()),
         );
     }
 }
@@ -777,7 +1079,39 @@ enum PadHold {
 /// The eight hotcues, two rows of four above the loop row. A pad acts while held, as the
 /// cue key does; with Shift it deletes its cue; in the mapping mode it takes the selected
 /// cue instead.
-fn hotcue_pads(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot, mapping: bool) {
+/// Where the eight hotcue pads go: `area` is split in `columns` columns and as many rows as the
+/// pads need, each pad `height` tall.
+struct PadGrid {
+    area: Rect,
+    columns: usize,
+    height: f32,
+}
+
+impl PadGrid {
+    /// Two rows of four, above the loop row of the full and compact decks.
+    fn above_loop(area: Rect, tokens: &Tokens) -> Self {
+        let gap = tokens.space.s2;
+        let (first_top, _) = page_rows(area, tokens);
+        let bottom = first_top - tokens.space.s3 - LOOP_ROW_HEIGHT - gap;
+        let top = bottom - 2.0 * PAD_HEIGHT - gap;
+        Self {
+            area: Rect::from_min_max(
+                egui::pos2(area.left(), top),
+                egui::pos2(area.right(), bottom),
+            ),
+            columns: PAD_COLUMNS,
+            height: PAD_HEIGHT,
+        }
+    }
+}
+
+fn hotcue_pads(
+    cx: &mut Cx<'_>,
+    grid: &PadGrid,
+    deck: DeckId,
+    snapshot: &DeckSnapshot,
+    mapping: bool,
+) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -785,21 +1119,20 @@ fn hotcue_pads(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapsho
     let letter = deck.letter().to_string();
     let loaded = is_ready(snapshot);
     let gap = tokens.space.s2;
-    let (first_top, _) = page_rows(area, tokens);
-    let bottom = first_top - tokens.space.s3 - LOOP_ROW_HEIGHT - gap;
-    let top = bottom - 2.0 * PAD_HEIGHT - gap;
-    let columns = PAD_COLUMNS as f32;
-    let width = (area.width() - (columns - 1.0) * gap) / columns;
+    let area = grid.area;
+    let top = area.top();
+    let columns = grid.columns.max(1);
+    let width = (area.width() - (columns as f32 - 1.0) * gap) / columns as f32;
     let mut bold = tokens.text.button;
     bold.weight = Weight::Bold;
     for slot in HotcueSlot::ALL {
         let index = slot.index();
         let rect = Rect::from_min_size(
             egui::pos2(
-                area.left() + (index % PAD_COLUMNS) as f32 * (width + gap),
-                top + (index / PAD_COLUMNS) as f32 * (PAD_HEIGHT + gap),
+                area.left() + (index % columns) as f32 * (width + gap),
+                top + (index / columns) as f32 * (grid.height + gap),
             ),
-            egui::vec2(width, PAD_HEIGHT),
+            egui::vec2(width, grid.height),
         );
         let cue = snapshot.cues.get(slot).filter(|_| loaded);
         let number = slot.number().to_string();
@@ -1567,30 +1900,7 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
         egui::pos2(badge.right() + tokens.space.s3, rect.top()),
         egui::vec2(COVER_SIDE, COVER_SIDE),
     );
-    painter.rect(
-        cover,
-        paint::radius(tokens.radius.sm),
-        color.bg_app,
-        paint::hairline(theme, color.line_key),
-        StrokeKind::Inside,
-    );
-    let image = snapshot
-        .track
-        .as_ref()
-        .zip(view.browser.deck_covers[deck.index()].as_ref());
-    match image {
-        Some((track, image)) => {
-            let texture = browser::cover_texture(cx, &track.path, image);
-            let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-            painter.image(texture, cover.shrink(1.0), uv, egui::Color32::WHITE);
-        }
-        None => theme.icons.paint(
-            painter,
-            Glyph::FileAudio,
-            Rect::from_center_size(cover.center(), egui::vec2(26.0, 26.0)),
-            color.text_disabled,
-        ),
-    }
+    paint_cover(cx, cover, deck, view);
     let text_block = Rect::from_min_max(
         egui::pos2(cover.right() + tokens.space.s4, rect.top()),
         egui::pos2(tempo_block.left() - tokens.space.s4, rect.bottom()),
@@ -1735,6 +2045,43 @@ fn header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &Vi
             tokens.text.readout,
             readings.small_ink,
         );
+    }
+}
+
+/// The cover of the track of a deck in `rect`, or a frame with the icon of an audio file.
+fn paint_cover(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let snapshot = &view.engine.decks[deck.index()];
+    cx.painter().rect(
+        rect,
+        paint::radius(tokens.radius.sm),
+        color.bg_app,
+        paint::hairline(theme, color.line_key),
+        StrokeKind::Inside,
+    );
+    let image = snapshot
+        .track
+        .as_ref()
+        .zip(view.browser.deck_covers[deck.index()].as_ref());
+    match image {
+        Some((track, image)) => {
+            let texture = browser::cover_texture(cx, &track.path, image);
+            let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            cx.painter()
+                .image(texture, rect.shrink(1.0), uv, egui::Color32::WHITE);
+        }
+        None => {
+            // The icon keeps the proportion it has in the cover of the full header.
+            let side = (rect.width() * 26.0 / COVER_SIDE).round();
+            theme.icons.paint(
+                cx.painter(),
+                Glyph::FileAudio,
+                Rect::from_center_size(rect.center(), egui::vec2(side, side)),
+                color.text_disabled,
+            );
+        }
     }
 }
 
@@ -1963,23 +2310,39 @@ impl Readings {
 }
 
 /// CUE, CUP and play or pause, along the bottom of `area`.
-fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
+/// The transport keys from the left of `row`, as tall as it, each at least `key_width` wide.
+/// Returns where the last key ends.
+fn transport(
+    cx: &mut Cx<'_>,
+    row: Rect,
+    key_width: f32,
+    deck: DeckId,
+    snapshot: &DeckSnapshot,
+) -> f32 {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
     let loaded = is_ready(snapshot);
     let lit = deck_color(theme, deck);
     let letter = deck.letter().to_string();
-    let height = tokens.size.transport_h;
-    let top = area.bottom() - height;
-    let mut left = area.left();
+    let height = row.height();
+    let top = row.top();
+    let mut left = row.left();
+    // Narrow keys, as in the decks of the four-deck layout, sit closer together and keep
+    // less room around their labels.
+    let narrow = key_width < tokens.size.button_transport;
+    let gap = if narrow {
+        tokens.space.s2
+    } else {
+        tokens.space.s3
+    };
     let mut place = |cx: &Cx<'_>, label: Option<&str>| {
         let width = match label {
-            Some(label) => key::width_for(cx, label, tokens.size.button_transport),
-            None => tokens.size.button_transport,
+            Some(label) => label_width(cx, label, key_width, narrow),
+            None => key_width,
         };
         let rect = Rect::from_min_size(egui::pos2(left, top), egui::vec2(width, height));
-        left += width + tokens.space.s3;
+        left += width + gap;
         rect
     };
 
@@ -2060,9 +2423,12 @@ fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
     let flux = texts.get("deck.flux");
     let rect = Rect::from_min_size(
         egui::pos2(left, top),
-        egui::vec2(key::width_for(cx, flux, FLUX_WIDTH), height),
+        egui::vec2(
+            label_width(cx, flux, FLUX_WIDTH.min(key_width), narrow),
+            height,
+        ),
     );
-    left = rect.right() + tokens.space.s3;
+    left = rect.right() + gap;
     let name = texts.format("deck.flux_name", &[("deck", &letter)]);
     let mut spec = KeySpec::text(flux)
         .enabled(loaded)
@@ -2075,7 +2441,17 @@ fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
         spec,
         Press::Click(Command::DeckFluxToggle { deck }.into()),
     );
-    let rect = Rect::from_min_size(egui::pos2(left, top), egui::vec2(REVERSE_WIDTH, height));
+    let rect = Rect::from_min_size(
+        egui::pos2(left, top),
+        egui::vec2(
+            if narrow {
+                NARROW_REVERSE_WIDTH
+            } else {
+                REVERSE_WIDTH
+            },
+            height,
+        ),
+    );
     let name = texts.format("deck.reverse_name", &[("deck", &letter)]);
     let mut spec = KeySpec::icon(Glyph::Reverse, 14.0, &name)
         .enabled(loaded)
@@ -2099,6 +2475,18 @@ fn transport(cx: &mut Cx<'_>, area: Rect, deck: DeckId, snapshot: &DeckSnapshot)
             .into(),
         },
     );
+    rect.right()
+}
+
+/// The width of a key for its label: [`key::width_for`], or with half the room around the
+/// label for the narrow keys of the four-deck layout.
+fn label_width(cx: &Cx<'_>, label: &str, minimum: f32, narrow: bool) -> f32 {
+    if !narrow {
+        return key::width_for(cx, label, minimum);
+    }
+    let tokens = &cx.theme.tokens;
+    let text = paint::text_width(cx.painter(), cx.theme, label, tokens.text.button);
+    (text + 2.0 * tokens.space.s2).ceil().max(minimum)
 }
 
 /// The tempo range, the tempo fader, its reading and the two bend keys, top to bottom.
