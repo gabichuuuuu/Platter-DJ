@@ -208,17 +208,19 @@ impl ChannelSplit {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ThreeBandEq {
-    /// Left and right of each model, in the order of [`EqModel::ALL`].
-    models: [[ChannelSplit; 2]; EqModel::ALL.len()],
+    /// Left and right of each model, in the order of [`EqModel::ALL`]. On the heap: four
+    /// channels of four models made the processor too large to build on the 1 MB stack of a
+    /// main thread in a debug build.
+    models: Box<[[ChannelSplit; 2]; EqModel::ALL.len()]>,
     switch: ModelSwitch<EqModel>,
 }
 
 impl ThreeBandEq {
     pub fn new(rate: SampleRate) -> Self {
         Self {
-            models: EqModel::ALL.map(|model| [ChannelSplit::new(model, rate); 2]),
+            models: Box::new(EqModel::ALL.map(|model| [ChannelSplit::new(model, rate); 2])),
             switch: ModelSwitch::new(EqModel::default(), rate, MODEL_FADE_MS),
         }
     }
@@ -266,7 +268,7 @@ impl ThreeBandEq {
     }
 
     pub fn reset(&mut self) {
-        for channels in &mut self.models {
+        for channels in self.models.iter_mut() {
             channels.iter_mut().for_each(ChannelSplit::reset);
         }
     }
