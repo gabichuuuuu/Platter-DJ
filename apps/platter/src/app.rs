@@ -303,6 +303,13 @@ impl PlatterApp {
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
         app.apply_mixer_settings();
+        let effects = app.settings.effects.clone();
+        if let Err(error) = app.engine.restore_effects(&effects) {
+            app.log(
+                Level::Warning,
+                &format!("the effects of the settings file: {error}"),
+            );
+        }
         app
     }
 
@@ -984,9 +991,27 @@ impl PlatterApp {
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
         );
+        let id = command.id();
+        let effect = id.starts_with("fx.")
+            || id.starts_with("mixer.fx_assign")
+            || id.starts_with("mixer.effect");
+        // A knob is saved at exit rather than at every step of a drag.
+        let continuous = matches!(
+            id,
+            "fx.unit.dry_wet.set"
+                | "fx.slot.amount.set"
+                | "fx.single.knob.set"
+                | "mixer.effect.set"
+        );
         self.engine.dispatch(command)?;
         if mixer_setting {
             self.keep_mixer_settings();
+        }
+        if effect {
+            self.settings.effects = crate::effects_config::kept(&self.engine.snapshot().effects);
+            if !continuous {
+                self.save_settings();
+            }
         }
         Ok(())
     }
@@ -1429,6 +1454,8 @@ impl PlatterApp {
 impl eframe::App for PlatterApp {
     fn on_exit(&mut self) {
         self.background.stop.store(true, Ordering::Relaxed);
+        // The knobs of the effects are saved here, not at every step of a drag.
+        self.save_settings();
         for (path, kept) in self.keeping.flush() {
             self.browser.keep(path, kept);
         }

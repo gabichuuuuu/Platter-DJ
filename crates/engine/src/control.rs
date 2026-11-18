@@ -1291,6 +1291,12 @@ impl Engine {
         Ok(())
     }
 
+    /// Puts the effect units and the mixer effects as `effects` has them, as the settings
+    /// file kept them.
+    pub fn restore_effects(&mut self, effects: &EffectControls) -> Result<(), EngineError> {
+        self.replay_effects(effects)
+    }
+
     /// Sends the whole state of the effects to the processor, building every instance it
     /// needs: at the start, and after a restart, which loses them.
     fn replay_effects(&mut self, effects: &EffectControls) -> Result<(), EngineError> {

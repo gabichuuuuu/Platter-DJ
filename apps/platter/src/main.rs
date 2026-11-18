@@ -10,6 +10,7 @@ mod app;
 mod background;
 mod capture;
 mod config;
+mod effects_config;
 mod keeping;
 mod manager;
 mod midi;

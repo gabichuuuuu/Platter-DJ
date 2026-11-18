@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
 use platter_engine::{
-    CrossfaderCurve, EqModel, FilterModel, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, SyncMode,
-    TempoRange,
+    CrossfaderCurve, EffectControls, EqModel, FilterModel, MAX_FADE_BEATS, MIN_FADE_BEATS,
+    MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
 use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
@@ -125,6 +125,9 @@ pub struct Settings {
     pub external_master_volume: bool,
     /// Beats of an automatic fade across the whole travel of the crossfader.
     pub fade_beats: u32,
+    /// The effect units and the mixer effects, with every effect off:
+    /// `docs/behavior/effects.md`.
+    pub effects: EffectControls,
     /// The folder the file selector showed last.
     pub folder: Option<PathBuf>,
     /// Folders shown as roots of the file selector beside the home folder, such as a
@@ -169,6 +172,7 @@ impl Default for Settings {
             external_eq_gain: false,
             external_master_volume: false,
             fade_beats: 8,
+            effects: EffectControls::default(),
             folder: None,
             roots: Vec::new(),
             min_playtime: DEFAULT_PLAYTIME,
@@ -315,6 +319,7 @@ impl Settings {
             min_playtime: number(table("browser"), "min_playtime")
                 .filter(|seconds| (MIN_PLAYTIME..=MAX_PLAYTIME).contains(seconds))
                 .unwrap_or(defaults.min_playtime),
+            effects: crate::effects_config::read(table("effects")),
             folder: text(table("browser"), "folder")
                 .filter(|folder| !folder.is_empty())
                 .map(PathBuf::from),
@@ -491,6 +496,10 @@ impl Settings {
             toml::Value::String(self.tag_writing.name().to_owned()),
         );
         root.insert("browser".to_owned(), toml::Value::Table(browser));
+        root.insert(
+            "effects".to_owned(),
+            toml::Value::Table(crate::effects_config::write(&self.effects)),
+        );
         let midi: Vec<toml::Value> = self
             .midi
             .iter()
@@ -582,6 +591,7 @@ mod tests {
             external_eq_gain: true,
             external_master_volume: true,
             fade_beats: 32,
+            effects: platter_engine::EffectControls::default(),
             min_playtime: 45,
             folder: Some(PathBuf::from("music").join("sets")),
             roots: vec![PathBuf::from("records"), PathBuf::from("more records")],
