@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
 use platter_engine::{
-    CrossfaderCurve, EffectControls, EqModel, FilterModel, MAX_FADE_BEATS, MIN_FADE_BEATS,
-    MixerMode, SyncMode, TempoRange,
+    CrossfaderCurve, EffectControls, EqModel, FilterModel, MAX_CEILING_DB, MAX_DRIVE_DB,
+    MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS,
+    MaximiserControls, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
 use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
@@ -125,6 +126,8 @@ pub struct Settings {
     pub external_master_volume: bool,
     /// Beats of an automatic fade across the whole travel of the crossfader.
     pub fade_beats: u32,
+    /// The Limiter key and the settings of the maximiser: `docs/behavior/master.md`.
+    pub maximiser: MaximiserControls,
     /// The effect units and the mixer effects, with every effect off:
     /// `docs/behavior/effects.md`.
     pub effects: EffectControls,
@@ -172,6 +175,7 @@ impl Default for Settings {
             external_eq_gain: false,
             external_master_volume: false,
             fade_beats: 8,
+            maximiser: MaximiserControls::default(),
             effects: EffectControls::default(),
             folder: None,
             roots: Vec::new(),
@@ -196,6 +200,34 @@ impl Settings {
             u32::try_from(table?.get(name)?.as_integer()?).ok()
         };
         let flag = |table: Option<&toml::Table>, name: &str| table?.get(name)?.as_bool();
+        // A whole number is a number too: `release_ms = 250` is as good as `250.0`.
+        let decimal = |table: Option<&toml::Table>, name: &str, min: f64, max: f64| {
+            let value = table?.get(name)?;
+            let value = value
+                .as_float()
+                .or_else(|| value.as_integer().map(|whole| whole as f64))?;
+            (min..=max).contains(&value).then_some(value)
+        };
+        let mixer = table("mixer");
+        let maximiser = MaximiserControls {
+            on: flag(mixer, "limiter").unwrap_or(defaults.maximiser.on),
+            drive_db: decimal(mixer, "maximiser_drive_db", 0.0, MAX_DRIVE_DB)
+                .unwrap_or(defaults.maximiser.drive_db),
+            ceiling_db: decimal(
+                mixer,
+                "maximiser_ceiling_db",
+                MIN_CEILING_DB,
+                MAX_CEILING_DB,
+            )
+            .unwrap_or(defaults.maximiser.ceiling_db),
+            release_ms: decimal(
+                mixer,
+                "maximiser_release_ms",
+                MIN_RELEASE_MS,
+                MAX_RELEASE_MS,
+            )
+            .unwrap_or(defaults.maximiser.release_ms),
+        };
         let audio = table("audio");
         let routing = audio
             .and_then(|audio| audio.get("routing"))
@@ -316,6 +348,7 @@ impl Settings {
             fade_beats: number(table("mixer"), "fade_beats")
                 .filter(|beats| (MIN_FADE_BEATS..=MAX_FADE_BEATS).contains(&f64::from(*beats)))
                 .unwrap_or(defaults.fade_beats),
+            maximiser,
             min_playtime: number(table("browser"), "min_playtime")
                 .filter(|seconds| (MIN_PLAYTIME..=MAX_PLAYTIME).contains(seconds))
                 .unwrap_or(defaults.min_playtime),
@@ -402,6 +435,17 @@ impl Settings {
             mixer.insert(name.to_owned(), toml::Value::Boolean(on));
         }
         mixer.insert("fade_beats".to_owned(), integer(self.fade_beats));
+        mixer.insert(
+            "limiter".to_owned(),
+            toml::Value::Boolean(self.maximiser.on),
+        );
+        for (name, value) in [
+            ("maximiser_drive_db", self.maximiser.drive_db),
+            ("maximiser_ceiling_db", self.maximiser.ceiling_db),
+            ("maximiser_release_ms", self.maximiser.release_ms),
+        ] {
+            mixer.insert(name.to_owned(), toml::Value::Float(value));
+        }
         let mut decks = toml::Table::new();
         decks.insert(
             "sync_mode".to_owned(),
@@ -591,6 +635,12 @@ mod tests {
             external_eq_gain: true,
             external_master_volume: true,
             fade_beats: 32,
+            maximiser: platter_engine::MaximiserControls {
+                on: true,
+                drive_db: 4.5,
+                ceiling_db: -0.3,
+                release_ms: 250.0,
+            },
             effects: platter_engine::EffectControls::default(),
             min_playtime: 45,
             folder: Some(PathBuf::from("music").join("sets")),
@@ -636,6 +686,36 @@ mod tests {
         assert_eq!(settings.autogain, defaults.autogain);
         assert!(settings.external_eq_gain);
         assert_eq!(settings.fade_beats, defaults.fade_beats);
+    }
+
+    /// `docs/behavior/master.md`: the maximiser is kept under `[mixer]`; a value out of its
+    /// range, or of another kind, is its default, and the others are kept.
+    #[test]
+    fn the_maximiser_is_kept_and_a_value_it_cannot_take_is_its_default() {
+        let written = Settings::default().to_toml();
+        assert!(written.contains("limiter = false"), "{written}");
+        assert!(written.contains("maximiser_ceiling_db = -1.0"), "{written}");
+        let defaults = platter_engine::MaximiserControls::default();
+        let read = Settings::parse(
+            "[mixer]\nlimiter = true\nmaximiser_drive_db = 13.0\n\
+             maximiser_ceiling_db = \"-3\"\nmaximiser_release_ms = 250\n",
+        )
+        .maximiser;
+        assert_eq!(
+            read,
+            platter_engine::MaximiserControls {
+                on: true,
+                drive_db: defaults.drive_db,
+                ceiling_db: defaults.ceiling_db,
+                release_ms: 250.0,
+            }
+        );
+        let read = Settings::parse(
+            "[mixer]\nlimiter = 1\nmaximiser_drive_db = -1\nmaximiser_ceiling_db = 0.5\n\
+             maximiser_release_ms = nan\n",
+        )
+        .maximiser;
+        assert_eq!(read, defaults);
     }
 
     #[test]

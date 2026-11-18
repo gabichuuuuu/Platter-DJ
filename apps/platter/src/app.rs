@@ -893,6 +893,15 @@ impl PlatterApp {
             Command::GlobalSyncModeSet {
                 mode: settings.sync_mode,
             },
+            Command::MasterMaximiserDriveSet {
+                db: settings.maximiser.drive_db,
+            },
+            Command::MasterMaximiserCeilingSet {
+                db: settings.maximiser.ceiling_db,
+            },
+            Command::MasterMaximiserReleaseSet {
+                ms: settings.maximiser.release_ms,
+            },
         ];
         commands.extend(DeckId::ALL.map(|deck| Command::DeckTempoRangeSet {
             deck,
@@ -919,6 +928,11 @@ impl PlatterApp {
                 settings.load_marker,
                 Command::GlobalLoadMarkerToggle,
             ),
+            (
+                mixer.maximiser.on,
+                settings.maximiser.on,
+                Command::MasterLimiterToggle,
+            ),
         ] {
             if now != wanted {
                 commands.push(toggle);
@@ -944,6 +958,7 @@ impl PlatterApp {
             external_master_volume: mixer.external_master_volume,
             // A length set by a command between whole beats is saved to the nearest one.
             fade_beats: mixer.fade_beats.round() as u32,
+            maximiser: mixer.maximiser,
             load_marker: snapshot.load_marker,
             ..self.settings.clone()
         };
@@ -990,6 +1005,10 @@ impl PlatterApp {
                 | Command::MixerFilterModelSet { .. }
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
+                | Command::MasterLimiterToggle
+                | Command::MasterMaximiserDriveSet { .. }
+                | Command::MasterMaximiserCeilingSet { .. }
+                | Command::MasterMaximiserReleaseSet { .. }
         );
         let id = command.id();
         let effect = id.starts_with("fx.")
