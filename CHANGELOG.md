@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.3.1...v0.4.0) - 2026-11-18
+
+### Added
+
+- four-deck layout chosen in the preferences, and wider decks in full screen ([#42](https://github.com/gabichuuuuu/Platter-DJ/pull/42))
+
 ## [0.3.1](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.3.0...v0.3.1) - 2026-11-18
 
 ### Added
