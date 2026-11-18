@@ -7,6 +7,7 @@
 pub mod balance;
 pub mod biquad;
 pub mod crossfade;
+pub mod effects;
 pub mod eq;
 pub mod filter;
 pub mod interpolate;
