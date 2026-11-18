@@ -151,6 +151,12 @@ fn commands() -> Vec<Command> {
             curve: CrossfaderCurve::Sharp,
         },
         Command::MasterGainSet { db: 12.0 },
+        // The maximiser switched in over the hot mix and changed while it limits; it stays
+        // on, with the headphones kept in time with it, through the rest.
+        Command::MasterLimiterToggle,
+        Command::MasterMaximiserDriveSet { db: 12.0 },
+        Command::MasterMaximiserCeilingSet { db: -3.0 },
+        Command::MasterMaximiserReleaseSet { ms: 20.0 },
         Command::MixerEqKillToggle {
             deck: A,
             band: Band::Low,

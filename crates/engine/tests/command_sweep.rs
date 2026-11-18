@@ -86,6 +86,19 @@ fn later_command() -> impl Strategy<Value = Command> {
     ]
 }
 
+/// The Limiter key and the settings of the maximiser, added in M4.
+fn maximiser_command() -> impl Strategy<Value = Command> {
+    prop_oneof![
+        2 => proptest::strategy::Just(Command::MasterLimiterToggle),
+        1 => prop_oneof![number(), 0.0f64..12.0]
+            .prop_map(|db| Command::MasterMaximiserDriveSet { db }),
+        1 => prop_oneof![number(), -12.0f64..0.0]
+            .prop_map(|db| Command::MasterMaximiserCeilingSet { db }),
+        1 => prop_oneof![number(), 10.0f64..1_000.0]
+            .prop_map(|ms| Command::MasterMaximiserReleaseSet { ms }),
+    ]
+}
+
 /// The commands of the stored cues, added in M3.
 fn cue_command() -> impl Strategy<Value = Command> {
     let slot = || prop::sample::select(HotcueSlot::ALL.to_vec());
@@ -179,6 +192,7 @@ fn command() -> impl Strategy<Value = Command> {
     prop_oneof![
         6 => later_command(),
         4 => sync_command(),
+        1 => maximiser_command(),
         1 => (deck(), 0usize..3).prop_map(|(deck, file)| Command::DeckLoad {
             deck,
             path: files()[file].clone()
