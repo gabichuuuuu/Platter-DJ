@@ -129,6 +129,11 @@ shortcuts of the decks and the mixer rest.
   too, and are applied when Platter starts.
 - A length of fade set by another way that is not one of the choices leaves none selected,
   and is kept in the settings file to the nearest whole beat.
+- The maximiser of the master (`docs/behavior/master.md`) has no row on the page yet. The
+  Limiter key and its drive, ceiling and release are kept in `settings.toml` under `[mixer]`
+  as `limiter`, `maximiser_drive_db`, `maximiser_ceiling_db` and `maximiser_release_ms`;
+  they follow the mixer whatever changes them, are applied when Platter starts, and Restore
+  defaults returns them to theirs.
 
 Restore defaults (`app.settings.restore_defaults`) returns every setting of the pages to its
 default.
@@ -228,6 +233,7 @@ one setting at a time. Nothing in these files leaves the machine.
 | A music folder in the settings file that is empty or not text | Left out |
 | More than 64 music folders in the settings file | The first 64 |
 | A tempo range in the settings file that is not 8, 16 or 50 | 8 % |
+| A setting of the maximiser in the settings file outside its range, or not a number | Its default; the others are kept |
 | A music folder that is gone at start, with the import at start on | Its error in the status bar; the next folder is imported |
 
 ## Tests
