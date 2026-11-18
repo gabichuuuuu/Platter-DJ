@@ -63,6 +63,9 @@ interface / CLI -- command --> control side of the engine -- RtCommand (rtrb) --
 - **Worker threads.** Decoding, analysis and waveform peaks never run on the audio thread or on
   the interface thread. There is no async runtime: background work uses standard threads and
   channels.
+- **Mix recorder.** The processor hands each frame of the master to a queue of its own; a
+  worker thread of each recording writes it into files, so the disk never holds up the audio
+  (`docs/decisions/0034-mix-recorder.md`).
 - **Loaded track.** Complete stereo `f32` PCM in memory, shared through an `Arc`. This is the
   simple option for M1 and M2; it stays behind a project type so it can become a block cache.
 - **Sample rate.** The engine runs at the rate of the device. A track is read at the ratio

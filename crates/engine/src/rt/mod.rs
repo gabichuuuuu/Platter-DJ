@@ -1,8 +1,8 @@
 //! The real-time side of the engine: everything the audio callback runs.
 //!
 //! Rules of this module, from `AGENTS.md`: no allocation and no deallocation, no lock, no
-//! I/O, no system call, bounded time. It talks to the rest of the program through three
-//! lock-free queues and a block of atomics. It uses `platter-core`, `platter-dsp` and the
+//! I/O, no system call, bounded time. It talks to the rest of the program through four
+//! lock-free queues, the fourth carrying the master to the recorder, and a block of atomics. It uses `platter-core`, `platter-dsp` and the
 //! queue crate only; `cargo xtask layers` checks that.
 //!
 //! Memory is the delicate part. A track arrives inside a command and leaves through the
@@ -20,6 +20,7 @@ mod looper;
 mod metronome;
 mod preview;
 mod processor;
+mod recorder;
 mod shared;
 mod strip;
 mod tick;
@@ -42,11 +43,16 @@ pub use effects::{FxRouting, UNITS};
 
 pub use lock::Stretcher;
 pub use processor::Processor;
+pub use recorder::Recorded;
 pub use shared::{DeckShared, MasterChoice, Shared};
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
 pub const COMMAND_CAPACITY: usize = 256;
+
+/// Seconds of the master the queue of the recorder holds, so the disk may fall behind that
+/// long before a frame is dropped: `docs/behavior/recording.md`.
+pub const RECORDER_QUEUE_SECONDS: usize = 4;
 
 /// The most the key of a deck moves either way, in semitones.
 pub const MAX_KEY_SHIFT: f64 = 12.0;
@@ -382,6 +388,12 @@ pub enum RtCommand {
     Metronome {
         on: bool,
     },
+    /// Starts or stops sending the master to the recorder, for the recording with this
+    /// number.
+    Record {
+        on: bool,
+        recording: u32,
+    },
 }
 
 /// An edit of a beatgrid. The ones that need a place use the play position.
@@ -526,15 +538,19 @@ struct Queues {
     commands: Consumer<RtCommand>,
     retired: Producer<Retired>,
     reports: Producer<DeckReport>,
+    recorded: Producer<Recorded>,
 }
 
-/// Builds a processor for `rate` and the ends the control side keeps.
-pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
+/// Builds a processor for `rate`, the ends the control side keeps and the end of the queue of
+/// the recorder, which goes to the worker of each recording in turn.
+pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor) {
     let (commands, incoming) = RingBuffer::new(COMMAND_CAPACITY);
     // Each swap retires one item and at most `COMMAND_CAPACITY` swaps are in flight, so
     // this queue cannot fill up.
     let (outgoing, retired) = RingBuffer::new(COMMAND_CAPACITY + DeckId::COUNT);
     let (outgoing_reports, reports) = RingBuffer::new(REPORT_CAPACITY);
+    let (outgoing_recorded, recorded) =
+        RingBuffer::new(rate.hz() as usize * RECORDER_QUEUE_SECONDS);
     let shared = Arc::new(Shared::default());
     let processor = Processor::new(
         rate,
@@ -542,6 +558,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
             commands: incoming,
             retired: outgoing,
             reports: outgoing_reports,
+            recorded: outgoing_recorded,
         },
         Arc::clone(&shared),
     );
@@ -552,6 +569,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
             reports,
             shared,
         },
+        recorded,
         processor,
     )
 }

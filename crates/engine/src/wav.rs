@@ -1,4 +1,5 @@
-//! Writer of WAV files with 32-bit float samples, for the deviceless render.
+//! Writer of WAV files with 32-bit float samples, for the deviceless render and the mix
+//! recorder.
 //!
 //! Float samples keep the output of the engine bit for bit, which is what the determinism
 //! test compares. Format: RIFF WAVE with format tag 3 (IEEE float), which requires a `fact`

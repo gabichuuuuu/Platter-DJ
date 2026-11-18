@@ -5,14 +5,22 @@
 
 mod common;
 
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, EffectKind, EqModel, FilterModel, FxRouting, FxUnit, MixerMode, MoveMode,
-    Output, SizeStep, SyncMode, UnitMode,
+    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, MixerMode,
+    MoveMode, Output, SizeStep, SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
+
+const WAIT: Duration = Duration::from_secs(10);
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -22,6 +30,8 @@ fn commands() -> Vec<Command> {
     let one = FxUnit::ALL[0];
     let two = FxUnit::ALL[1];
     vec![
+        // The mix recorder takes the master through all of it, with a cut halfway.
+        Command::RecorderToggle,
         // Decks C and D play beside A and B, C with key lock and D in sync.
         Command::DeckKeyLockToggle { deck: C },
         Command::DeckPlay { deck: C },
@@ -99,6 +109,7 @@ fn commands() -> Vec<Command> {
             deck: A,
             position: 0.6,
         },
+        Command::RecorderCut,
         // A swap while the effect before it still fades out.
         Command::FxSlotEffectSet {
             unit: one,
@@ -414,6 +425,7 @@ fn commands() -> Vec<Command> {
         Command::DeckEject { deck: B },
         Command::DeckKeyLockToggle { deck: A },
         Command::DeckPause { deck: A },
+        Command::RecorderToggle,
     ]
 }
 
@@ -441,6 +453,18 @@ fn process_neither_allocates_nor_frees() {
     assert!(seen >= 2, "the counting allocator is not active");
 
     let mut rig = Rig::new();
+    let recordings = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("memory-recordings");
+    let _ = std::fs::remove_dir_all(&recordings);
+    // While `held` is on, the worker of a recording waits before it takes anything.
+    let held = Arc::new(AtomicBool::new(false));
+    let waiting = Arc::clone(&held);
+    let stem = recordings.join("take");
+    rig.engine.set_recording_names(Arc::new(move || {
+        while waiting.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        stem.clone()
+    }));
     rig.load(DeckId::A, sine_file("memory-a", 440.0, 3.0, 0.5, RATE));
     rig.load(DeckId::B, sine_file("memory-b", 660.0, 3.0, 0.5, 44_100));
     rig.load(
@@ -465,6 +489,26 @@ fn process_neither_allocates_nor_frees() {
         rig.send(command);
         run(&mut rig, 5);
     }
+    let recorded = rig.engine.finish_recording(WAIT);
+    assert_eq!(
+        recorded
+            .iter()
+            .filter(|event| matches!(event, Event::Recorded { frames, .. } if *frames > 0))
+            .count(),
+        2,
+        "{recorded:?}"
+    );
+    // A recording whose worker cannot take anything yet: the queue fills up and the frames
+    // that find no room are dropped, not waited for.
+    held.store(true, Ordering::Relaxed);
+    rig.send(Command::RecorderToggle);
+    let full = RECORDER_QUEUE_SECONDS as f64 + 0.5;
+    run(&mut rig, (full * f64::from(RATE) / 512.0).ceil() as usize);
+    assert!(rig.engine.snapshot().recorder.dropped_frames > 0);
+    held.store(false, Ordering::Relaxed);
+    rig.send(Command::RecorderToggle);
+    run(&mut rig, 2);
+    rig.engine.finish_recording(WAIT);
     // Replacing a track while it plays is the case where a buffer changes hands: the old
     // one must travel back to this thread instead of being freed by the processor.
     rig.send(Command::DeckPlay { deck: DeckId::A });
@@ -559,4 +603,5 @@ fn process_neither_allocates_nor_frees() {
         rig.engine.poll();
     });
     assert!(freed >= 1, "nothing was freed on the control side");
+    std::fs::remove_dir_all(&recordings).unwrap();
 }

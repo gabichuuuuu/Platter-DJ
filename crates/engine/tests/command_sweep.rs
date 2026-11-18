@@ -80,6 +80,9 @@ fn later_command() -> impl Strategy<Value = Command> {
         number().prop_map(|position| Command::MixerCueMixSet { position }),
         number().prop_map(|db| Command::MixerCueVolumeSet { db }),
         output.prop_map(|output| Command::MasterTestTone { output }),
+        // Without a folder for the recordings both are refused or ignored.
+        prop::strategy::Just(Command::RecorderToggle),
+        prop::strategy::Just(Command::RecorderCut),
         grid_command(),
         loop_command(),
         cue_command(),

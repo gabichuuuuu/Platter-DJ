@@ -319,6 +319,20 @@ impl PlatterApp {
         }
     }
 
+    /// What the mix recorder reported: `docs/behavior/recording.md`.
+    fn log_recording(&self, event: &Event) {
+        match event {
+            Event::Recorded { path, frames } => self.log(
+                Level::Info,
+                &format!("recording: {frames} frames in {}", path.display()),
+            ),
+            Event::RecordingFailed { message } => {
+                self.log(Level::Warning, &format!("recording: {message}"));
+            }
+            _ => {}
+        }
+    }
+
     fn save_settings(&self) {
         let Some(folder) = &self.folder else {
             return;
@@ -1342,6 +1356,9 @@ impl PlatterApp {
                 }
                 Event::PreviewFailed { message } => {
                     self.log(Level::Warning, &format!("preview: {message}"));
+                }
+                event @ (Event::Recorded { .. } | Event::RecordingFailed { .. }) => {
+                    self.log_recording(&event);
                 }
             }
         }
