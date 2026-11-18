@@ -757,6 +757,8 @@ plus = "Más"
 
 [effects]
 unit = "FX {unit}"
+save_snapshot = "Guardar instantánea"
+menu_name = "Menú de la unidad de efectos {unit}"
 group = "Grupo"
 single = "Simple"
 mode_name = "Modo {mode}, unidad de efectos {unit}"

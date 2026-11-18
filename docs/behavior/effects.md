@@ -92,8 +92,8 @@ or a unit is unassigned.
   or four units that lets the header of each panel switch to unit 3 or 4.
 - The two-deck mixer has the assign keys 1 and 2 of each channel, side by side in the row of
   its crossfader assign keys, and no mixer effect knob: its channels have no room for one. The
-  mixer effect of decks A and B is turned in the four-deck layout, or by command. This
-  placement waits for the maintainer's review of its capture.
+  mixer effect of decks A and B is turned in the four-deck layout, or by command. The
+  maintainer approved this placement on its capture on 18 November 2026.
 - Each unit is in `group` or `single` mode (`fx.unit.mode.set`). A unit starts in group mode
   with three empty slots.
 - Group mode: three slots, each with an effect (`fx.slot.effect.set`, or `none`), an amount
@@ -105,8 +105,9 @@ or a unit is unassigned.
   puts the three knobs and the two keys back to the defaults of the effect (`fx.unit.reset`).
 - Switching the mode keeps what each mode had, so switching back finds it again.
 - A newly selected effect starts from its defaults, or from its snapshot in that unit when
-  there is one (`fx.unit.snapshot.save`, a command without a key yet: the context menu of the
-  unit title is still to come). Snapshots, modes, effects, values, routings, assignments and
+  there is one. *Save snapshot* (`fx.unit.snapshot.save`) is the menu of the unit title, which
+  a click or the right button opens; it keeps the values of the effect of single mode, so the
+  title opens it only in single mode with an effect. Snapshots, modes, effects, values, routings, assignments and
   the effect of each mixer effect knob are kept in the settings file, under `[effects]`;
   the on keys and the mixer effect knobs are not, so Platter starts with every effect off.
 

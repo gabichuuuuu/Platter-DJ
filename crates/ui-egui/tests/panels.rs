@@ -252,6 +252,7 @@ fn states() -> Vec<State> {
         details,
         details_several,
         state("four-decks", sample::four_decks(), None),
+        state("effects-single", single_unit(), None),
         state(
             "preferences-library",
             sample::playing(),
@@ -359,11 +360,20 @@ impl Stage {
     }
 
     fn pointer(&mut self, pos: Pos2, pressed: Option<bool>) -> Vec<Action> {
+        self.pointer_with(pos, pressed, PointerButton::Primary)
+    }
+
+    fn pointer_with(
+        &mut self,
+        pos: Pos2,
+        pressed: Option<bool>,
+        button: PointerButton,
+    ) -> Vec<Action> {
         let mut events = vec![Event::PointerMoved(pos)];
         if let Some(pressed) = pressed {
             events.push(Event::PointerButton {
                 pos,
-                button: PointerButton::Primary,
+                button,
                 pressed,
                 modifiers: Modifiers::NONE,
             });
@@ -372,9 +382,13 @@ impl Stage {
     }
 
     fn click(&mut self, pos: Pos2) -> Vec<Action> {
-        let mut actions = self.pointer(pos, None);
-        actions.extend(self.pointer(pos, Some(true)));
-        actions.extend(self.pointer(pos, Some(false)));
+        self.click_with(pos, PointerButton::Primary)
+    }
+
+    fn click_with(&mut self, pos: Pos2, button: PointerButton) -> Vec<Action> {
+        let mut actions = self.pointer_with(pos, None, button);
+        actions.extend(self.pointer_with(pos, Some(true), button));
+        actions.extend(self.pointer_with(pos, Some(false), button));
         actions.extend(self.frame(Vec::new()).0);
         actions
     }
@@ -1868,4 +1882,50 @@ fn the_mixer_effect_collapses_with_the_channel_in_external_mode() {
     assert_eq!(count("mixer.effect.set"), 0);
     assert_eq!(count("mixer.effect.select"), 0);
     assert_eq!(count("mixer.fx_assign.toggle"), 8);
+}
+
+/// The four-deck screen with effect unit 2 in single mode on the delay, so the menu of its
+/// title can save a snapshot.
+fn single_unit() -> Scene {
+    let mut scene = sample::four_decks();
+    let unit = &mut scene.engine.effects.units[1];
+    unit.values.mode = UnitMode::Single;
+    unit.single = Some(EffectKind::Delay);
+    unit.values.single.controls = EffectKind::Delay.defaults();
+    scene
+}
+
+/// `docs/behavior/effects.md`, *Units and modes*: the title of a unit in single mode opens a
+/// menu whose *Save snapshot* saves the effect of that unit; in group mode it opens nothing.
+#[test]
+fn the_title_of_a_unit_in_single_mode_saves_a_snapshot_from_its_menu() {
+    let single = state_named("effects-single");
+    let mut stage = Stage::new(&single);
+    let titles: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "fx.unit.snapshot.save")
+        .collect();
+    assert_eq!(titles.len(), 2);
+    let (group, single_title) = if titles[0].rect.left() < titles[1].rect.left() {
+        (&titles[0], &titles[1])
+    } else {
+        (&titles[1], &titles[0])
+    };
+    assert!(!group.enabled && single_title.enabled);
+    let opened = stage.pointer(single_title.rect.center(), None);
+    assert!(opened.is_empty());
+    for button in [PointerButton::Secondary, PointerButton::Primary] {
+        // The right button opens the menu, as the primary one does.
+        let mut actions = stage.click_with(single_title.rect.center(), button);
+        assert!(actions.is_empty(), "opening the menu sends nothing");
+        let item = single_title.rect.left_bottom() + egui::vec2(20.0, 16.0);
+        actions.extend(stage.click(item));
+        assert_eq!(
+            actions,
+            [Action::Engine(Command::FxUnitSnapshotSave {
+                unit: platter_engine::FxUnit::ALL[1],
+            })]
+        );
+    }
 }

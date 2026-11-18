@@ -76,18 +76,32 @@ fn unit(cx: &mut Cx<'_>, panel: Rect, unit: FxUnit, view: &View<'_>) {
     // Header: the title over the choice of mode.
     let title = texts.format("effects.unit", &[("unit", &number)]);
     let assigned = view.engine.effects.decks_of(unit).next().is_some();
-    paint::text(
-        cx.painter(),
-        theme,
+    // The title opens the menu of the unit: *Save snapshot* keeps the values of the effect of
+    // single mode, so it waits for single mode with an effect.
+    let save = texts.get("effects.save_snapshot");
+    let menu_name = texts.format("effects.menu_name", &[("unit", &number)]);
+    choice::title_menu(
+        cx,
         Rect::from_min_size(at(PADDING, 16.0), egui::vec2(64.0, 16.0)),
-        Align2::LEFT_CENTER,
-        &title,
-        tokens.text.button,
-        if assigned {
-            tokens.color.text_primary
-        } else {
-            tokens.color.text_secondary
+        id(("fx-title", salt)),
+        choice::Title {
+            text: &title,
+            ink: if assigned {
+                tokens.color.text_primary
+            } else {
+                tokens.color.text_secondary
+            },
         },
+        SelectSpec {
+            name: &menu_name,
+            choices: &[Choice {
+                label: save,
+                enabled: true,
+            }],
+            current: None,
+            enabled: controls.values.mode == UnitMode::Single && controls.single.is_some(),
+        },
+        |_| Command::FxUnitSnapshotSave { unit }.into(),
     );
     let modes = [
         (UnitMode::Group, "effects.group", 37.0),

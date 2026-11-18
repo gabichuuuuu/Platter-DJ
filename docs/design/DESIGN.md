@@ -849,7 +849,8 @@ The keys that put a channel through effect units 1 and 2.
 - In each channel of the four-deck mixer: two keys of 20 × 18, stacked 3px apart, at the right of the mixer effect knob, labelled `1`
   and `2` (600 10/12). Lit: the `text-primary` strip along the top edge.
 - Name for screen readers and tooltip: "Send deck C to effect unit 1".
-- The two-deck mixer places the same keys when they are built, and a capture goes to the maintainer before they are merged.
+- The two-deck mixer places the same keys side by side, left of the `L` and `R` keys of the crossfader assign, in their row; it has no
+  mixer effect knob (approved on its capture on 18 November 2026).
 
 ##### Behaviour
 

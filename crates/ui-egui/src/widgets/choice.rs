@@ -3,7 +3,9 @@
 //! Component: `Select` in `docs/design/DESIGN.md`; the segmented control is the `seg`
 //! control of the preference screens.
 
-use egui::{Align2, Area, EventFilter, Id, Key, Order, Rect, Role, Sense, StrokeKind, WidgetInfo};
+use egui::{
+    Align2, Area, Color32, EventFilter, Id, Key, Order, Rect, Role, Sense, StrokeKind, WidgetInfo,
+};
 
 use crate::command::Action;
 use crate::cx::{ControlKind, Cx};
@@ -47,7 +49,7 @@ pub fn select(
     spec: SelectSpec<'_>,
     make: impl Fn(usize) -> Action,
 ) {
-    drop_down(cx, rect, id, spec, make, Look::Field);
+    drop_down(cx, rect, id, spec, make, Look::Field, None);
 }
 
 /// A drop-down with the small type of the keys, for the narrow selectors of the effect units
@@ -59,7 +61,7 @@ pub fn small_select(
     spec: SelectSpec<'_>,
     make: impl Fn(usize) -> Action,
 ) {
-    drop_down(cx, rect, id, spec, make, Look::Small);
+    drop_down(cx, rect, id, spec, make, Look::Small, None);
 }
 
 /// How a drop-down is drawn.
@@ -68,7 +70,33 @@ enum Look {
     Field,
     Small,
     Label,
+    /// The title of a panel, which opens the menu of the panel.
+    Title,
 }
+
+/// The title a menu is drawn as: its text in the `button` style and its ink.
+pub struct Title<'a> {
+    pub text: &'a str,
+    pub ink: Color32,
+}
+
+/// A title that opens a menu of `spec.choices` under it with a click or the right button, as
+/// the title of an effect unit opens *Save snapshot* (`EffectUnit` in `docs/design/DESIGN.md`).
+/// The title is drawn whether the menu is enabled or not; `make(index)` is emitted when an
+/// option is picked.
+pub fn title_menu(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    title: Title<'_>,
+    spec: SelectSpec<'_>,
+    make: impl Fn(usize) -> Action,
+) {
+    drop_down(cx, rect, id, spec, make, Look::Title, Some(title));
+}
+
+/// The width of the list of a title menu.
+const TITLE_LIST_WIDTH: f32 = 220.0;
 
 /// A drop-down drawn as a small label: its text alone, with a fill under the pointer, as the
 /// name of the mixer effect under its knob (`MixerEffect` in `docs/design/DESIGN.md`). Its
@@ -80,7 +108,7 @@ pub fn label_select(
     spec: SelectSpec<'_>,
     make: impl Fn(usize) -> Action,
 ) {
-    drop_down(cx, rect, id, spec, make, Look::Label);
+    drop_down(cx, rect, id, spec, make, Look::Label, None);
 }
 
 /// The width of the list of a label drop-down.
@@ -93,8 +121,9 @@ fn drop_down(
     spec: SelectSpec<'_>,
     make: impl Fn(usize) -> Action,
     look: Look,
+    title: Option<Title<'_>>,
 ) {
-    let label = look == Look::Label;
+    let menu = look == Look::Title;
     let SelectSpec {
         name,
         choices,
@@ -120,7 +149,7 @@ fn drop_down(
         && cx
             .ui
             .input(|input| input.modifiers.alt && input.key_pressed(Key::ArrowDown));
-    if enabled && (response.clicked() || alt_down) {
+    if enabled && (response.clicked() || (menu && response.secondary_clicked()) || alt_down) {
         open = match open {
             Some(_) => None,
             None => {
@@ -139,59 +168,16 @@ fn drop_down(
         tooltip::tooltip(cx, &response, name, None);
     }
 
+    face(
+        cx,
+        rect,
+        look,
+        (title, shown),
+        (enabled, response.hovered()),
+    );
     let tokens = &cx.theme.tokens;
     let color = &tokens.color;
     let painter = cx.painter();
-    let ink = if enabled {
-        color.text_primary
-    } else {
-        color.text_disabled
-    };
-    if label {
-        if response.hovered() && enabled {
-            painter.rect_filled(rect, paint::radius(tokens.radius.sm), color.surface_hover);
-        }
-        let ink = if enabled {
-            color.text_secondary
-        } else {
-            color.text_disabled
-        };
-        paint::text_elided(painter, cx.theme, rect, shown, tokens.text.label, ink);
-    } else {
-        let fill = if response.hovered() && enabled {
-            color.surface_hover
-        } else {
-            color.surface_control
-        };
-        let outline = if enabled {
-            color.line_control
-        } else {
-            color.line_key
-        };
-        painter.rect(
-            rect,
-            paint::radius(tokens.radius.md),
-            fill,
-            paint::hairline(cx.theme, outline),
-            StrokeKind::Inside,
-        );
-        let (padding, glyph, style) = match look {
-            Look::Small => (tokens.space.s2, 10.0, tokens.text.label),
-            _ => (tokens.space.s3, 14.0, tokens.text.body),
-        };
-        let chevron = Rect::from_center_size(
-            egui::pos2(rect.right() - padding - glyph / 2.0, rect.center().y),
-            egui::vec2(glyph, glyph),
-        );
-        cx.theme
-            .icons
-            .paint(painter, Glyph::ChevronDown, chevron, ink);
-        let text_rect = Rect::from_min_max(
-            rect.min + egui::vec2(padding, 0.0),
-            egui::pos2(chevron.left() - tokens.space.s1, rect.bottom()),
-        );
-        paint::text_elided(painter, cx.theme, text_rect, shown, style, ink);
-    }
     if focused {
         paint::focus_ring(painter, cx.theme, rect, tokens.radius.md);
     }
@@ -271,10 +257,10 @@ fn drop_down(
     let list = Rect::from_min_size(
         rect.left_bottom() + egui::vec2(0.0, tokens.space.s1),
         egui::vec2(
-            if label {
-                rect.width().max(LABEL_LIST_WIDTH)
-            } else {
-                rect.width()
+            match look {
+                Look::Label => rect.width().max(LABEL_LIST_WIDTH),
+                Look::Title => rect.width().max(TITLE_LIST_WIDTH),
+                Look::Field | Look::Small => rect.width(),
             },
             ROW_HEIGHT * visible as f32,
         ),
@@ -344,6 +330,7 @@ fn drop_down(
         });
     let clicked_outside = !clicked_inside
         && !response.clicked()
+        && !response.secondary_clicked()
         && cx.ui.input(|input| input.pointer.any_click())
         && cx
             .ui
@@ -358,6 +345,84 @@ fn drop_down(
         ctx.data_mut(|data| data.remove_temp::<Open>(id));
     } else {
         ctx.data_mut(|data| data.insert_temp(id, state));
+    }
+}
+
+/// The closed drop-down: a field with its chevron, a label, or the title of a menu.
+fn face(
+    cx: &Cx<'_>,
+    rect: Rect,
+    look: Look,
+    (title, shown): (Option<Title<'_>>, &str),
+    (enabled, hovered): (bool, bool),
+) {
+    let label = look == Look::Label;
+    let menu = look == Look::Title;
+    let tokens = &cx.theme.tokens;
+    let color = &tokens.color;
+    let painter = cx.painter();
+    let ink = if enabled {
+        color.text_primary
+    } else {
+        color.text_disabled
+    };
+    if let Some(title) = title.filter(|_| menu) {
+        if hovered && enabled {
+            painter.rect_filled(rect, paint::radius(tokens.radius.sm), color.surface_hover);
+        }
+        paint::text(
+            painter,
+            cx.theme,
+            rect,
+            Align2::LEFT_CENTER,
+            title.text,
+            tokens.text.button,
+            title.ink,
+        );
+    } else if label {
+        if hovered && enabled {
+            painter.rect_filled(rect, paint::radius(tokens.radius.sm), color.surface_hover);
+        }
+        let ink = if enabled {
+            color.text_secondary
+        } else {
+            color.text_disabled
+        };
+        paint::text_elided(painter, cx.theme, rect, shown, tokens.text.label, ink);
+    } else {
+        let fill = if hovered && enabled {
+            color.surface_hover
+        } else {
+            color.surface_control
+        };
+        let outline = if enabled {
+            color.line_control
+        } else {
+            color.line_key
+        };
+        painter.rect(
+            rect,
+            paint::radius(tokens.radius.md),
+            fill,
+            paint::hairline(cx.theme, outline),
+            StrokeKind::Inside,
+        );
+        let (padding, glyph, style) = match look {
+            Look::Small => (tokens.space.s2, 10.0, tokens.text.label),
+            _ => (tokens.space.s3, 14.0, tokens.text.body),
+        };
+        let chevron = Rect::from_center_size(
+            egui::pos2(rect.right() - padding - glyph / 2.0, rect.center().y),
+            egui::vec2(glyph, glyph),
+        );
+        cx.theme
+            .icons
+            .paint(painter, Glyph::ChevronDown, chevron, ink);
+        let text_rect = Rect::from_min_max(
+            rect.min + egui::vec2(padding, 0.0),
+            egui::pos2(chevron.left() - tokens.space.s1, rect.bottom()),
+        );
+        paint::text_elided(painter, cx.theme, text_rect, shown, style, ink);
     }
 }
 
