@@ -1464,15 +1464,13 @@ impl MixerControls {
         }
     }
 
-    fn as_commands(&self) -> [RtCommand; 8] {
+    fn as_commands(&self) -> impl Iterator<Item = RtCommand> {
         let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
-        let assign = |deck: DeckId| RtCommand::CrossfaderAssign {
+        let assigns = DeckId::ALL.map(|deck| RtCommand::CrossfaderAssign {
             deck,
             side: self.crossfader_sides[deck.index()],
-        };
-        [
-            assign(DeckId::A),
-            assign(DeckId::B),
+        });
+        let rest = [
             RtCommand::Crossfader {
                 position: self.crossfader as f32,
             },
@@ -1489,7 +1487,8 @@ impl MixerControls {
                 linear: linear(self.headphone_gain_db),
             },
             self.external(),
-        ]
+        ];
+        assigns.into_iter().chain(rest)
     }
 }
 
