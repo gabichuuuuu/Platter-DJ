@@ -185,7 +185,7 @@ title = "Effects"
 features = [
   { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-engine --test effects; cargo test -p platter-ui-egui --test panels; the window shows units 1 and 2 in both layouts, see docs/behavior/effects.md" },
   { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-ui-egui --test panels; the snapshot is in the menu of the unit title, see docs/behavior/effects.md" },
-  { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "planned" },
+  { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels four_units; cargo test -p platter --bins; the Mixer page of the preferences shows two or four, see docs/behavior/effects.md" },
   { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test effects; insert and post fader, no send until the input routing of M5, set by command only, see docs/behavior/effects.md" },
   { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, slicer, bitcrusher", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; measured with synthesised signals, not listened to, see docs/behavior/effects.md" },
   { id = "catalogue-rest", name = "Rest of the effects and mixer effects catalogue", milestone = "later", status = "planned" },

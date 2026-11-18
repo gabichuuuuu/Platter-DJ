@@ -88,8 +88,18 @@ or a unit is unassigned.
 ### Units and modes
 
 - Four units exist in the engine. The effect row, under the status header in both layouts,
-  shows units 1 and 2 (`docs/design/DESIGN.md`, *EffectUnit*). Not yet: the preference of two
-  or four units that lets the header of each panel switch to unit 3 or 4.
+  shows units 1 and 2 (`docs/design/DESIGN.md`, *EffectUnit*).
+- A preference of the Mixer page shows two units or four (`app.effect_units.set`, kept in the
+  settings file under `[effects]` as `shown`; two to begin with). With four, the header of
+  the left panel has the keys `1` and `3`, and the right one `2` and `4`: they choose the
+  unit the panel shows (`app.fx_panel.show`). Going back to two shows units 1 and 2 again.
+- With four units each channel has four assign keys, one per unit, as the public manual
+  gives each channel one key per unit; with two it has the keys 1 and 2. A channel stays
+  assigned to units 3 and 4 while they are hidden, and they keep acting on it, as decks C and
+  D keep playing while the two-deck layout hides them.
+- The Mixer page scrolls: its *Effects* section, under *Mixing*, holds the number of
+  units and the routing of each unit (*Insert* or *Post fader*). The wheel scrolls the page,
+  and the keyboard focus brings a control it reaches into view.
 - The two-deck mixer has the assign keys 1 and 2 of each channel, side by side in the row of
   its crossfader assign keys, and no mixer effect knob: its channels have no room for one. The
   mixer effect of decks A and B is turned in the four-deck layout, or by command. The
@@ -115,8 +125,9 @@ or a unit is unassigned.
 
 - `mixer.fx_assign.toggle` (`deck`, `unit`) puts the channel through the unit, or takes it out.
   The assign keys 1 and 2 of each channel in the M4 screen are these keys.
-- Each unit has a routing (`fx.unit.routing.set`): `insert` (the default) or `post_fader`.
-  The routing has no control in the preferences yet; the command sets it.
+- Each unit has a routing (`fx.unit.routing.set`): `insert` (the default) or `post_fader`,
+  set on the Mixer page of the preferences. In external mixer mode *Post fader* is disabled
+  there.
 - Signal path of a channel: gain, equaliser, the units in insert routing it is assigned to,
   filter, fader, pan, the units in post-fader routing it is assigned to, meter. Then the
   crossfader. The manual places the insert just before the filter; in Platter's channel that

@@ -15,11 +15,11 @@ use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::command::SPECS;
 use platter_engine::{
-    Command, Engine, EngineError, Event, PlatterAnalyser, Processor, Recall, TempoRange,
+    Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_ui_egui::collection::Collection;
-use platter_ui_egui::command::{Action, AppCommand};
+use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
@@ -160,6 +160,8 @@ pub struct PlatterApp {
     notices: [Option<DeckNotice>; DeckId::COUNT],
     /// The window covers the whole screen, as the window last said.
     fullscreen: bool,
+    /// The unit each panel of the effect row shows, with four units shown.
+    fx_panels: [FxUnit; 2],
     /// Full screen asked for by a command, sent to the window in the next frame.
     fullscreen_wanted: Option<bool>,
     /// The MIDI controllers of the settings file that could be opened.
@@ -269,6 +271,7 @@ impl PlatterApp {
             browser,
             notices: [None; DeckId::COUNT],
             fullscreen: false,
+            fx_panels: [FxUnit::ALL[0], FxUnit::ALL[1]],
             fullscreen_wanted: None,
             controllers: Vec::new(),
             manager: Manager::default(),
@@ -1097,6 +1100,16 @@ impl PlatterApp {
                 self.settings.deck_layout = layout;
                 self.save_settings();
             }
+            AppCommand::EffectUnitsSet { units } => {
+                self.settings.effect_units = units;
+                self.fx_panels = [FxUnit::ALL[0], FxUnit::ALL[1]];
+                self.save_settings();
+            }
+            AppCommand::FxPanelShow { unit } => {
+                if self.settings.effect_units == EffectUnits::Four {
+                    self.fx_panels[fx_panel_of(unit)] = unit;
+                }
+            }
             AppCommand::TempoRangeSet { percent } => {
                 if TEMPO_RANGE_PERCENTS.contains(&percent) {
                     self.settings.tempo_range = percent;
@@ -1212,6 +1225,7 @@ impl PlatterApp {
     fn restore_defaults(&mut self) {
         // Where the file selector stands, its roots and the MIDI controllers are not settings
         // of these pages.
+        self.fx_panels = [FxUnit::ALL[0], FxUnit::ALL[1]];
         self.settings = Settings {
             folder: self.settings.folder.clone(),
             roots: self.settings.roots.clone(),
@@ -1431,6 +1445,11 @@ impl PlatterApp {
             tempo_range: self.settings.tempo_range,
             deck_size: self.settings.deck_size,
             deck_layout: self.settings.deck_layout,
+            effect_units: self.settings.effect_units,
+            fx_panels: match self.settings.effect_units {
+                EffectUnits::Two => [FxUnit::ALL[0], FxUnit::ALL[1]],
+                EffectUnits::Four => self.fx_panels,
+            },
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
             library_file: LIBRARY_FILE.to_owned(),

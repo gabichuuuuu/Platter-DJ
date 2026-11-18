@@ -12,7 +12,7 @@ use platter_engine::Snapshot;
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize, ListColumn, SortColumn};
+use crate::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, SortColumn};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -126,6 +126,9 @@ pub struct SettingsView {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// Two effect units or four, and the unit each panel of the effect row shows.
+    pub effect_units: EffectUnits,
+    pub fx_panels: [platter_engine::FxUnit; 2],
     /// Names of the files of the user, as the pages mention them.
     pub settings_file: String,
     pub keymap_file: String,

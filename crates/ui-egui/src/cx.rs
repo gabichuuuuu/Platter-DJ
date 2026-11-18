@@ -142,7 +142,8 @@ impl<'a> Cx<'a> {
     }
 
     fn record_control(&mut self, control: Control) {
-        if self.interactive {
+        // A control a scrolled page has moved out of view cannot be operated where it is.
+        if self.interactive && self.ui.clip_rect().contains(control.rect.center()) {
             self.out.controls.push(control);
         }
     }

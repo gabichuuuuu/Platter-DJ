@@ -9,11 +9,11 @@ use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Role, Sense, Vec2, Wid
 use platter_core::DeckId;
 use platter_dsp::eq::band_gain;
 use platter_engine::{
-    Band, Command, CrossfaderDirection, CrossfaderSide, EffectKind, FADER_UNITY, FxUnit, MixerMode,
+    Band, Command, CrossfaderDirection, CrossfaderSide, EffectKind, FADER_UNITY, MixerMode,
 };
 
-use crate::command::DeckLayout;
 use crate::command::{Action, AppCommand, MeterId};
+use crate::command::{DeckLayout, EffectUnits};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
@@ -276,6 +276,9 @@ impl ChannelLayout {
                 knob: None,
                 keys: egui::pos2(58.0, 294.0),
                 keys_step: egui::vec2(23.0, 0.0),
+                // With four units, keys 3 and 4 go over keys 1 and 2.
+                four: [(58.0, 294.0), (81.0, 294.0), (58.0, 273.0), (81.0, 273.0)]
+                    .map(|(x, y)| Rect::from_min_size(egui::pos2(x, y), ASSIGN_KEY)),
             }),
             key: egui::vec2(24.0, 272.0),
             eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
@@ -313,6 +316,9 @@ impl ChannelLayout {
                 knob: Some(egui::pos2(12.0, 277.0)),
                 keys: egui::pos2(49.0, 280.0),
                 keys_step: egui::vec2(0.0, 21.0),
+                // With four units, two narrower columns: 1 and 2 over 3 and 4.
+                four: [(47.0, 280.0), (62.0, 280.0), (47.0, 301.0), (62.0, 301.0)]
+                    .map(|(x, y)| Rect::from_min_size(egui::pos2(x, y), NARROW_ASSIGN_KEY)),
             }),
             key: egui::vec2(8.0, 327.0),
             eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
@@ -338,10 +344,13 @@ struct ChannelEffects {
     /// The top left corner of the key of unit 1, and the step to the key of unit 2.
     keys: Pos2,
     keys_step: Vec2,
+    /// The keys of units 1 to 4 when the preferences show four units.
+    four: [Rect; 4],
 }
 
 const MIXER_EFFECT_KNOB: f32 = 30.0;
 const ASSIGN_KEY: Vec2 = egui::vec2(20.0, 18.0);
+const NARROW_ASSIGN_KEY: Vec2 = egui::vec2(14.0, 18.0);
 
 /// The mixer effect knob with the name of its effect under it, which opens the list of the
 /// mixer effects, and the keys that send the channel to effect units 1 and 2. In external
@@ -442,7 +451,15 @@ fn assign_keys(
     let tokens = &cx.theme.tokens;
     let letter = deck.letter().to_string();
     let index = deck.index();
-    for (row, unit) in FxUnit::ALL.into_iter().take(2).enumerate() {
+    let four = view.settings.effect_units == EffectUnits::Four;
+    for (row, unit) in view
+        .settings
+        .effect_units
+        .units()
+        .iter()
+        .copied()
+        .enumerate()
+    {
         let number = unit.number().to_string();
         let name = texts.format(
             "effects.assign_name",
@@ -456,12 +473,17 @@ fn assign_keys(
             .effects
             .is_assigned(deck, unit)
             .then_some(tokens.color.text_primary);
-        key::key(
-            cx,
+        let rect = if four {
+            layout.four[row].translate(origin.to_vec2())
+        } else {
             Rect::from_min_size(
                 origin + layout.keys.to_vec2() + layout.keys_step * row as f32,
                 ASSIGN_KEY,
-            ),
+            )
+        };
+        key::key(
+            cx,
+            rect,
             id(("mixer-fx-assign", index, row)),
             spec,
             Press::Click(Command::MixerFxAssignToggle { deck, unit }.into()),

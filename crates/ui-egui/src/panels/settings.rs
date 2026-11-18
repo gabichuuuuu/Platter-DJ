@@ -8,10 +8,14 @@
 use egui::{Align2, CornerRadius, Rect, Role, Sense, StrokeKind, WidgetInfo};
 use platter_core::DeckId;
 use platter_engine::command::{CommandSpec, ParamKind, SPECS};
-use platter_engine::{Command, CrossfaderCurve, EqModel, FilterModel, MixerMode, Output, SyncMode};
+use platter_engine::{
+    Command, CrossfaderCurve, EqModel, FilterModel, FxRouting, FxUnit, MixerMode, Output, SyncMode,
+};
 
 use crate::collection::TagWriting;
-use crate::command::{Action, AppCommand, DeckLayout, DeckSize, RouteSlot, SettingsPage};
+use crate::command::{
+    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RouteSlot, SettingsPage,
+};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::i18n::{Language, Texts};
@@ -85,6 +89,8 @@ fn binding_label(texts: &Texts, command: &str, args: &platter_engine::command::A
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SettingsMemory {
     pub shortcuts_scroll: f32,
+    /// How far the Mixer page is scrolled.
+    pub page_scroll: f32,
 }
 
 pub fn settings(
@@ -192,7 +198,12 @@ pub fn settings(
         SettingsPage::General => general_page(cx, page_rect, view),
         SettingsPage::Keyboard => keyboard_page(cx, page_rect, view, memory),
         SettingsPage::Decks => decks_page(cx, page_rect, view),
-        SettingsPage::Mixer => mixer_page(cx, page_rect, view),
+        SettingsPage::Mixer => scrolled(
+            cx,
+            page_rect,
+            (MIXER_PAGE_HEIGHT, &mut memory.page_scroll),
+            |cx, page| mixer_page(cx, page, view),
+        ),
         SettingsPage::Library => library_page(cx, page_rect, view),
         SettingsPage::Controllers => controllers_page(cx, page_rect, view),
     }
@@ -201,6 +212,52 @@ pub fn settings(
         Rect::from_min_max(page_rect.left_bottom(), content.max),
         view,
     );
+}
+
+/// The height of the content of the Mixer page, which scrolls.
+const MIXER_PAGE_HEIGHT: f32 = 860.0;
+
+/// Draws a page taller than its room, scrolled by `scroll`: the wheel over it scrolls it, and
+/// a control of the page the keyboard focus reaches out of view is brought into view.
+fn scrolled(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    (content, scroll): (f32, &mut f32),
+    draw: impl FnOnce(&mut Cx<'_>, Rect),
+) {
+    let ctx = cx.ui.ctx().clone();
+    let clip = rect.intersect(cx.ui.clip_rect());
+    if cx.interactive && cx.ui.rect_contains_pointer(clip) {
+        *scroll -= cx.ui.input(|input| input.smooth_scroll_delta.y);
+    }
+    // A control of the page is clipped by it; the keys of the footer and the list of pages
+    // are not, so only the controls of the page move it.
+    if let Some(focused) = ctx
+        .memory(|memory| memory.focused())
+        .and_then(|id| ctx.read_response(id))
+        .filter(|response| response.interact_rect != response.rect)
+        .filter(|response| {
+            response.rect.left() >= rect.left() && response.rect.right() <= rect.right()
+        })
+    {
+        let margin = cx.theme.tokens.space.s4;
+        if focused.rect.bottom() > clip.bottom() {
+            *scroll += focused.rect.bottom() - clip.bottom() + margin;
+        } else if focused.rect.top() < clip.top() {
+            *scroll -= clip.top() - focused.rect.top() + margin;
+        }
+    }
+    *scroll = scroll.clamp(0.0, (content - rect.height()).max(0.0));
+    let mut ui = egui::Ui::new(
+        ctx,
+        cx.ui.scope_id().with("scrolled-page"),
+        egui::UiBuilder::new()
+            .layer_id(cx.ui.layer_id())
+            .max_rect(rect),
+    );
+    ui.set_clip_rect(clip);
+    let page = rect.translate(egui::vec2(0.0, -*scroll));
+    draw(&mut cx.with_ui(&ui), page);
 }
 
 /// The heading of a group of settings, with its rule. Returns the top of its first row.
@@ -232,6 +289,11 @@ fn section(cx: &Cx<'_>, page: Rect, top: f32, title: &str) -> f32 {
 
 /// The name of a setting at the left of its row. Returns the area for its control.
 fn setting(cx: &Cx<'_>, page: Rect, top: f32, name: &str) -> Rect {
+    setting_named(cx, page, top, cx.texts.get(name))
+}
+
+/// [`setting`] with a name already translated.
+fn setting_named(cx: &Cx<'_>, page: Rect, top: f32, name: &str) -> Rect {
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let label = Rect::from_min_size(
@@ -242,7 +304,7 @@ fn setting(cx: &Cx<'_>, page: Rect, top: f32, name: &str) -> Rect {
         cx.painter(),
         theme,
         label,
-        cx.texts.get(name),
+        name,
         tokens.text.body,
         tokens.color.text_secondary,
     );
@@ -1669,7 +1731,9 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         texts.get("settings.models_help"),
     );
 
-    let top = section(cx, page, 265.0, "settings.external_section");
+    effects_section(cx, page, 265.0, view);
+
+    let top = section(cx, page, 540.0, "settings.external_section");
     switch(
         cx,
         page,
@@ -1693,7 +1757,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         },
     );
 
-    let top = section(cx, page, 420.0, "settings.crossfader_section");
+    let top = section(cx, page, 695.0, "settings.crossfader_section");
     let control = setting(cx, page, top, "settings.fade_length");
     let fade_labels = FADE_BEATS.map(|beats| beats.to_string());
     let fade_choices: Vec<Choice<'_>> = fade_labels
@@ -1759,6 +1823,89 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
         texts.get("settings.curve_help"),
     );
+}
+
+/// The effect units: how many the effect row shows, and the routing of each one
+/// (`docs/behavior/effects.md`, *Units and modes* and *Assignment and routing*).
+fn effects_section(cx: &mut Cx<'_>, page: Rect, at: f32, view: &View<'_>) {
+    let texts = cx.texts;
+    let top = section(cx, page, at, "settings.effects_section");
+    let control = setting(cx, page, top, "settings.effect_units");
+    let unit_labels = EffectUnits::ALL.map(|units| {
+        texts.get(match units {
+            EffectUnits::Two => "settings.units_two",
+            EffectUnits::Four => "settings.units_four",
+        })
+    });
+    let unit_choices: Vec<Choice<'_>> = unit_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-effect-units"),
+        &unit_choices,
+        EffectUnits::ALL
+            .iter()
+            .position(|units| *units == view.settings.effect_units),
+        |index| {
+            Action::App(AppCommand::EffectUnitsSet {
+                units: EffectUnits::ALL[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.effect_units_help"),
+    );
+
+    // Post fader has no meaning while the hardware mixer has the faders.
+    let external = view.engine.mixer.mode == MixerMode::External;
+    let routing_labels = FxRouting::ALL.map(|routing| {
+        texts.get(match routing {
+            FxRouting::Insert => "settings.routing_insert",
+            FxRouting::PostFader => "settings.routing_post_fader",
+        })
+    });
+    let routing_choices: Vec<Choice<'_>> = FxRouting::ALL
+        .iter()
+        .zip(&routing_labels)
+        .map(|(routing, label)| Choice {
+            label,
+            enabled: !external || *routing == FxRouting::Insert,
+        })
+        .collect();
+    let mut row_top = top + 50.0;
+    let mut last = Rect::NOTHING;
+    for unit in FxUnit::ALL {
+        let number = unit.number().to_string();
+        let name = texts.format("settings.unit_routing", &[("unit", &number)]);
+        let control = setting_named(cx, page, row_top, &name);
+        let current = view.engine.effects.unit(unit).routing;
+        let drawn = choice::segmented(
+            cx,
+            control,
+            id(("settings-routing", unit.index())),
+            &routing_choices,
+            FxRouting::ALL
+                .iter()
+                .position(|routing| *routing == current),
+            |index| {
+                Action::Engine(Command::FxUnitRoutingSet {
+                    unit,
+                    routing: FxRouting::ALL[index],
+                })
+            },
+        );
+        last = Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom()));
+        row_top += 40.0;
+    }
+    help(cx, last, texts.get("settings.fx_routing_help"));
 }
 
 /// The minimum play times the Library page offers, in seconds.

@@ -14,7 +14,7 @@ use platter_engine::{
     MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
+use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
 use platter_ui_egui::played::{DEFAULT_PLAYTIME, MAX_PLAYTIME, MIN_PLAYTIME};
@@ -98,6 +98,8 @@ pub struct Settings {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// Two effect units or four: `docs/behavior/effects.md`.
+    pub effect_units: EffectUnits,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
     pub mixer_mode: MixerMode,
     /// The sync mode of the Decks page.
@@ -157,6 +159,7 @@ impl Default for Settings {
             tempo_range: 8,
             deck_size: DeckSize::Full,
             deck_layout: DeckLayout::Four,
+            effect_units: EffectUnits::Two,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
             key_notation: KeyNotation::default(),
@@ -226,6 +229,13 @@ impl Settings {
                         .find(|layout| layout.name() == name)
                 })
                 .unwrap_or(defaults.deck_layout),
+            effect_units: text(table("effects"), "shown")
+                .and_then(|name| {
+                    EffectUnits::ALL
+                        .into_iter()
+                        .find(|units| units.name() == name)
+                })
+                .unwrap_or(defaults.effect_units),
             device: text(audio, "device").filter(|name| !name.is_empty()),
             sample_rate: number(audio, "sample_rate")
                 .filter(|rate| SAMPLE_RATES.contains(rate))
@@ -496,10 +506,12 @@ impl Settings {
             toml::Value::String(self.tag_writing.name().to_owned()),
         );
         root.insert("browser".to_owned(), toml::Value::Table(browser));
-        root.insert(
-            "effects".to_owned(),
-            toml::Value::Table(crate::effects_config::write(&self.effects)),
+        let mut effects = crate::effects_config::write(&self.effects);
+        effects.insert(
+            "shown".to_owned(),
+            toml::Value::String(self.effect_units.name().to_owned()),
         );
+        root.insert("effects".to_owned(), toml::Value::Table(effects));
         let midi: Vec<toml::Value> = self
             .midi
             .iter()
@@ -551,7 +563,7 @@ mod tests {
     use platter_audio_io::Routing;
     use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
-    use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn};
+    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn};
     use platter_ui_egui::i18n::Language;
     use platter_ui_egui::keys::KeyNotation;
 
@@ -576,6 +588,7 @@ mod tests {
             tempo_range: 16,
             deck_size: DeckSize::Compact,
             deck_layout: DeckLayout::Four,
+            effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
             key_notation: KeyNotation::Sharps,

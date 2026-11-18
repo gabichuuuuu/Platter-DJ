@@ -9,10 +9,10 @@
 use std::path::PathBuf;
 
 use platter_core::{DeckId, ValueError};
-use platter_engine::Command;
 use platter_engine::command::{
     Args, CommandError, CommandSpec, ParamKind, ParamSpec, SPECS, Value,
 };
+use platter_engine::{Command, FxUnit};
 
 use platter_library::{MAX_NAME_CHARS, NodeId, SessionId};
 
@@ -306,6 +306,14 @@ pub enum AppCommand {
     /// Shows two decks or four: `docs/behavior/interface.md`, *Deck layout*.
     DeckLayoutSet {
         layout: DeckLayout,
+    },
+    /// Shows two effect units or four: `docs/behavior/effects.md`, *Units and modes*.
+    EffectUnitsSet {
+        units: EffectUnits,
+    },
+    /// Shows an effect unit in its panel: units 1 and 3 on the left, 2 and 4 on the right.
+    FxPanelShow {
+        unit: FxUnit,
     },
     /// Sets the range every tempo fader gets, in percent: `docs/behavior/settings.md`.
     TempoRangeSet {
@@ -780,6 +788,44 @@ impl DeckLayout {
 
 pub const DECK_SIZES: &[&str] = &["full", "compact"];
 pub const DECK_LAYOUTS: &[&str] = &["two", "four"];
+pub const EFFECT_UNITS: &[&str] = &["two", "four"];
+
+/// How many effect units the effect row shows: `docs/behavior/effects.md`, *Units and modes*.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EffectUnits {
+    /// Units 1 and 2.
+    #[default]
+    Two,
+    /// Units 1 and 3 in the left panel, 2 and 4 in the right one, one at a time.
+    Four,
+}
+
+impl EffectUnits {
+    pub const ALL: [Self; 2] = [Self::Two, Self::Four];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Two => "two",
+            Self::Four => "four",
+        }
+    }
+
+    /// The units a channel can be assigned to from its keys.
+    pub fn units(self) -> &'static [FxUnit] {
+        match self {
+            Self::Two => &FX_UNITS_TWO,
+            Self::Four => &FxUnit::ALL,
+        }
+    }
+}
+
+const FX_UNITS_TWO: [FxUnit; 2] = [FxUnit::ALL[0], FxUnit::ALL[1]];
+
+/// The panel of the effect row that shows `unit`: 0 on the left for units 1 and 3, 1 on the
+/// right for units 2 and 4.
+pub fn fx_panel_of(unit: FxUnit) -> usize {
+    unit.index() % 2
+}
 
 /// The columns of the browser list that can be shown or hidden: all but the badge of a deck,
 /// the cover and the title. `docs/behavior/browser.md`, *Sorting*.
@@ -947,6 +993,16 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.deck_layout.set",
         label: "Two or four decks",
         params: &[choice("layout", DECK_LAYOUTS)],
+    },
+    CommandSpec {
+        id: "app.effect_units.set",
+        label: "Two or four effect units",
+        params: &[choice("units", EFFECT_UNITS)],
+    },
+    CommandSpec {
+        id: "app.fx_panel.show",
+        label: "Show an effect unit in its panel",
+        params: &[number("unit", 1.0, 4.0)],
     },
     CommandSpec {
         id: "app.tempo_range.set",
@@ -1596,6 +1652,12 @@ impl AppCommand {
             "app.deck_layout.set" => Self::DeckLayoutSet {
                 layout: read.choice("layout", &DeckLayout::ALL, DeckLayout::name, "two, four")?,
             },
+            "app.effect_units.set" => Self::EffectUnitsSet {
+                units: read.choice("units", &EffectUnits::ALL, EffectUnits::name, "two, four")?,
+            },
+            "app.fx_panel.show" => Self::FxPanelShow {
+                unit: FxUnit::from_number(read.integer("unit")? as f64)?,
+            },
             "app.tempo_range.set" => Self::TempoRangeSet {
                 percent: u32::try_from(read.integer("percent")?).unwrap_or(0),
             },
@@ -1904,6 +1966,8 @@ impl AppCommand {
             Self::FullscreenAtStartToggle => "app.fullscreen_at_start.toggle",
             Self::DeckSizeSet { .. } => "app.deck_size.set",
             Self::DeckLayoutSet { .. } => "app.deck_layout.set",
+            Self::EffectUnitsSet { .. } => "app.effect_units.set",
+            Self::FxPanelShow { .. } => "app.fx_panel.show",
             Self::TempoRangeSet { .. } => "app.tempo_range.set",
             Self::MinPlaytimeSet { .. } => "app.min_playtime.set",
             Self::KeyNotationSet { .. } => "app.key_notation.set",

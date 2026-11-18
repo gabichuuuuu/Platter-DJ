@@ -45,6 +45,8 @@ struct State {
     naming: Option<Naming>,
     /// How far the tree is scrolled, so the folders of the explorer below the library show.
     tree_scroll: f32,
+    /// How far the Mixer page of the preferences is scrolled.
+    page_scroll: f32,
     /// The maintenance of the collection is open, and asks before removing.
     maintenance: (bool, bool),
     /// The dialog of the details of the selected track is open.
@@ -74,6 +76,7 @@ fn states() -> Vec<State> {
         menu: None,
         naming: None,
         tree_scroll: 0.0,
+        page_scroll: 0.0,
         maintenance: (false, false),
         details: false,
         min_controls: 6,
@@ -253,6 +256,7 @@ fn states() -> Vec<State> {
         details_several,
         state("four-decks", sample::four_decks(), None),
         state("effects-single", single_unit(), None),
+        state("four-units", sample::four_units(), None),
         state(
             "preferences-library",
             sample::playing(),
@@ -279,6 +283,14 @@ fn states() -> Vec<State> {
             sample::playing(),
             Some(SettingsPage::Mixer),
         ),
+        State {
+            page_scroll: f32::MAX,
+            ..state(
+                "preferences-mixer-end",
+                sample::playing(),
+                Some(SettingsPage::Mixer),
+            )
+        },
     ]
 }
 
@@ -308,6 +320,7 @@ impl Stage {
         shell.state.browser.menu = state.menu;
         shell.state.browser.naming = state.naming;
         shell.state.browser.tree_scroll = state.tree_scroll;
+        shell.state.settings.page_scroll = state.page_scroll;
         (shell.state.maintenance, shell.state.remove_asked) = state.maintenance;
         shell.state.details_wanted = state.details;
         let ctx = egui::Context::default();
@@ -1928,4 +1941,79 @@ fn the_title_of_a_unit_in_single_mode_saves_a_snapshot_from_its_menu() {
             })]
         );
     }
+}
+
+/// `docs/behavior/effects.md`, *Units and modes*: with four units each panel switches between
+/// its two units and each channel has a key per unit.
+#[test]
+fn four_units_give_each_panel_a_switch_and_each_channel_four_keys() {
+    let four = state_named("four-units");
+    let mut stage = Stage::new(&four);
+    let count = |stage: &Stage, command: &str| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count(&stage, "app.fx_panel.show"), 4);
+    assert_eq!(count(&stage, "mixer.fx_assign.toggle"), 16);
+    // The key of unit 1 in the left panel brings unit 1 back.
+    let mut switches: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "app.fx_panel.show")
+        .collect();
+    switches.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    let actions = stage.click(switches[0].rect.center());
+    assert_eq!(
+        actions,
+        [Action::App(AppCommand::FxPanelShow {
+            unit: platter_engine::FxUnit::ALL[0],
+        })]
+    );
+    // With two units, neither the switch nor keys 3 and 4.
+    let two = Stage::new(&state_named("four-decks"));
+    assert_eq!(count(&two, "app.fx_panel.show"), 0);
+    assert_eq!(count(&two, "mixer.fx_assign.toggle"), 8);
+}
+
+/// The Mixer page scrolls: the crossfader section sits below its room, under the effect
+/// units, and the keyboard brings it into view (`docs/behavior/effects.md`, *Units and modes*).
+#[test]
+fn the_keyboard_scrolls_the_mixer_page_to_the_crossfader_curve() {
+    let mixer = state_named("preferences-mixer");
+    let mut stage = Stage::new(&mixer);
+    let routing = |stage: &Stage| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == "mixer.crossfader.curve.set")
+            .collect::<Vec<Control>>()
+    };
+    assert!(routing(&stage).is_empty(), "the curve starts out of view");
+    let mut found = Vec::new();
+    for _ in 0..80 {
+        stage.key(egui::Key::Tab, Modifiers::NONE);
+        found = routing(&stage);
+        if !found.is_empty() {
+            break;
+        }
+    }
+    assert!(
+        !found.is_empty(),
+        "the focus never brought the curve into view"
+    );
+    // The curve in view takes a click: one of its segments is not the current one.
+    let mut actions = Vec::new();
+    for control in &found {
+        actions.extend(stage.click(control.rect.center()));
+    }
+    assert!(
+        actions.iter().any(|action| matches!(
+            action,
+            Action::Engine(Command::MixerCrossfaderCurveSet { .. })
+        )),
+        "{actions:?}"
+    );
 }

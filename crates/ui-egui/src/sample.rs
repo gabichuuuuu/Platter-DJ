@@ -14,7 +14,7 @@ use platter_engine::{
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize};
+use crate::command::{DeckLayout, DeckSize, EffectUnits};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -460,6 +460,11 @@ fn settings() -> SettingsView {
         tempo_range: 8,
         deck_size: DeckSize::Full,
         deck_layout: DeckLayout::Two,
+        effect_units: EffectUnits::Two,
+        fx_panels: [
+            platter_engine::FxUnit::ALL[0],
+            platter_engine::FxUnit::ALL[1],
+        ],
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
         library_file: "library.sqlite".to_owned(),
@@ -677,6 +682,25 @@ pub fn four_decks() -> Scene {
     for deck in decks.iter_mut().take(3) {
         deck.autogain_db = Some(deck.controls.gain_db);
     }
+    scene
+}
+
+/// The four-deck state with four effect units shown: the left panel shows unit 3, deck C goes
+/// through units 1 and 3 and deck D through unit 4.
+pub fn four_units() -> Scene {
+    let mut scene = four_decks();
+    scene.settings.effect_units = EffectUnits::Four;
+    scene.settings.fx_panels = [
+        platter_engine::FxUnit::ALL[2],
+        platter_engine::FxUnit::ALL[1],
+    ];
+    let effects = &mut scene.engine.effects;
+    effects.units[2].slots = [Some(EffectKind::Phaser), None, None];
+    effects.units[2].values.slots[0].on = true;
+    effects.units[2].values.slots[0].amount = 0.5;
+    effects.units[2].values.dry_wet = 0.5;
+    effects.assigned[DeckId::C.index()][2] = true;
+    effects.assigned[DeckId::D.index()][3] = true;
     scene
 }
 

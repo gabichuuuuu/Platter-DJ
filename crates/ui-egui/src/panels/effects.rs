@@ -7,7 +7,7 @@
 use egui::{Align2, Rect};
 use platter_engine::{Command, EffectKind, FxUnit, UnitControls, UnitMode};
 
-use crate::command::Action;
+use crate::command::{Action, AppCommand, EffectUnits};
 use crate::cx::{Cx, id};
 use crate::model::View;
 use crate::paint;
@@ -24,6 +24,9 @@ const SLOT_STEP: f32 = 124.0;
 const SELECTOR: egui::Vec2 = egui::vec2(74.0, 20.0);
 const ON_KEY: egui::Vec2 = egui::vec2(74.0, 18.0);
 const COLUMN: f32 = 52.0;
+/// With four units: the width of the shortened title and the keys that switch the unit.
+const SWITCH_TITLE: f32 = 20.0;
+const SWITCH_KEY: egui::Vec2 = egui::vec2(20.0, 16.0);
 
 /// The effects a selector of a unit offers, `None` first.
 const OFFERED: [Option<EffectKind>; 9] = [
@@ -60,8 +63,9 @@ pub fn row(cx: &mut Cx<'_>, [left, middle, right]: [Rect; 3], view: &View<'_>) {
     for rect in [left, middle, right] {
         cx.painter().rect_filled(rect, 0.0, fill);
     }
-    unit(cx, left, FxUnit::ALL[0], view);
-    unit(cx, right, FxUnit::ALL[1], view);
+    let [shown_left, shown_right] = view.settings.fx_panels;
+    unit(cx, left, shown_left, view);
+    unit(cx, right, shown_right, view);
 }
 
 fn unit(cx: &mut Cx<'_>, panel: Rect, unit: FxUnit, view: &View<'_>) {
@@ -80,9 +84,42 @@ fn unit(cx: &mut Cx<'_>, panel: Rect, unit: FxUnit, view: &View<'_>) {
     // single mode, so it waits for single mode with an effect.
     let save = texts.get("effects.save_snapshot");
     let menu_name = texts.format("effects.menu_name", &[("unit", &number)]);
+    // With four units the title is shortened to `FX`, and the two keys after it choose the
+    // unit the panel shows.
+    let four = view.settings.effect_units == EffectUnits::Four;
+    let short = texts.get("effects.short_title");
+    let (title, title_width) = if four {
+        (short.to_owned(), SWITCH_TITLE)
+    } else {
+        (title, 64.0)
+    };
+    if four {
+        let pair = [unit.index() % 2, unit.index() % 2 + 2].map(|index| FxUnit::ALL[index]);
+        for (place, each) in pair.into_iter().enumerate() {
+            let number = each.number().to_string();
+            let name = texts.format("effects.show_name", &[("unit", &number)]);
+            let mut spec = KeySpec::text(&number);
+            spec.name = &name;
+            spec.text = Some(tokens.text.label);
+            spec.lit = (each == unit).then_some(tokens.color.text_primary);
+            key::key(
+                cx,
+                Rect::from_min_size(
+                    at(
+                        PADDING + SWITCH_TITLE + 2.0 + place as f32 * (SWITCH_KEY.x + 2.0),
+                        16.0,
+                    ),
+                    SWITCH_KEY,
+                ),
+                id(("fx-show", unit.index() % 2, place)),
+                spec,
+                Press::Click(AppCommand::FxPanelShow { unit: each }.into()),
+            );
+        }
+    }
     choice::title_menu(
         cx,
-        Rect::from_min_size(at(PADDING, 16.0), egui::vec2(64.0, 16.0)),
+        Rect::from_min_size(at(PADDING, 16.0), egui::vec2(title_width, 16.0)),
         id(("fx-title", salt)),
         choice::Title {
             text: &title,
