@@ -3,13 +3,15 @@
 //! [`Engine::new`] returns the two halves. The [`Engine`] is the control side: it takes
 //! [`Command`]s, loads tracks in the background and publishes a [`Snapshot`]. The
 //! [`Processor`] is the real-time side: whoever owns the audio calls
-//! [`Processor::process`] for each block. [`render`] drives both without a sound card.
+//! [`Processor::process`] for each block. [`render`] drives both without a sound card. The
+//! mix recorder writes the master into files on a worker thread of its own.
 
 mod analyser;
 pub mod command;
 mod control;
 pub mod effects;
 mod peaks;
+mod recorder;
 mod render;
 pub mod rt;
 mod stretch;
@@ -38,6 +40,7 @@ pub use platter_dsp::effects::unit::{UnitMode, UnitValues};
 pub use platter_dsp::effects::{Controls, EffectKind};
 pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
+pub use recorder::{RecorderSnapshot, RecordingNames};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{LoopState, Output, Processor};
 pub use wav::WavWriter;

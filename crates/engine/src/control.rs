@@ -8,7 +8,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use platter_analysis::Transposed;
 use platter_core::{
@@ -32,6 +32,7 @@ use crate::command::{
 };
 use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
+use crate::recorder::{Recorder, RecorderSnapshot, RecordingNames};
 use crate::rt::{
     self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
     LoopPart, LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
@@ -75,6 +76,15 @@ pub enum Event {
     PreviewFailed {
         message: String,
     },
+    /// The recorder finished a file: `docs/behavior/recording.md`.
+    Recorded {
+        path: PathBuf,
+        frames: u64,
+    },
+    /// The recording stopped by itself, or lost frames, for this reason.
+    RecordingFailed {
+        message: String,
+    },
 }
 
 #[derive(Debug)]
@@ -85,6 +95,8 @@ pub enum EngineError {
     Busy,
     /// A worker thread could not be started.
     Worker(std::io::Error),
+    /// Nothing says where the recordings go.
+    NoRecordingFolder,
 }
 
 impl fmt::Display for EngineError {
@@ -93,6 +105,7 @@ impl fmt::Display for EngineError {
             Self::Value(error) => error.fmt(f),
             Self::Busy => f.write_str("the engine is busy; the command was not applied"),
             Self::Worker(error) => write!(f, "cannot start a worker thread: {error}"),
+            Self::NoRecordingFolder => f.write_str("there is no folder for the recordings"),
         }
     }
 }
@@ -369,6 +382,7 @@ pub struct Snapshot {
     pub limiter_gain: f32,
     /// Gain the maximiser is applying; one while it is off or idle.
     pub maximiser_gain: f32,
+    pub recorder: RecorderSnapshot,
 }
 
 #[derive(Default)]
@@ -477,6 +491,7 @@ pub struct Engine {
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
     recall: Option<Recall>,
+    recorder: Recorder,
     rate: SampleRate,
 }
 
@@ -496,9 +511,29 @@ impl Engine {
         self.recall = Some(recall);
     }
 
+    /// Sets where each recording goes and how it is named. Without it `recorder.toggle` is
+    /// refused.
+    pub fn set_recording_names(&mut self, names: RecordingNames) {
+        self.recorder.names = Some(names);
+    }
+
+    /// Stops a recording that runs and waits up to `wait` for its file to be finished, for
+    /// the application to call before it closes. The processor must go on running meanwhile:
+    /// it marks where the recording ends.
+    pub fn finish_recording(&mut self, wait: Duration) -> Vec<Event> {
+        let mut events = Vec::new();
+        self.recorder.finish(
+            wait,
+            &mut self.ends.commands,
+            &self.ends.shared,
+            &mut events,
+        );
+        events
+    }
+
     /// As [`Self::new`], with another analysis of the loaded tracks.
     pub fn with_analyser(rate: SampleRate, analyser: Arc<dyn Analyser>) -> (Self, Processor) {
-        let (ends, processor) = rt::channel(rate);
+        let (ends, recorded, processor) = rt::channel(rate);
         let (load_reports, finished_loads) = channel();
         let engine = Self {
             ends,
@@ -520,6 +555,7 @@ impl Engine {
             load_reports,
             analyser,
             recall: None,
+            recorder: Recorder::new(recorded),
             rate,
         };
         let mut engine = engine;
@@ -536,6 +572,8 @@ impl Engine {
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
         let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
         engine.recall = previous.recall.clone();
+        // A recording is not carried over: it ends with the engine that made it.
+        engine.recorder.names = previous.recorder.names.clone();
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();
@@ -891,6 +929,13 @@ impl Engine {
                 let on = !self.metronome;
                 self.send(RtCommand::Metronome { on })?;
                 self.metronome = on;
+                return Ok(());
+            }
+            Command::RecorderToggle => {
+                return self.recorder.toggle(self.rate, &mut self.ends.commands);
+            }
+            Command::RecorderCut => {
+                self.recorder.cut();
                 return Ok(());
             }
             Command::GlobalSyncModeSet { mode } => {
@@ -1593,6 +1638,9 @@ impl Engine {
         while let Ok(finished) = self.finished_loads.try_recv() {
             events.extend(self.finish_load(finished));
         }
+        let dropped = self.ends.shared.recorder_dropped.get();
+        self.recorder
+            .poll(&mut self.ends.commands, dropped, &mut events);
         events
     }
 
@@ -1763,6 +1811,7 @@ impl Engine {
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
             maximiser_gain: shared.maximiser_gain.get(),
+            recorder: self.recorder.snapshot(shared, self.rate),
             load_marker: self.load_marker,
             preview: PreviewSnapshot {
                 track: self.preview.track.clone(),

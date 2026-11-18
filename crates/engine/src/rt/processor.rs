@@ -17,6 +17,7 @@ use super::deck::DeckPlayer;
 use super::effects::Effects;
 use super::metronome::Metronome;
 use super::preview::PreviewPlayer;
+use super::recorder::Tap;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
@@ -77,6 +78,7 @@ pub struct Processor {
     /// The limiters of the first and the second pair in external mode.
     pair_limiters: [Limiter; 2],
     effects: Effects,
+    recorder: Tap,
 }
 
 impl Processor {
@@ -122,6 +124,7 @@ impl Processor {
             external_master_volume: parameter(0.0),
             pair_limiters: [Limiter::new(rate), Limiter::new(rate)],
             effects: Effects::new(rate),
+            recorder: Tap::new(queues.recorded),
         }
     }
 
@@ -233,6 +236,7 @@ impl Processor {
                 }
             }
             RtCommand::Metronome { on } => self.metronome.set_on(on),
+            RtCommand::Record { on, recording } => self.recorder.set(on, recording),
             RtCommand::FxValues { unit, values } => self.effects.set_values(unit, values),
             RtCommand::FxRouting { unit, routing } => self.effects.set_routing(unit, routing),
             RtCommand::FxAssign { deck, unit, on } => self.effects.set_assigned(deck, unit, on),
@@ -429,6 +433,8 @@ impl Processor {
         let master = self
             .limiter
             .process([maximised[0] + tone, maximised[1] + tone]);
+        // The internal mix, in either mode: `docs/behavior/recording.md`.
+        self.recorder.feed(master);
         // The preview plays on, heard or not, so its position moves as it would.
         let preview = self.preview.next();
         // The pre-listened decks and the ticks wait as long as the master does, so a deck
@@ -568,6 +574,8 @@ impl Processor {
         };
         self.shared.limiter_gain.set(limiter);
         self.shared.maximiser_gain.set(self.maximiser.gain());
+        self.shared.recorded_frames.set(self.recorder.frames());
+        self.shared.recorder_dropped.set(self.recorder.dropped());
     }
 }
 

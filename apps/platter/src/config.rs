@@ -59,6 +59,24 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
+/// Where the mix recorder writes (`docs/behavior/recording.md`, *Files*): a folder of its own
+/// in the music folder of `home`, or in `home` when it has none, or beside the settings
+/// file without a home folder.
+pub fn recordings_folder(home: Option<&Path>, settings: Option<&Path>) -> Option<PathBuf> {
+    match home {
+        Some(home) => {
+            let music = home.join("Music");
+            let parent = if music.is_dir() {
+                music
+            } else {
+                home.to_path_buf()
+            };
+            Some(parent.join("Platter DJ Recordings"))
+        }
+        None => settings.map(|folder| folder.join("Recordings")),
+    }
+}
+
 /// The home folder of the user, for the file selector.
 pub fn home_dir() -> Option<PathBuf> {
     let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
@@ -856,5 +874,30 @@ midi = \"Pad\"
         assert_eq!(Settings::load(&path), settings);
         assert!(!path.with_extension("toml.tmp").exists());
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// `docs/behavior/recording.md`, *Files*.
+    #[test]
+    fn recordings_go_to_the_music_folder_then_the_home_folder_then_beside_the_settings() {
+        let home =
+            std::env::temp_dir().join(format!("platter-recordings-test-{}", std::process::id()));
+        let settings = home.join("settings");
+        std::fs::create_dir_all(&home).unwrap();
+        let named = "Platter DJ Recordings";
+        assert_eq!(
+            super::recordings_folder(Some(&home), Some(&settings)),
+            Some(home.join(named))
+        );
+        std::fs::create_dir_all(home.join("Music")).unwrap();
+        assert_eq!(
+            super::recordings_folder(Some(&home), None),
+            Some(home.join("Music").join(named))
+        );
+        assert_eq!(
+            super::recordings_folder(None, Some(&settings)),
+            Some(settings.join("Recordings"))
+        );
+        assert_eq!(super::recordings_folder(None, None), None);
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }

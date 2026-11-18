@@ -182,6 +182,9 @@ pub fn header(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, state: &ViewState) {
     if view.midi.named > 0 {
         x = midi(cx, x, rect, view.midi) + gap;
     }
+    if view.engine.recorder.recording {
+        x = super::recorder::indicator(cx, x, rect) + gap;
+    }
 
     // The right end, right to left: preferences, full screen, clock, master level.
     let settings = Rect::from_min_size(

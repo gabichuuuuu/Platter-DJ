@@ -471,6 +471,11 @@ pub enum Command {
     GlobalLoadMarkerToggle,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     GlobalQuantizeToggle,
+    /// Starts recording the master into a file, or stops the recording:
+    /// `docs/behavior/recording.md`.
+    RecorderToggle,
+    /// Closes the file of the recording and goes on in a new one, without losing a frame.
+    RecorderCut,
 }
 
 /// Kind of a command parameter, for anything that builds commands from untyped input.
@@ -1410,6 +1415,16 @@ pub const SPECS: &[CommandSpec] = &[
             kind: ParamKind::Choice(SYNC_MODES),
         }],
     },
+    CommandSpec {
+        id: "recorder.toggle",
+        label: "Record the mix",
+        params: &[],
+    },
+    CommandSpec {
+        id: "recorder.cut",
+        label: "Cut the recording into a new file",
+        params: &[],
+    },
 ];
 
 /// An untyped parameter value, as a script, a mapping or a remote caller provides it.
@@ -1815,6 +1830,8 @@ impl Command {
             {
                 return Self::sync_from_args(sync, &read);
             }
+            "recorder.toggle" => Self::RecorderToggle,
+            "recorder.cut" => Self::RecorderCut,
             mixer => return Self::mixer_from_args(mixer, &read),
         })
     }
@@ -2163,6 +2180,8 @@ impl Command {
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
+            Self::RecorderToggle => "recorder.toggle",
+            Self::RecorderCut => "recorder.cut",
         }
     }
 }

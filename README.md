@@ -136,6 +136,11 @@ Everything known to be missing, unfinished or not yet listened to.
   draws, and set by commands and the settings file: it has no controls in the preferences and
   no gain reduction meter. Its ceiling is on sample peaks, and nobody has listened to it
   (`docs/behavior/master.md`).
+- The mix recorder, over the mixer, writes the master into WAV files of 32-bit float samples
+  in the folder `Platter DJ Recordings` of the music folder, named by the time they start in
+  UTC, and Cut starts a new file. It has no gain or level meter of its own, no preferences
+  page and no external input, and nobody has listened to a recorded set
+  (`docs/behavior/recording.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file
   header and the cover each track carries, with a colour tag and a rating the menu of a track
   sets, a dialog that edits title, artist, album, genre, comment and rating of one track or

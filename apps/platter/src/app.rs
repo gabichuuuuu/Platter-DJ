@@ -15,7 +15,8 @@ use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::command::SPECS;
 use platter_engine::{
-    Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall, TempoRange,
+    Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
+    RecordingNames, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_ui_egui::collection::Collection;
@@ -116,6 +117,22 @@ fn recall_from(file: PathBuf) -> Recall {
             .memory_at(path)
             .ok()
             .flatten()
+    })
+}
+
+/// Names each recording in `folder` by the moment it starts, in UTC, as the backups of the
+/// collection are: `mix-20261118-214105` (`docs/behavior/recording.md`, *Files*).
+fn recording_names(folder: PathBuf) -> RecordingNames {
+    Arc::new(move || {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+            });
+        let (year, month, day, hour, minute, second) = Timestamp(now).utc();
+        folder.join(format!(
+            "mix-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}"
+        ))
     })
 }
 
@@ -255,6 +272,10 @@ impl PlatterApp {
         if let Some(recall) = recall {
             engine.set_recall(recall);
         }
+        let home = config::home_dir();
+        if let Some(recordings) = config::recordings_folder(home.as_deref(), folder.as_deref()) {
+            engine.set_recording_names(recording_names(recordings));
+        }
         let settings_min_playtime = settings.min_playtime;
         let mut app = Self {
             folder,
@@ -319,6 +340,20 @@ impl PlatterApp {
     fn log(&self, level: Level, message: &str) {
         if let Some(logger) = &self.logger {
             logger.line(level, message);
+        }
+    }
+
+    /// What the mix recorder reported: `docs/behavior/recording.md`.
+    fn log_recording(&self, event: &Event) {
+        match event {
+            Event::Recorded { path, frames } => self.log(
+                Level::Info,
+                &format!("recording: {frames} frames in {}", path.display()),
+            ),
+            Event::RecordingFailed { message } => {
+                self.log(Level::Warning, &format!("recording: {message}"));
+            }
+            _ => {}
         }
     }
 
@@ -1376,6 +1411,9 @@ impl PlatterApp {
                 Event::PreviewFailed { message } => {
                     self.log(Level::Warning, &format!("preview: {message}"));
                 }
+                event @ (Event::Recorded { .. } | Event::RecordingFailed { .. }) => {
+                    self.log_recording(&event);
+                }
             }
         }
         self.browser.poll();
@@ -1491,6 +1529,10 @@ impl PlatterApp {
 
 impl eframe::App for PlatterApp {
     fn on_exit(&mut self) {
+        // The output still runs, so the processor marks the end and the file is finished.
+        for event in self.engine.finish_recording(EXIT_WAIT) {
+            self.log_recording(&event);
+        }
         self.background.stop.store(true, Ordering::Relaxed);
         // The knobs of the effects are saved here, not at every step of a drag.
         self.save_settings();

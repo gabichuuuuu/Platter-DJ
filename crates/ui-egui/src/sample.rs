@@ -8,8 +8,8 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, DeckSnapshot, EffectControls, EffectKind, Key, Mode, PreviewSnapshot, Snapshot,
-    TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
+    AnalysedTempo, DeckSnapshot, EffectControls, EffectKind, Key, Mode, PreviewSnapshot,
+    RecorderSnapshot, Snapshot, TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
@@ -684,6 +684,13 @@ pub fn four_decks() -> Scene {
     for deck in decks.iter_mut().take(3) {
         deck.autogain_db = Some(deck.controls.gain_db);
     }
+    // The mix recorder runs, 00:42:17 in, as the M4 screen draws it.
+    scene.engine.recorder = RecorderSnapshot {
+        recording: true,
+        seconds: 2_537.4,
+        file: Some(PathBuf::from("mix-20261118-214105.wav")),
+        ..RecorderSnapshot::default()
+    };
     scene
 }
 
