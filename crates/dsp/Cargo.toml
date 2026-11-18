@@ -1,6 +1,6 @@
 [package]
 name = "platter-dsp"
-description = "Processing blocks of Platter: interpolation, equaliser, filter, effects, smoothing, meter and limiter"
+description = "Processing blocks of Platter: interpolation, equaliser, filter, effects, smoothing, meter, limiter and maximiser"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
