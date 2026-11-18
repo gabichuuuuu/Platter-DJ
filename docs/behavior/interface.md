@@ -252,9 +252,8 @@ The manual does not say how the window shares its room between two and four deck
 ### Differences
 
 - The selector is in the preferences, not in the row of effects above the decks where the
-  design system draws it: the maintainer chose it on 18 November 2026, and the row of effects
-  waits for the effect units. Without them the four-deck layout has no row of effects and the
-  browser takes its height.
+  design system draws it: the maintainer chose it on 18 November 2026. The middle panel of
+  that row is left for the mix recorder.
 - Decks C and D are not muted while the two-deck layout hides them: a track loaded into them by
   a command or a mapping plays and is heard (`docs/behavior/decks.md`).
 - One layout for the four decks instead of a size per pair: the design system gives the decks
@@ -267,7 +266,7 @@ The manual does not say how the window shares its room between two and four deck
 
 | Input | Result |
 | --- | --- |
-| A layout other than `two` or `four` in the settings file | Two decks |
+| A layout other than `two` or `four` in the settings file | Four decks, the default |
 | The layout changes while decks C and D play | They keep playing; the window shows or hides them |
 | A window narrower than 1440 points | The whole interface is scaled down, as with two decks |
 | A deck of the four-deck layout shows a notice | The notice takes the place of its transport and hotcues |
