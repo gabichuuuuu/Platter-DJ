@@ -187,7 +187,7 @@ features = [
   { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "planned" },
   { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "planned" },
   { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "planned" },
-  { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, beatmasher, bitcrusher", milestone = "M4", status = "planned" },
+  { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, slicer, bitcrusher", milestone = "M4", status = "planned" },
   { id = "catalogue-rest", name = "Rest of the effects and mixer effects catalogue", milestone = "later", status = "planned" },
   { id = "pattern-sequencer", name = "Pattern sequencer inside a unit (kits, patterns, pitch, decay, ducking) with own sounds", milestone = "M5", status = "planned" },
 ]

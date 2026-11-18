@@ -122,7 +122,7 @@ The first complete version is milestone M3; every component it needs has its sec
 Everything below belongs to M4 and M5, after the first public version:
 
 - **Waveform colour modes 2 to 4 (M4).**
-- **Components for M4:** effect units, mixer effects, stem lanes, mix and loop recorders, layout selector, compact deck and four-deck layout. `screens/M4-effects.html` places them; their component sections are written before M4 starts.
+- **Components for M4:** stem lanes, mix and loop recorders. `screens/M4-effects.html` places them; their component sections are written before they are built. The four-deck layout, the effect units, the effect assignment and the mixer effect have theirs.
 - **Components for M5:** remix deck grid, pattern sequencer, timecode setup.
 - **Icons for M4 and later:** effects, stems, recording and layouts.
 
@@ -301,6 +301,19 @@ key, pan, pre-listen, fader, L and R) and adds the M4 effect controls (sends 1 a
 - The crossfader starts with deck C on the left and deck D on the right.
 - Windows wider than 1440 and full screen: the mixer keeps its 396px, the two deck columns share the extra width, and the browser
   takes the extra height.
+
+**Effects, decided on 18 November 2026:**
+
+- The effect row is in both layouts, 72px, under the status header. Each unit panel takes the width of the deck column under it and
+  the middle panel keeps the 396px of the mixer, so a wider window widens the units, by the rule of the decks above.
+- Single mode, which the screen does not draw, takes the same panel (`EffectUnit` below).
+- Units 3 and 4: a preference of two or four units on the Mixer page. With four, the header of each panel switches between its two
+  units (`1 | 3` on the left, `2 | 4` on the right).
+- The mixer effect knob is one-sided, 0 to 1, off at 0. Its effect is chosen by clicking its name. The catalogue has no filter,
+  since every channel has one: delay, reverb, gater and bitcrusher; a channel starts on the reverb. The *Filter* the screen shows on
+  channel C stands for that channel's choice.
+- The effect that repeats slices of a bar is named `Slicer`.
+- No send routing in M4: units are insert or post fader. The send through an external mixer waits for input routing (M5).
 
 ## Components
 
@@ -791,6 +804,79 @@ Pre-listen of the selected track without loading it into a deck (milestone M3).
 - Plays through the cue (headphone) output; with a stereo-only device it is disabled and its tooltip explains why.
 - Does not change the track's played state or history.
 - Commands: `preview.play_pause`, `preview.seek`, `preview.load_selected`.
+
+### Effects
+
+#### EffectUnit
+
+One effect unit: FX 1 over the left deck column and FX 2 over the right one, in the effect row (milestone M4).
+
+##### Anatomy (group mode, as `M4-effects.html` draws it)
+
+- Panel `surface-panel`, 72px tall, the width of its deck column (520 at 1440), padding 0 12px, items centred vertically, gap 8px.
+- Header, 64 × 40: the unit title (`FX 1`, 600 12/16, `text-primary`) over a segmented choice of `Group` and `Single` (78 × 20,
+  segments of 600 10/12, the chosen one on `surface-pressed`). With four units the title is a two-key switch, `1 | 3` or `2 | 4`.
+- Dry / wet: a 36px `Knob` in a 52px column, its label `Dry / wet` under it (500 11/14, `text-secondary`).
+- Three slots, 116 × 42 on a 124px step. Each has a 36px amount `Knob` at the left and, 6px to its right, the effect selector
+  (74 × 20, `surface-control`, the effect name 500 11/14 and the chevron of `Select`) over the `On` key (74 × 18, 600 10/12), 4px
+  apart. A lit `On` key has the 3px `text-primary` strip along its top edge, as the keys of M3.
+- An empty slot shows `None` in its selector; its knob and its `On` key are disabled.
+
+##### Anatomy (single mode)
+
+- Header and Dry / wet as in group mode.
+- In the place of the three slots: the effect selector (74 × 20) over the `On` key (74 × 18); three 36px knobs in 52px columns, each
+  with the name of its parameter under it; two keys of 52 × 20 stacked 2px apart, with the names of their parameters; `Reset`
+  (40 × 20) at the right end of the panel.
+- A parameter the effect does not use leaves its knob or key disabled, with no name.
+
+##### Behaviour
+
+- Knobs follow `Knob`: drag, keyboard, double click back to the default.
+- A selector opens a `Select` of the eight effects and `None`.
+- Commands: `fx.unit.mode.set`, `fx.unit.dry_wet.set`, `fx.slot.effect.set`, `fx.slot.amount.set`, `fx.slot.toggle`,
+  `fx.single.effect.set`, `fx.single.knob.set`, `fx.single.key.toggle`, `fx.single.toggle`, `fx.unit.reset`, and
+  `fx.unit.snapshot.save` in the context menu of the unit title.
+- A unit no channel is assigned to keeps its controls enabled; the tooltip of its title says it is not assigned.
+
+#### EffectAssign
+
+The keys that put a channel through effect units 1 and 2.
+
+##### Anatomy
+
+- In each channel of the four-deck mixer: two keys of 20 × 18, stacked 3px apart, at the right of the mixer effect knob, labelled `1`
+  and `2` (600 10/12). Lit: the `text-primary` strip along the top edge.
+- Name for screen readers and tooltip: "Send deck C to effect unit 1".
+- The two-deck mixer places the same keys when they are built, and a capture goes to the maintainer before they are merged.
+
+##### Behaviour
+
+- A click emits `mixer.fx_assign.toggle` with the deck and the unit.
+
+#### MixerEffect
+
+The one-knob effect of each channel, under its filter knob.
+
+##### Anatomy
+
+- A 30px `Knob` in a 40px column; under it the name of its effect (500 11/14, `text-secondary`), drawn as a key with the look of a
+  label (text only, `surface-hover` on hover) that opens a `Select` of the catalogue.
+- The arc fills from the left end; at 0 it is empty.
+
+##### Behaviour
+
+- Commands: `mixer.effect.set` (amount 0 to 1) and `mixer.effect.select`.
+- In external mixer mode the knob and its name collapse with the rest of the channel, as the filter does.
+
+#### Effect row
+
+- Left unit panel over the left deck column, the middle panel over the mixer (396px), the right unit panel over the right deck
+  column, with 2px seams of `bg-app`.
+- The middle panel holds the mix recorder when it arrives: the label `Mix recorder` over a 28px row of `Rec` (48 × 28, its strip
+  `status-error` while recording), the elapsed time (tabular figures, 47px) and `Cut` (39 × 28), right-aligned with 12px padding.
+  Until then it is an empty panel.
+- No new icon: selectors use the chevron of `Select`; the keys use text.
 
 ### Controllers
 
