@@ -5,7 +5,7 @@
 <h1 align="center">Platter DJ</h1>
 
 <p align="center">
-  An open-source DJ application written in Rust,<br>
+  An open-source DJ application for professional use, written in Rust,<br>
   with its own code, graphics and sounds.
 </p>
 
@@ -44,7 +44,7 @@ its own code, graphics and sounds.
 
 | Area | Today |
 | --- | --- |
-| Decks | Two decks with scrolling and overview waveforms coloured by frequency; play, CUE and CUP; a tempo fader with three ranges and tempo bend |
+| Decks | Two or four decks with scrolling and overview waveforms coloured by frequency; play, CUE and CUP; a tempo fader with three ranges and tempo bend |
 | Mixer | Gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three curves, meters and a master with a safety limiter; pre-listening on a second output pair |
 | Loops and cues | Loops of a preset size or between an in and an out point, beatjumps and the moves of a loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them |
 | Sync | SYNC, MASTER and a phase meter per deck, and a master clock with Snap and Quantize |
