@@ -73,6 +73,21 @@ pub fn decibels(db: f64) -> String {
     }
 }
 
+/// A length as hours, minutes and whole seconds: `00:42:17`.
+pub fn hours(seconds: f64) -> String {
+    let whole = if seconds.is_finite() {
+        seconds.max(0.0).floor() as u64
+    } else {
+        0
+    };
+    format!(
+        "{:02}:{:02}:{:02}",
+        whole / 3_600,
+        whole / 60 % 60,
+        whole % 60
+    )
+}
+
 /// A sample rate in kilohertz: `44.1`, `48`.
 pub fn kilohertz(hz: u32) -> String {
     if hz.is_multiple_of(1_000) {
@@ -84,7 +99,16 @@ pub fn kilohertz(hz: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bpm, decibels, duration, kilohertz, signed_percent, time};
+    use super::{bpm, decibels, duration, hours, kilohertz, signed_percent, time};
+
+    #[test]
+    fn a_recording_counts_whole_seconds_in_hours() {
+        assert_eq!(hours(2_537.9), "00:42:17");
+        assert_eq!(hours(0.0), "00:00:00");
+        assert_eq!(hours(36_000.0), "10:00:00");
+        assert_eq!(hours(f64::NAN), "00:00:00");
+        assert_eq!(hours(-1.0), "00:00:00");
+    }
 
     #[test]
     fn times_are_written_with_tenths_and_never_round_up_into_the_next_second() {

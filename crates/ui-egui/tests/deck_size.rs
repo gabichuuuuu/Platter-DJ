@@ -10,8 +10,8 @@ use platter_ui_egui::i18n::Language;
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
-/// Where the band of the decks starts: under the status header and the waveform lanes.
-const BAND_TOP: f32 = 40.0 + 2.0 + 178.0 + 2.0;
+/// Where the band of the decks starts: under the status header, the effect row and the waveform lanes.
+const BAND_TOP: f32 = 40.0 + 2.0 + 72.0 + 2.0 + 178.0 + 2.0;
 const DECK_WIDTH: f32 = 520.0;
 
 /// A text drawn in a frame and where.

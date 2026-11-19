@@ -8,13 +8,13 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, DeckSnapshot, Key, Mode, PreviewSnapshot, Snapshot, TrackAnalysis, TrackInfo,
-    Transposed, WaveformPeaks,
+    AnalysedTempo, DeckSnapshot, EffectControls, EffectKind, Key, Mode, PreviewSnapshot,
+    RecorderSnapshot, Snapshot, TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize};
+use crate::command::{DeckLayout, DeckSize, EffectUnits};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -460,6 +460,11 @@ fn settings() -> SettingsView {
         tempo_range: 8,
         deck_size: DeckSize::Full,
         deck_layout: DeckLayout::Two,
+        effect_units: EffectUnits::Two,
+        fx_panels: [
+            platter_engine::FxUnit::ALL[0],
+            platter_engine::FxUnit::ALL[1],
+        ],
         settings_file: "settings.toml".to_owned(),
         keymap_file: "keymap.toml".to_owned(),
         library_file: "library.sqlite".to_owned(),
@@ -536,6 +541,7 @@ pub fn playing() -> Scene {
         ..Snapshot::default()
     };
     engine.mixer.crossfader = 0.35;
+    m4_effects(&mut engine.effects);
     engine.mixer.master_gain_db = -2.0;
     engine.decks[1].controls.fader = 0.45;
     engine.decks[1].controls.pre_listen = true;
@@ -625,11 +631,49 @@ pub fn playing() -> Scene {
     }
 }
 
+/// The effects of the M4 screen: delay on in unit 1, the gater on in unit 2, decks C and A
+/// through unit 1, deck B through unit 2, a mixer effect on each channel.
+fn m4_effects(effects: &mut EffectControls) {
+    let one = &mut effects.units[0];
+    one.slots = [
+        Some(EffectKind::Delay),
+        Some(EffectKind::Reverb),
+        Some(EffectKind::Filter),
+    ];
+    one.values.dry_wet = 0.6;
+    one.values.slots[0].on = true;
+    one.values.slots[0].amount = 0.4;
+    one.values.slots[1].amount = 0.3;
+    let two = &mut effects.units[1];
+    two.slots = [
+        Some(EffectKind::Flanger),
+        Some(EffectKind::Gater),
+        Some(EffectKind::Slicer),
+    ];
+    two.values.dry_wet = 0.45;
+    two.values.slots[1].on = true;
+    two.values.slots[1].amount = 0.7;
+    effects.assigned[DeckId::C.index()][0] = true;
+    effects.assigned[DeckId::A.index()][0] = true;
+    effects.assigned[DeckId::B.index()][1] = true;
+    for (mixer, effect) in effects.mixer.iter_mut().zip([
+        EffectKind::Reverb,
+        EffectKind::Delay,
+        EffectKind::Bitcrusher,
+        EffectKind::Gater,
+    ]) {
+        mixer.effect = effect;
+    }
+    effects.mixer[0].amount = 0.3;
+}
+
 /// The playing state in the four-deck layout: deck C plays under deck A, deck D is loaded and
 /// stopped under deck B.
 pub fn four_decks() -> Scene {
     let mut scene = playing();
     scene.settings.deck_layout = DeckLayout::Four;
+    // The Limiter key lit, as the M4 screen draws it.
+    scene.engine.mixer.maximiser.on = true;
     let decks = &mut scene.engine.decks;
     decks[2] = loaded_deck(2, 75.4, 1.0, [0.35, 0.33]);
     decks[2].controls.fader = 0.8;
@@ -640,6 +684,32 @@ pub fn four_decks() -> Scene {
     for deck in decks.iter_mut().take(3) {
         deck.autogain_db = Some(deck.controls.gain_db);
     }
+    // The mix recorder runs, 00:42:17 in, as the M4 screen draws it.
+    scene.engine.recorder = RecorderSnapshot {
+        recording: true,
+        seconds: 2_537.4,
+        file: Some(PathBuf::from("mix-20261118-214105.wav")),
+        ..RecorderSnapshot::default()
+    };
+    scene
+}
+
+/// The four-deck state with four effect units shown: the left panel shows unit 3, deck C goes
+/// through units 1 and 3 and deck D through unit 4.
+pub fn four_units() -> Scene {
+    let mut scene = four_decks();
+    scene.settings.effect_units = EffectUnits::Four;
+    scene.settings.fx_panels = [
+        platter_engine::FxUnit::ALL[2],
+        platter_engine::FxUnit::ALL[1],
+    ];
+    let effects = &mut scene.engine.effects;
+    effects.units[2].slots = [Some(EffectKind::Phaser), None, None];
+    effects.units[2].values.slots[0].on = true;
+    effects.units[2].values.slots[0].amount = 0.5;
+    effects.units[2].values.dry_wet = 0.5;
+    effects.assigned[DeckId::C.index()][2] = true;
+    effects.assigned[DeckId::D.index()][3] = true;
     scene
 }
 

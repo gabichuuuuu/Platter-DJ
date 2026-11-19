@@ -56,6 +56,19 @@ impl Flag {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Count(AtomicU64);
+
+impl Count {
+    pub fn get(&self) -> u64 {
+        self.0.load(ORDER)
+    }
+
+    pub(super) fn set(&self, value: u64) {
+        self.0.store(value, ORDER);
+    }
+}
+
 /// The tempo master: a deck, or the clock when it is none.
 #[derive(Debug, Default)]
 pub struct MasterChoice(AtomicU8);
@@ -139,9 +152,15 @@ pub struct Shared {
     /// Gain the limiter is applying: one when it is idle, lower while it works. It reads
     /// zero until the first block has been processed.
     pub limiter_gain: AtomicF32,
+    /// Gain the maximiser is applying: one while it is off or idle.
+    pub maximiser_gain: AtomicF32,
     pub preview_playing: Flag,
     /// Play position of the preview player, in seconds of track time.
     pub preview_position: AtomicF64,
+    /// Frames of the master since the recording started, and those of them the queue of the
+    /// recorder had no room for.
+    pub recorded_frames: Count,
+    pub recorder_dropped: Count,
 }
 
 impl Default for Shared {
@@ -153,8 +172,11 @@ impl Default for Shared {
             crossfader: AtomicF32::new(0.5),
             master_levels: Default::default(),
             limiter_gain: AtomicF32::default(),
+            maximiser_gain: AtomicF32::new(1.0),
             preview_playing: Flag::default(),
             preview_position: AtomicF64::default(),
+            recorded_frames: Count::default(),
+            recorder_dropped: Count::default(),
         }
     }
 }

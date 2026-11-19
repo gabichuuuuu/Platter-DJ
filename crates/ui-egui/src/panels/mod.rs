@@ -4,8 +4,10 @@
 pub mod browser;
 pub mod deck;
 pub mod details;
+pub mod effects;
 pub mod header;
 pub mod maintenance;
 pub mod mixer;
+pub mod recorder;
 pub mod settings;
 pub mod waveform;

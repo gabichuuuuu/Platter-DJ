@@ -5,20 +5,33 @@
 
 mod common;
 
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, MixerMode, MoveMode, Output, SizeStep, SyncMode,
+    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, MixerMode,
+    MoveMode, Output, SizeStep, SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
+
+const WAIT: Duration = Duration::from_secs(10);
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 fn commands() -> Vec<Command> {
     use DeckId::{A, B, C, D};
+    let one = FxUnit::ALL[0];
+    let two = FxUnit::ALL[1];
     vec![
+        // The mix recorder takes the master through all of it, with a cut halfway.
+        Command::RecorderToggle,
         // Decks C and D play beside A and B, C with key lock and D in sync.
         Command::DeckKeyLockToggle { deck: C },
         Command::DeckPlay { deck: C },
@@ -35,6 +48,17 @@ fn commands() -> Vec<Command> {
         Command::MixerAutogainToggle,
         Command::MixerGainRestore { deck: A },
         Command::MixerAutogainToggle,
+        // A change of each model fades the outgoing one out: both run for a while.
+        Command::MixerEqModelSet {
+            model: EqModel::Steep,
+        },
+        Command::MixerFilterModelSet {
+            model: FilterModel::Ladder,
+        },
+        Command::MixerFilterSet {
+            deck: B,
+            position: -0.4,
+        },
         // External mode runs the routed path beside the mix, which always runs.
         Command::MixerModeSet {
             mode: MixerMode::External,
@@ -48,6 +72,49 @@ fn commands() -> Vec<Command> {
         // An automatic fade runs through all of it.
         Command::MixerCrossfaderAutoFade {
             direction: CrossfaderDirection::Right,
+        },
+        // Effects on decks A and B, built on this side and swapped while the decks play.
+        Command::MixerFxAssignToggle { deck: A, unit: one },
+        Command::MixerFxAssignToggle { deck: B, unit: two },
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 0,
+            effect: Some(EffectKind::Delay),
+        },
+        Command::FxSlotToggle { unit: one, slot: 0 },
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 1,
+            effect: Some(EffectKind::Slicer),
+        },
+        Command::FxSlotToggle { unit: one, slot: 1 },
+        Command::FxUnitModeSet {
+            unit: two,
+            mode: UnitMode::Single,
+        },
+        Command::FxSingleEffectSet {
+            unit: two,
+            effect: Some(EffectKind::Reverb),
+        },
+        Command::FxSingleToggle { unit: two },
+        Command::FxUnitRoutingSet {
+            unit: two,
+            routing: FxRouting::PostFader,
+        },
+        Command::MixerEffectSelect {
+            deck: A,
+            effect: EffectKind::Gater,
+        },
+        Command::MixerEffectSet {
+            deck: A,
+            position: 0.6,
+        },
+        Command::RecorderCut,
+        // A swap while the effect before it still fades out.
+        Command::FxSlotEffectSet {
+            unit: one,
+            slot: 0,
+            effect: Some(EffectKind::Flanger),
         },
         Command::DeckPlay { deck: A },
         Command::DeckPlay { deck: B },
@@ -95,6 +162,12 @@ fn commands() -> Vec<Command> {
             curve: CrossfaderCurve::Sharp,
         },
         Command::MasterGainSet { db: 12.0 },
+        // The maximiser switched in over the hot mix and changed while it limits; it stays
+        // on, with the headphones kept in time with it, through the rest.
+        Command::MasterLimiterToggle,
+        Command::MasterMaximiserDriveSet { db: 12.0 },
+        Command::MasterMaximiserCeilingSet { db: -3.0 },
+        Command::MasterMaximiserReleaseSet { ms: 20.0 },
         Command::MixerEqKillToggle {
             deck: A,
             band: Band::Low,
@@ -358,6 +431,7 @@ fn commands() -> Vec<Command> {
         Command::DeckEject { deck: B },
         Command::DeckKeyLockToggle { deck: A },
         Command::DeckPause { deck: A },
+        Command::RecorderToggle,
     ]
 }
 
@@ -385,6 +459,18 @@ fn process_neither_allocates_nor_frees() {
     assert!(seen >= 2, "the counting allocator is not active");
 
     let mut rig = Rig::new();
+    let recordings = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("memory-recordings");
+    let _ = std::fs::remove_dir_all(&recordings);
+    // While `held` is on, the worker of a recording waits before it takes anything.
+    let held = Arc::new(AtomicBool::new(false));
+    let waiting = Arc::clone(&held);
+    let stem = recordings.join("take");
+    rig.engine.set_recording_names(Arc::new(move || {
+        while waiting.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        stem.clone()
+    }));
     rig.load(DeckId::A, sine_file("memory-a", 440.0, 3.0, 0.5, RATE));
     rig.load(DeckId::B, sine_file("memory-b", 660.0, 3.0, 0.5, 44_100));
     rig.load(
@@ -409,6 +495,26 @@ fn process_neither_allocates_nor_frees() {
         rig.send(command);
         run(&mut rig, 5);
     }
+    let recorded = rig.engine.finish_recording(WAIT);
+    assert_eq!(
+        recorded
+            .iter()
+            .filter(|event| matches!(event, Event::Recorded { frames, .. } if *frames > 0))
+            .count(),
+        2,
+        "{recorded:?}"
+    );
+    // A recording whose worker cannot take anything yet: the queue fills up and the frames
+    // that find no room are dropped, not waited for.
+    held.store(true, Ordering::Relaxed);
+    rig.send(Command::RecorderToggle);
+    let full = RECORDER_QUEUE_SECONDS as f64 + 0.5;
+    run(&mut rig, (full * f64::from(RATE) / 512.0).ceil() as usize);
+    assert!(rig.engine.snapshot().recorder.dropped_frames > 0);
+    held.store(false, Ordering::Relaxed);
+    rig.send(Command::RecorderToggle);
+    run(&mut rig, 2);
+    rig.engine.finish_recording(WAIT);
     // Replacing a track while it plays is the case where a buffer changes hands: the old
     // one must travel back to this thread instead of being freed by the processor.
     rig.send(Command::DeckPlay { deck: DeckId::A });
@@ -503,4 +609,5 @@ fn process_neither_allocates_nor_frees() {
         rig.engine.poll();
     });
     assert!(freed >= 1, "nothing was freed on the control side");
+    std::fs::remove_dir_all(&recordings).unwrap();
 }

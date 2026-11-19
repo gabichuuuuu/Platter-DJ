@@ -11,8 +11,13 @@ use std::path::PathBuf;
 
 use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
+use platter_dsp::effects::EffectKind;
+use platter_dsp::effects::unit::{SLOTS, UnitMode};
 use platter_dsp::eq::Band;
+use platter_dsp::eq::EqModel;
+use platter_dsp::filter::FilterModel;
 
+use crate::effects::{FxRouting, FxUnit, KEYS, KNOBS, UNITS, index_of};
 pub use crate::rt::MAX_KEY_SHIFT;
 use crate::rt::Output;
 
@@ -271,6 +276,14 @@ pub enum Command {
     MixerCrossfaderCurveSet {
         curve: CrossfaderCurve,
     },
+    /// The model of the equaliser of every channel: `docs/behavior/mixer.md`.
+    MixerEqModelSet {
+        model: EqModel,
+    },
+    /// The model of the filter of every channel.
+    MixerFilterModelSet {
+        model: FilterModel,
+    },
     /// Puts the channel on a side of the crossfader, or past it.
     MixerCrossfaderAssign {
         deck: DeckId,
@@ -297,12 +310,99 @@ pub enum Command {
     MixerExternalEqGainToggle,
     /// In external mode, lets the master volume act on the decks, or not.
     MixerExternalMasterVolumeToggle,
+    /// The mode of an effect unit: `docs/behavior/effects.md`.
+    FxUnitModeSet {
+        unit: FxUnit,
+        mode: UnitMode,
+    },
+    /// Dry/wet of a unit, `0.0..=1.0`: the input alone at zero.
+    FxUnitDryWetSet {
+        unit: FxUnit,
+        position: f64,
+    },
+    FxUnitRoutingSet {
+        unit: FxUnit,
+        routing: FxRouting,
+    },
+    /// Puts the knobs and the keys of single mode back to the defaults of its effect.
+    FxUnitReset {
+        unit: FxUnit,
+    },
+    /// Keeps the controls of single mode as the start of its effect in this unit.
+    FxUnitSnapshotSave {
+        unit: FxUnit,
+    },
+    /// The effect of a slot of group mode, from 0; `None` empties it.
+    FxSlotEffectSet {
+        unit: FxUnit,
+        slot: usize,
+        effect: Option<EffectKind>,
+    },
+    /// The amount knob of a slot, `0.0..=1.0`.
+    FxSlotAmountSet {
+        unit: FxUnit,
+        slot: usize,
+        position: f64,
+    },
+    FxSlotToggle {
+        unit: FxUnit,
+        slot: usize,
+    },
+    /// The effect of single mode; `None` empties it.
+    FxSingleEffectSet {
+        unit: FxUnit,
+        effect: Option<EffectKind>,
+    },
+    /// A knob of single mode, from 0, at `0.0..=1.0`.
+    FxSingleKnobSet {
+        unit: FxUnit,
+        knob: usize,
+        position: f64,
+    },
+    /// A key of single mode, from 0.
+    FxSingleKeyToggle {
+        unit: FxUnit,
+        key: usize,
+    },
+    FxSingleToggle {
+        unit: FxUnit,
+    },
+    /// Puts the channel through the unit, or takes it out.
+    MixerFxAssignToggle {
+        deck: DeckId,
+        unit: FxUnit,
+    },
+    /// The effect of the mixer effect knob of a channel.
+    MixerEffectSelect {
+        deck: DeckId,
+        effect: EffectKind,
+    },
+    /// The mixer effect knob, `0.0..=1.0`: off at zero.
+    MixerEffectSet {
+        deck: DeckId,
+        position: f64,
+    },
     MasterGainSet {
         db: f64,
     },
     /// Plays a short tone on one output, to check the routing.
     MasterTestTone {
         output: Output,
+    },
+    /// The Limiter key: switches the maximiser of the master in or out
+    /// (`docs/behavior/master.md`).
+    MasterLimiterToggle,
+    /// Gain before the maximiser, `0.0..=12.0` dB.
+    MasterMaximiserDriveSet {
+        db: f64,
+    },
+    /// Highest sample peak the maximiser lets out, `-12.0..=0.0` dB of full scale.
+    MasterMaximiserCeilingSet {
+        db: f64,
+    },
+    /// Time the maximiser takes to recover 90 % of its gain reduction, `10.0..=1000.0` ms.
+    MasterMaximiserReleaseSet {
+        ms: f64,
     },
     DeckSyncToggle {
         deck: DeckId,
@@ -371,6 +471,11 @@ pub enum Command {
     GlobalLoadMarkerToggle,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     GlobalQuantizeToggle,
+    /// Starts recording the master into a file, or stops the recording:
+    /// `docs/behavior/recording.md`.
+    RecorderToggle,
+    /// Closes the file of the recording and goes on in a new one, without losing a frame.
+    RecorderCut,
 }
 
 /// Kind of a command parameter, for anything that builds commands from untyped input.
@@ -422,11 +527,37 @@ pub const MAX_CHANNEL_GAIN_DB: f64 = 12.0;
 pub const MAX_MASTER_GAIN_DB: f64 = 12.0;
 pub const MAX_HEADPHONE_GAIN_DB: f64 = 12.0;
 const MIN_GAIN_DB: f64 = -90.0;
+/// The ranges of the maximiser: `docs/behavior/master.md`.
+pub const MAX_DRIVE_DB: f64 = 12.0;
+pub const MIN_CEILING_DB: f64 = -12.0;
+pub const MAX_CEILING_DB: f64 = 0.0;
+pub const MIN_RELEASE_MS: f64 = 10.0;
+pub const MAX_RELEASE_MS: f64 = 1_000.0;
 const BANDS: &[&str] = &["low", "mid", "high"];
 const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
+const EQ_MODELS: &[&str] = &["smooth", "soft", "isolator", "steep"];
+const FILTER_MODELS: &[&str] = &["gentle", "steep", "ladder"];
+const UNIT: ParamSpec = number("unit", 1.0, UNITS as f64);
+const FX_SLOT: ParamSpec = number("slot", 1.0, SLOTS as f64);
+const UNIT_MODES: &[&str] = &["group", "single"];
+const ROUTINGS: &[&str] = &["insert", "post_fader"];
+/// The effects of a unit, and `none` for an empty place.
+pub const UNIT_EFFECTS: &[&str] = &[
+    "none",
+    "delay",
+    "reverb",
+    "flanger",
+    "phaser",
+    "filter",
+    "gater",
+    "slicer",
+    "bitcrusher",
+];
+/// The effects of the mixer effect knob.
+pub const MIXER_EFFECTS: &[&str] = &["delay", "reverb", "gater", "bitcrusher"];
 /// The part of the travel of the crossfader one step moves it.
 pub const CROSSFADER_STEP: f64 = 0.1;
 pub const MIN_FADE_BEATS: f64 = 1.0;
@@ -975,6 +1106,22 @@ pub const SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "mixer.eq.model.set",
+        label: "Set equaliser model",
+        params: &[ParamSpec {
+            name: "model",
+            kind: ParamKind::Choice(EQ_MODELS),
+        }],
+    },
+    CommandSpec {
+        id: "mixer.filter.model.set",
+        label: "Set filter model",
+        params: &[ParamSpec {
+            name: "model",
+            kind: ParamKind::Choice(FILTER_MODELS),
+        }],
+    },
+    CommandSpec {
         id: "mixer.mode.set",
         label: "Mixer mode",
         params: &[ParamSpec {
@@ -1025,6 +1172,116 @@ pub const SPECS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        id: "fx.unit.mode.set",
+        label: "Set the mode of an effect unit",
+        params: &[
+            UNIT,
+            ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice(UNIT_MODES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "fx.unit.dry_wet.set",
+        label: "Set the dry/wet of an effect unit",
+        params: &[UNIT, number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "fx.unit.routing.set",
+        label: "Set the routing of an effect unit",
+        params: &[
+            UNIT,
+            ParamSpec {
+                name: "routing",
+                kind: ParamKind::Choice(ROUTINGS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "fx.unit.reset",
+        label: "Reset an effect unit",
+        params: &[UNIT],
+    },
+    CommandSpec {
+        id: "fx.unit.snapshot.save",
+        label: "Save a snapshot of an effect",
+        params: &[UNIT],
+    },
+    CommandSpec {
+        id: "fx.slot.effect.set",
+        label: "Choose the effect of a slot",
+        params: &[
+            UNIT,
+            FX_SLOT,
+            ParamSpec {
+                name: "effect",
+                kind: ParamKind::Choice(UNIT_EFFECTS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "fx.slot.amount.set",
+        label: "Set the amount of a slot",
+        params: &[UNIT, FX_SLOT, number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "fx.slot.toggle",
+        label: "Switch the effect of a slot",
+        params: &[UNIT, FX_SLOT],
+    },
+    CommandSpec {
+        id: "fx.single.effect.set",
+        label: "Choose the effect of single mode",
+        params: &[
+            UNIT,
+            ParamSpec {
+                name: "effect",
+                kind: ParamKind::Choice(UNIT_EFFECTS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "fx.single.knob.set",
+        label: "Set a knob of single mode",
+        params: &[
+            UNIT,
+            number("knob", 1.0, KNOBS as f64),
+            number("position", 0.0, 1.0),
+        ],
+    },
+    CommandSpec {
+        id: "fx.single.key.toggle",
+        label: "Switch a key of single mode",
+        params: &[UNIT, number("key", 1.0, KEYS as f64)],
+    },
+    CommandSpec {
+        id: "fx.single.toggle",
+        label: "Switch the effect of single mode",
+        params: &[UNIT],
+    },
+    CommandSpec {
+        id: "mixer.fx_assign.toggle",
+        label: "Send to an effect unit",
+        params: &[DECK, UNIT],
+    },
+    CommandSpec {
+        id: "mixer.effect.select",
+        label: "Choose the mixer effect",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "effect",
+                kind: ParamKind::Choice(MIXER_EFFECTS),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "mixer.effect.set",
+        label: "Set the mixer effect",
+        params: &[DECK, number("position", 0.0, 1.0)],
+    },
+    CommandSpec {
         id: "master.gain.set",
         label: "Set main volume",
         params: &[number("db", MIN_GAIN_DB, MAX_MASTER_GAIN_DB)],
@@ -1036,6 +1293,26 @@ pub const SPECS: &[CommandSpec] = &[
             name: "output",
             kind: ParamKind::Choice(OUTPUTS),
         }],
+    },
+    CommandSpec {
+        id: "master.limiter.toggle",
+        label: "Limiter",
+        params: &[],
+    },
+    CommandSpec {
+        id: "master.maximiser.drive.set",
+        label: "Set maximiser drive",
+        params: &[number("db", 0.0, MAX_DRIVE_DB)],
+    },
+    CommandSpec {
+        id: "master.maximiser.ceiling.set",
+        label: "Set maximiser ceiling",
+        params: &[number("db", MIN_CEILING_DB, MAX_CEILING_DB)],
+    },
+    CommandSpec {
+        id: "master.maximiser.release.set",
+        label: "Set maximiser release",
+        params: &[number("ms", MIN_RELEASE_MS, MAX_RELEASE_MS)],
     },
     CommandSpec {
         id: "deck.sync.toggle",
@@ -1138,6 +1415,16 @@ pub const SPECS: &[CommandSpec] = &[
             kind: ParamKind::Choice(SYNC_MODES),
         }],
     },
+    CommandSpec {
+        id: "recorder.toggle",
+        label: "Record the mix",
+        params: &[],
+    },
+    CommandSpec {
+        id: "recorder.cut",
+        label: "Cut the recording into a new file",
+        params: &[],
+    },
 ];
 
 /// An untyped parameter value, as a script, a mapping or a remote caller provides it.
@@ -1234,6 +1521,33 @@ impl Reader<'_> {
 
     fn deck(&self) -> Result<DeckId, CommandError> {
         Ok(DeckId::parse(self.text("deck")?)?)
+    }
+
+    fn unit(&self) -> Result<FxUnit, CommandError> {
+        Ok(FxUnit::from_number(self.number("unit")?)?)
+    }
+
+    /// A parameter numbered from 1 to `count`, as an index from 0.
+    fn index(&self, name: &'static str, count: usize) -> Result<usize, CommandError> {
+        Ok(index_of(name, self.number(name)?, count)?)
+    }
+
+    fn unit_effect(&self) -> Result<Option<EffectKind>, CommandError> {
+        match self.text("effect")? {
+            "none" => Ok(None),
+            name => Ok(Some(EffectKind::parse(name)?)),
+        }
+    }
+
+    fn mixer_effect(&self) -> Result<EffectKind, CommandError> {
+        let name = self.text("effect")?;
+        EffectKind::MIXER
+            .into_iter()
+            .find(|kind| kind.name() == name)
+            .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                name: "effect",
+                expected: "delay, reverb, gater, bitcrusher",
+            }))
     }
 
     fn band(&self) -> Result<Band, CommandError> {
@@ -1516,6 +1830,8 @@ impl Command {
             {
                 return Self::sync_from_args(sync, &read);
             }
+            "recorder.toggle" => Self::RecorderToggle,
+            "recorder.cut" => Self::RecorderCut,
             mixer => return Self::mixer_from_args(mixer, &read),
         })
     }
@@ -1636,6 +1952,16 @@ impl Command {
             "mixer.cue.volume.set" => Self::MixerCueVolumeSet {
                 db: read.number("db")?,
             },
+            "master.limiter.toggle" => Self::MasterLimiterToggle,
+            "master.maximiser.drive.set" => Self::MasterMaximiserDriveSet {
+                db: read.number("db")?,
+            },
+            "master.maximiser.ceiling.set" => Self::MasterMaximiserCeilingSet {
+                db: read.number("db")?,
+            },
+            "master.maximiser.release.set" => Self::MasterMaximiserReleaseSet {
+                ms: read.number("ms")?,
+            },
             "master.test_tone.play" => Self::MasterTestTone {
                 output: read.output()?,
             },
@@ -1658,6 +1984,12 @@ impl Command {
             "mixer.crossfader.curve.set" => Self::MixerCrossfaderCurveSet {
                 curve: CrossfaderCurve::parse(read.text("curve")?)?,
             },
+            "mixer.eq.model.set" => Self::MixerEqModelSet {
+                model: EqModel::parse(read.text("model")?)?,
+            },
+            "mixer.filter.model.set" => Self::MixerFilterModelSet {
+                model: FilterModel::parse(read.text("model")?)?,
+            },
             "mixer.crossfader.step" => Self::MixerCrossfaderStep {
                 direction: read.crossfader_direction()?,
             },
@@ -1678,6 +2010,60 @@ impl Command {
             },
             "master.gain.set" => Self::MasterGainSet {
                 db: read.number("db")?,
+            },
+            "fx.unit.mode.set" => Self::FxUnitModeSet {
+                unit: read.unit()?,
+                mode: UnitMode::parse(read.text("mode")?)?,
+            },
+            "fx.unit.dry_wet.set" => Self::FxUnitDryWetSet {
+                unit: read.unit()?,
+                position: read.number("position")?,
+            },
+            "fx.unit.routing.set" => Self::FxUnitRoutingSet {
+                unit: read.unit()?,
+                routing: FxRouting::parse(read.text("routing")?)?,
+            },
+            "fx.unit.reset" => Self::FxUnitReset { unit: read.unit()? },
+            "fx.unit.snapshot.save" => Self::FxUnitSnapshotSave { unit: read.unit()? },
+            "fx.slot.effect.set" => Self::FxSlotEffectSet {
+                unit: read.unit()?,
+                slot: read.index("slot", SLOTS)?,
+                effect: read.unit_effect()?,
+            },
+            "fx.slot.amount.set" => Self::FxSlotAmountSet {
+                unit: read.unit()?,
+                slot: read.index("slot", SLOTS)?,
+                position: read.number("position")?,
+            },
+            "fx.slot.toggle" => Self::FxSlotToggle {
+                unit: read.unit()?,
+                slot: read.index("slot", SLOTS)?,
+            },
+            "fx.single.effect.set" => Self::FxSingleEffectSet {
+                unit: read.unit()?,
+                effect: read.unit_effect()?,
+            },
+            "fx.single.knob.set" => Self::FxSingleKnobSet {
+                unit: read.unit()?,
+                knob: read.index("knob", KNOBS)?,
+                position: read.number("position")?,
+            },
+            "fx.single.key.toggle" => Self::FxSingleKeyToggle {
+                unit: read.unit()?,
+                key: read.index("key", KEYS)?,
+            },
+            "fx.single.toggle" => Self::FxSingleToggle { unit: read.unit()? },
+            "mixer.fx_assign.toggle" => Self::MixerFxAssignToggle {
+                deck: read.deck()?,
+                unit: read.unit()?,
+            },
+            "mixer.effect.select" => Self::MixerEffectSelect {
+                deck: read.deck()?,
+                effect: read.mixer_effect()?,
+            },
+            "mixer.effect.set" => Self::MixerEffectSet {
+                deck: read.deck()?,
+                position: read.number("position")?,
             },
             other => return Err(CommandError::UnknownCommand(other.to_owned())),
         })
@@ -1745,6 +2131,8 @@ impl Command {
             Self::MixerFaderSet { .. } => "mixer.fader.set",
             Self::MixerCrossfaderSet { .. } => "mixer.crossfader.set",
             Self::MixerCrossfaderCurveSet { .. } => "mixer.crossfader.curve.set",
+            Self::MixerEqModelSet { .. } => "mixer.eq.model.set",
+            Self::MixerFilterModelSet { .. } => "mixer.filter.model.set",
             Self::MixerCrossfaderAssign { .. } => "mixer.xfader_assign.set",
             Self::MixerCrossfaderStep { .. } => "mixer.crossfader.step",
             Self::MixerCrossfaderAutoFade { .. } => "mixer.crossfader.auto_fade",
@@ -1752,8 +2140,27 @@ impl Command {
             Self::MixerModeSet { .. } => "mixer.mode.set",
             Self::MixerExternalEqGainToggle => "mixer.external.eq_gain.toggle",
             Self::MixerExternalMasterVolumeToggle => "mixer.external.master_volume.toggle",
+            Self::FxUnitModeSet { .. } => "fx.unit.mode.set",
+            Self::FxUnitDryWetSet { .. } => "fx.unit.dry_wet.set",
+            Self::FxUnitRoutingSet { .. } => "fx.unit.routing.set",
+            Self::FxUnitReset { .. } => "fx.unit.reset",
+            Self::FxUnitSnapshotSave { .. } => "fx.unit.snapshot.save",
+            Self::FxSlotEffectSet { .. } => "fx.slot.effect.set",
+            Self::FxSlotAmountSet { .. } => "fx.slot.amount.set",
+            Self::FxSlotToggle { .. } => "fx.slot.toggle",
+            Self::FxSingleEffectSet { .. } => "fx.single.effect.set",
+            Self::FxSingleKnobSet { .. } => "fx.single.knob.set",
+            Self::FxSingleKeyToggle { .. } => "fx.single.key.toggle",
+            Self::FxSingleToggle { .. } => "fx.single.toggle",
+            Self::MixerFxAssignToggle { .. } => "mixer.fx_assign.toggle",
+            Self::MixerEffectSelect { .. } => "mixer.effect.select",
+            Self::MixerEffectSet { .. } => "mixer.effect.set",
             Self::MasterGainSet { .. } => "master.gain.set",
             Self::MasterTestTone { .. } => "master.test_tone.play",
+            Self::MasterLimiterToggle => "master.limiter.toggle",
+            Self::MasterMaximiserDriveSet { .. } => "master.maximiser.drive.set",
+            Self::MasterMaximiserCeilingSet { .. } => "master.maximiser.ceiling.set",
+            Self::MasterMaximiserReleaseSet { .. } => "master.maximiser.release.set",
             Self::DeckSyncToggle { .. } => "deck.sync.toggle",
             Self::DeckKeyLockToggle { .. } => "deck.keylock.toggle",
             Self::DeckBeatTickToggle { .. } => "deck.tick.toggle",
@@ -1773,6 +2180,8 @@ impl Command {
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
+            Self::RecorderToggle => "recorder.toggle",
+            Self::RecorderCut => "recorder.cut",
         }
     }
 }

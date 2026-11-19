@@ -13,7 +13,7 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
-use platter_engine::{ClockMode, Command};
+use platter_engine::{ClockMode, Command, EffectKind, MixerMode, UnitMode};
 use platter_library::{NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
@@ -45,6 +45,8 @@ struct State {
     naming: Option<Naming>,
     /// How far the tree is scrolled, so the folders of the explorer below the library show.
     tree_scroll: f32,
+    /// How far the Mixer page of the preferences is scrolled.
+    page_scroll: f32,
     /// The maintenance of the collection is open, and asks before removing.
     maintenance: (bool, bool),
     /// The dialog of the details of the selected track is open.
@@ -74,6 +76,7 @@ fn states() -> Vec<State> {
         menu: None,
         naming: None,
         tree_scroll: 0.0,
+        page_scroll: 0.0,
         maintenance: (false, false),
         details: false,
         min_controls: 6,
@@ -213,6 +216,17 @@ fn states() -> Vec<State> {
     other_preview.scene.engine.preview.track = other_preview.scene.engine.decks[0].track.clone();
     let mut rename = state("rename-playlist", sample::playing(), None);
     rename.naming = Some(Naming::Rename(NodeId::new(1)));
+    // The mix recorder runs in the two-deck layout, so Cut can be operated and the indicator
+    // of the header shows beside the MIDI one.
+    let mut recording = sample::playing();
+    recording.engine.recorder = sample::four_decks().engine.recorder;
+    let recording = state("recording", recording, None);
+    // The last recording stopped by itself and lost frames: the time turns to the warning
+    // colour.
+    let mut recorder_failed = sample::playing();
+    recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
+    recorder_failed.engine.recorder.dropped_frames = 4_800;
+    let recorder_failed = state("recorder-failed", recorder_failed, None);
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -252,6 +266,8 @@ fn states() -> Vec<State> {
         details,
         details_several,
         state("four-decks", sample::four_decks(), None),
+        state("effects-single", single_unit(), None),
+        state("four-units", sample::four_units(), None),
         state(
             "preferences-library",
             sample::playing(),
@@ -263,6 +279,8 @@ fn states() -> Vec<State> {
             Some(SettingsPage::Decks),
         ),
         other_preview,
+        recording,
+        recorder_failed,
         state(
             "preferences-controllers",
             sample::playing(),
@@ -278,6 +296,14 @@ fn states() -> Vec<State> {
             sample::playing(),
             Some(SettingsPage::Mixer),
         ),
+        State {
+            page_scroll: f32::MAX,
+            ..state(
+                "preferences-mixer-end",
+                sample::playing(),
+                Some(SettingsPage::Mixer),
+            )
+        },
     ]
 }
 
@@ -307,6 +333,7 @@ impl Stage {
         shell.state.browser.menu = state.menu;
         shell.state.browser.naming = state.naming;
         shell.state.browser.tree_scroll = state.tree_scroll;
+        shell.state.settings.page_scroll = state.page_scroll;
         (shell.state.maintenance, shell.state.remove_asked) = state.maintenance;
         shell.state.details_wanted = state.details;
         let ctx = egui::Context::default();
@@ -359,11 +386,20 @@ impl Stage {
     }
 
     fn pointer(&mut self, pos: Pos2, pressed: Option<bool>) -> Vec<Action> {
+        self.pointer_with(pos, pressed, PointerButton::Primary)
+    }
+
+    fn pointer_with(
+        &mut self,
+        pos: Pos2,
+        pressed: Option<bool>,
+        button: PointerButton,
+    ) -> Vec<Action> {
         let mut events = vec![Event::PointerMoved(pos)];
         if let Some(pressed) = pressed {
             events.push(Event::PointerButton {
                 pos,
-                button: PointerButton::Primary,
+                button,
                 pressed,
                 modifiers: Modifiers::NONE,
             });
@@ -372,9 +408,13 @@ impl Stage {
     }
 
     fn click(&mut self, pos: Pos2) -> Vec<Action> {
-        let mut actions = self.pointer(pos, None);
-        actions.extend(self.pointer(pos, Some(true)));
-        actions.extend(self.pointer(pos, Some(false)));
+        self.click_with(pos, PointerButton::Primary)
+    }
+
+    fn click_with(&mut self, pos: Pos2, button: PointerButton) -> Vec<Action> {
+        let mut actions = self.pointer_with(pos, None, button);
+        actions.extend(self.pointer_with(pos, Some(true), button));
+        actions.extend(self.pointer_with(pos, Some(false), button));
         actions.extend(self.frame(Vec::new()).0);
         actions
     }
@@ -402,6 +442,12 @@ fn ids(actions: &[Action]) -> Vec<&'static str> {
 fn operate(stage: &mut Stage, control: &Control) -> Vec<Action> {
     let centre = control.rect.center();
     match control.kind {
+        // The list picks the row under the pointer, and a click on the row already selected
+        // changes nothing: the first row is the track of deck A, which is never the selection
+        // of the sample states.
+        ControlKind::Area if control.command == "browser.select" => {
+            stage.click(control.rect.left_top() + egui::vec2(control.rect.width() / 2.0, 6.0))
+        }
         ControlKind::Button | ControlKind::Area => stage.click(centre),
         ControlKind::Hold => {
             let mut actions = stage.pointer(centre, None);
@@ -591,7 +637,7 @@ fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
                 .controls()
                 .into_iter()
                 .filter(|control| {
-                    control.command.starts_with("mixer.") || control.command == "master.gain.set"
+                    control.command.starts_with("mixer.") || control.command.starts_with("master.")
                 })
                 .collect();
             assert!(
@@ -1394,6 +1440,7 @@ fn every_command_of_the_interface_can_be_reached_with_the_keyboard() {
         "mixer.crossfader.curve.set",
         "master.gain.set",
         "master.test_tone.play",
+        "master.limiter.toggle",
     ] {
         assert!(
             emitted.contains(command),
@@ -1665,7 +1712,7 @@ fn rect_of(found: &[(DeckId, Rect)], deck: DeckId) -> Rect {
 }
 
 /// `docs/behavior/interface.md`, *Deck layout*: A over C on the left, B over D on the right,
-/// the channels in the order C, A, B, D, and a load key per deck.
+/// the channels in the order A, B, C, D, and a load key per deck.
 #[test]
 fn the_four_deck_layout_puts_c_under_a_and_d_under_b() {
     let four = state_named("four-decks");
@@ -1681,7 +1728,7 @@ fn the_four_deck_layout_puts_c_under_a_and_d_under_b() {
     let mut faders = decks_of(&four, "mixer.fader.set");
     faders.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));
     let order: Vec<DeckId> = faders.iter().map(|(deck, _)| *deck).collect();
-    assert_eq!(order, [DeckId::C, DeckId::A, DeckId::B, DeckId::D]);
+    assert_eq!(order, DeckId::ALL);
 
     let mut loads = decks_of(&four, "browser.load_selected");
     loads.sort_by(|first, second| first.1.left().total_cmp(&second.1.left()));
@@ -1747,4 +1794,426 @@ fn the_general_page_chooses_four_decks() {
             layout: DeckLayout::Four
         })]
     );
+}
+
+/// The effect row of the four-deck layout holds units 1 and 2, in group mode as the M4 screen
+/// draws them and in single mode; no control covers another, in either language.
+/// `docs/behavior/effects.md`.
+#[test]
+fn the_effect_row_shows_both_units_in_either_mode_without_overlaps() {
+    for layout in ["four-decks", "main"] {
+        effect_row_in(state_named(layout));
+    }
+}
+
+fn effect_row_in(group: State) {
+    let mut single = group.clone();
+    let unit = &mut single.scene.engine.effects.units[1];
+    unit.values.mode = UnitMode::Single;
+    unit.single = Some(EffectKind::Delay);
+    unit.values.single.controls = EffectKind::Delay.defaults();
+    let group_commands = [
+        "fx.unit.mode.set",
+        "fx.unit.dry_wet.set",
+        "fx.slot.effect.set",
+        "fx.slot.amount.set",
+        "fx.slot.toggle",
+    ];
+    let single_commands = [
+        "fx.single.effect.set",
+        "fx.single.knob.set",
+        "fx.single.key.toggle",
+        "fx.single.toggle",
+        "fx.unit.reset",
+    ];
+    for (state, commands) in [(group, &group_commands[..]), (single, &single_commands[..])] {
+        for language in Language::ALL {
+            let stage = Stage::with_texts(&state, Texts::load(language).unwrap());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| control.rect.top() >= 42.0 && control.rect.bottom() <= 114.0)
+                .collect();
+            for command in commands {
+                assert!(
+                    controls.iter().any(|control| control.command == *command),
+                    "{language:?}: no {command} in the effect row"
+                );
+            }
+            for (index, first) in controls.iter().enumerate() {
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{language:?}: {} at {:?} overlaps {} at {:?}",
+                        first.command,
+                        first.rect,
+                        second.command,
+                        second.rect,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The master column of the four-deck mixer has the Limiter key under the level knob and
+/// above the headphones, as `docs/design/screens/M4-effects.html` draws it; the two-deck
+/// mixer has none (`docs/behavior/master.md`, *Differences*).
+#[test]
+fn the_four_deck_master_column_has_the_limiter_key() {
+    for language in Language::ALL {
+        let four = state_named("four-decks");
+        let mut stage = Stage::with_texts(&four, Texts::load(language).unwrap());
+        stage.frame(Vec::new());
+        let controls = stage.controls();
+        let find = |command: &str| {
+            let found: Vec<&Control> = controls
+                .iter()
+                .filter(|control| control.command == command)
+                .collect();
+            assert_eq!(found.len(), 1, "{language:?}: {command}");
+            found[0].rect
+        };
+        let key = find("master.limiter.toggle");
+        let level = find("master.gain.set");
+        let mix = find("mixer.cue.mix.set");
+        assert!(
+            key.top() > level.bottom() && key.bottom() < mix.top(),
+            "{key:?}"
+        );
+        assert!((key.center().x - level.center().x).abs() < 0.5, "{key:?}");
+        assert_eq!(key.height(), 18.0);
+        // Inside the master column, right of its divider.
+        let column = Rect::from_x_y_ranges(522.0 + 324.0..=918.0, 0.0..=DESIGN_HEIGHT);
+        assert!(column.contains_rect(key), "{language:?}: {key:?}");
+    }
+    let two = Stage::new(&state_named("main"));
+    assert!(
+        two.controls()
+            .iter()
+            .all(|control| control.command != "master.limiter.toggle")
+    );
+}
+
+/// Each narrow channel sends its deck to units 1 and 2 and turns its mixer effect.
+#[test]
+fn each_channel_of_the_four_deck_mixer_has_its_effect_controls() {
+    let four = state_named("four-decks");
+    for command in [
+        "mixer.fx_assign.toggle",
+        "mixer.effect.set",
+        "mixer.effect.select",
+    ] {
+        let found = Stage::new(&four)
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count();
+        let expected = if command == "mixer.fx_assign.toggle" {
+            8
+        } else {
+            4
+        };
+        assert_eq!(found, expected, "{command}");
+    }
+    // The two-deck mixer has the assign keys of decks A and B and no mixer effect knob.
+    let two = Stage::new(&state_named("main"));
+    let count = |command: &str| {
+        two.controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count("mixer.fx_assign.toggle"), 4);
+    assert_eq!(count("mixer.effect.set"), 0);
+}
+
+/// In external mixer mode the mixer effect knob and its name collapse with the channel, as
+/// the filter does; the assign keys stay, since a unit in insert routing still acts on the
+/// deck before its output (`docs/behavior/effects.md`, *Assignment and routing*).
+#[test]
+fn the_mixer_effect_collapses_with_the_channel_in_external_mode() {
+    let mut external = state_named("four-decks");
+    external.scene.engine.mixer.mode = MixerMode::External;
+    let stage = Stage::new(&external);
+    let count = |command: &str| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count("mixer.filter.set"), 0);
+    assert_eq!(count("mixer.effect.set"), 0);
+    assert_eq!(count("mixer.effect.select"), 0);
+    assert_eq!(count("mixer.fx_assign.toggle"), 8);
+}
+
+/// The four-deck screen with effect unit 2 in single mode on the delay, so the menu of its
+/// title can save a snapshot.
+fn single_unit() -> Scene {
+    let mut scene = sample::four_decks();
+    let unit = &mut scene.engine.effects.units[1];
+    unit.values.mode = UnitMode::Single;
+    unit.single = Some(EffectKind::Delay);
+    unit.values.single.controls = EffectKind::Delay.defaults();
+    scene
+}
+
+/// `docs/behavior/effects.md`, *Units and modes*: the title of a unit in single mode opens a
+/// menu whose *Save snapshot* saves the effect of that unit; in group mode it opens nothing.
+#[test]
+fn the_title_of_a_unit_in_single_mode_saves_a_snapshot_from_its_menu() {
+    let single = state_named("effects-single");
+    let mut stage = Stage::new(&single);
+    let titles: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "fx.unit.snapshot.save")
+        .collect();
+    assert_eq!(titles.len(), 2);
+    let (group, single_title) = if titles[0].rect.left() < titles[1].rect.left() {
+        (&titles[0], &titles[1])
+    } else {
+        (&titles[1], &titles[0])
+    };
+    assert!(!group.enabled && single_title.enabled);
+    let opened = stage.pointer(single_title.rect.center(), None);
+    assert!(opened.is_empty());
+    for button in [PointerButton::Secondary, PointerButton::Primary] {
+        // The right button opens the menu, as the primary one does.
+        let mut actions = stage.click_with(single_title.rect.center(), button);
+        assert!(actions.is_empty(), "opening the menu sends nothing");
+        let item = single_title.rect.left_bottom() + egui::vec2(20.0, 16.0);
+        actions.extend(stage.click(item));
+        assert_eq!(
+            actions,
+            [Action::Engine(Command::FxUnitSnapshotSave {
+                unit: platter_engine::FxUnit::ALL[1],
+            })]
+        );
+    }
+}
+
+/// `docs/behavior/effects.md`, *Units and modes*: with four units each panel switches between
+/// its two units and each channel has a key per unit.
+#[test]
+fn four_units_give_each_panel_a_switch_and_each_channel_four_keys() {
+    let four = state_named("four-units");
+    let mut stage = Stage::new(&four);
+    let count = |stage: &Stage, command: &str| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == command)
+            .count()
+    };
+    assert_eq!(count(&stage, "app.fx_panel.show"), 4);
+    assert_eq!(count(&stage, "mixer.fx_assign.toggle"), 16);
+    // The key of unit 1 in the left panel brings unit 1 back.
+    let mut switches: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "app.fx_panel.show")
+        .collect();
+    switches.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    let actions = stage.click(switches[0].rect.center());
+    assert_eq!(
+        actions,
+        [Action::App(AppCommand::FxPanelShow {
+            unit: platter_engine::FxUnit::ALL[0],
+        })]
+    );
+    // With two units, neither the switch nor keys 3 and 4.
+    let two = Stage::new(&state_named("four-decks"));
+    assert_eq!(count(&two, "app.fx_panel.show"), 0);
+    assert_eq!(count(&two, "mixer.fx_assign.toggle"), 8);
+}
+
+/// The Mixer page scrolls: the crossfader section sits below its room, under the effect
+/// units, and the keyboard brings it into view (`docs/behavior/effects.md`, *Units and modes*).
+#[test]
+fn the_keyboard_scrolls_the_mixer_page_to_the_crossfader_curve() {
+    let mixer = state_named("preferences-mixer");
+    let mut stage = Stage::new(&mixer);
+    let routing = |stage: &Stage| {
+        stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == "mixer.crossfader.curve.set")
+            .collect::<Vec<Control>>()
+    };
+    assert!(routing(&stage).is_empty(), "the curve starts out of view");
+    let mut found = Vec::new();
+    for _ in 0..80 {
+        stage.key(egui::Key::Tab, Modifiers::NONE);
+        found = routing(&stage);
+        if !found.is_empty() {
+            break;
+        }
+    }
+    assert!(
+        !found.is_empty(),
+        "the focus never brought the curve into view"
+    );
+    // The curve in view takes a click: one of its segments is not the current one.
+    let mut actions = Vec::new();
+    for control in &found {
+        actions.extend(stage.click(control.rect.center()));
+    }
+    assert!(
+        actions.iter().any(|action| matches!(
+            action,
+            Action::Engine(Command::MixerCrossfaderCurveSet { .. })
+        )),
+        "{actions:?}"
+    );
+}
+
+/// Every text a frame paints, with the rectangle it covers.
+fn placed_texts(shapes: &[ClippedShape]) -> Vec<(String, Rect)> {
+    fn collect(shape: &Shape, out: &mut Vec<(String, Rect)>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
+            Shape::Text(text) if !text.galley.job.text.trim().is_empty() => {
+                out.push((text.galley.job.text.clone(), text.visual_bounding_rect()));
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in shapes {
+        collect(&clipped.shape, &mut out);
+    }
+    out
+}
+
+/// The colours of the texts a frame paints that read `wanted`.
+fn colours_of_text(shapes: &[ClippedShape], wanted: &str) -> Vec<Color32> {
+    fn collect(shape: &Shape, wanted: &str, out: &mut Vec<Color32>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, wanted, out)),
+            Shape::Text(text) if text.galley.job.text == wanted => out.extend(
+                text.galley
+                    .job
+                    .sections
+                    .iter()
+                    .map(|section| section.format.color),
+            ),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in shapes {
+        collect(&clipped.shape, wanted, &mut out);
+    }
+    out
+}
+
+/// The mix recorder in the middle of the effect row and its indicator in the header, in both
+/// layouts and languages: `docs/behavior/recording.md`, *Keys*, *Indicator* and *Problems*.
+#[test]
+fn the_mix_recorder_lights_rec_shows_its_time_and_cuts_only_while_recording() {
+    let tokens = platter_ui_egui::tokens::Tokens::load().unwrap();
+    let error = tokens.all_colors["status-error"];
+    let warn = tokens.all_colors["status-warn"];
+    for (name, recording) in [
+        ("main", false),
+        ("recorder-failed", false),
+        ("recording", true),
+        ("four-decks", true),
+    ] {
+        for language in Language::ALL {
+            let texts = Texts::load(language).unwrap();
+            let state = state_named(name);
+            let mut stage = Stage::with_texts(&state, texts.clone());
+            let (_, shapes) = stage.frame(Vec::new());
+            let controls = stage.controls();
+            let find = |command: &str| {
+                let found: Vec<&Control> = controls
+                    .iter()
+                    .filter(|control| control.command == command)
+                    .collect();
+                assert_eq!(found.len(), 1, "{name}, {language:?}: {command}");
+                found[0].clone()
+            };
+            let (rec, cut) = (find("recorder.toggle"), find("recorder.cut"));
+            assert!(rec.enabled, "{name}");
+            assert_eq!(cut.enabled, recording, "{name}");
+            // In the row of effects, right-aligned with 12 points of padding over the mixer.
+            assert!(rec.rect.top() >= 42.0 && rec.rect.bottom() <= 114.0);
+            assert_eq!((rec.rect.width(), rec.rect.height()), (48.0, 28.0));
+            assert_eq!((cut.rect.width(), cut.rect.height()), (39.0, 28.0));
+            assert_eq!(cut.rect.right(), DESIGN_WIDTH - 520.0 - 2.0 - 12.0);
+            let painted = placed_texts(&shapes);
+            for (control, key) in [(&rec, "recorder.rec"), (&cut, "recorder.cut")] {
+                let label = texts.get(key);
+                assert!(
+                    painted
+                        .iter()
+                        .any(|(text, rect)| text == label && control.rect.contains_rect(*rect)),
+                    "{name}, {language:?}: {label} does not fit its key"
+                );
+            }
+            let strip = filled(&shapes, error)
+                .into_iter()
+                .any(|rect| rec.rect.expand(1.0).contains_rect(rect));
+            assert_eq!(strip, recording, "{name}: the strip of Rec");
+            let time = if recording { "00:42:17" } else { "00:00:00" };
+            let times: Vec<Rect> = painted
+                .iter()
+                .filter(|(text, _)| text == time)
+                .map(|(_, rect)| *rect)
+                .collect();
+            // In the panel only: the indicator of the header has no time.
+            assert_eq!(times.len(), 1, "{name}");
+            assert!(times[0].top() > 42.0, "{name}");
+            let indicator: Vec<Rect> = painted
+                .iter()
+                .filter(|(text, rect)| {
+                    rect.bottom() <= 40.0 && text == texts.get("recorder.indicator")
+                })
+                .map(|(_, rect)| *rect)
+                .collect();
+            assert_eq!(
+                indicator.len(),
+                usize::from(recording),
+                "{name}: the indicator of the header"
+            );
+            for rect in &indicator {
+                for control in &controls {
+                    assert!(
+                        !control.rect.intersects(*rect),
+                        "{name}, {language:?}: {} covers the indicator",
+                        control.command
+                    );
+                }
+            }
+            if name == "recorder-failed" {
+                assert_eq!(colours_of_text(&shapes, time), [warn]);
+            }
+        }
+    }
+}
+
+/// Rec and Cut send the commands of the recorder.
+#[test]
+fn rec_and_cut_send_the_commands_of_the_recorder() {
+    let state = state_named("recording");
+    for (command, expected) in [
+        ("recorder.toggle", Command::RecorderToggle),
+        ("recorder.cut", Command::RecorderCut),
+    ] {
+        let mut stage = Stage::new(&state);
+        let control = stage
+            .controls()
+            .into_iter()
+            .find(|control| control.command == command)
+            .unwrap();
+        assert_eq!(
+            stage.click(control.rect.center()),
+            [Action::Engine(expected)]
+        );
+    }
 }

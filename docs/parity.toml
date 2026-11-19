@@ -17,7 +17,7 @@ title = "Interface"
 features = [
   { id = "status-header", name = "Status header: audio, load, dropout counter, master meter, clock, settings", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the clock waits for the local time zone, see docs/behavior/interface.md" },
   { id = "midi-indicator", name = "MIDI indicator in the header", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test midi_indicator; no real MIDI controller tried yet, see ROADMAP.md" },
-  { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "planned" },
+  { id = "recording-indicator", name = "Recording indicator in the header", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; a dot and Rec without the time, and at 1440 points the master clock then covers the Master label, see docs/behavior/recording.md" },
   { id = "layout-selector", name = "Layout selector", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; two or four decks, chosen in the preferences, see docs/behavior/interface.md" },
   { id = "fullscreen", name = "Full screen", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the real window has not been looked at in full screen, see ROADMAP.md" },
   { id = "tooltips", name = "Tooltips", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tooltips; a disabled control shows no reason yet, see docs/behavior/interface.md" },
@@ -155,10 +155,10 @@ features = [
   { id = "crossfader-step-auto", name = "Step fade and automatic fade of the crossfader", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test crossfade; cargo test -p platter-ui-egui --test panels; nobody has listened to it with real tracks yet, see ROADMAP.md" },
   { id = "autogain", name = "Autogain per track, restorable", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test autogain; cargo test -p platter-library --test store; the level by ear waits for real tracks, see ROADMAP.md" },
   { id = "external-mixer-mode", name = "External mixer mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test external_mixer; cargo test -p platter-ui-egui --test external_mixer; not tried with a device of four outputs, see ROADMAP.md" },
-  { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "planned" },
-  { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "planned" },
-  { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "planned" },
-  { id = "filter-models-rest", name = "Remaining two filter models", milestone = "M4", status = "planned" },
+  { id = "fx-assign", name = "Effect unit assignment per channel", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test effects; cargo test -p platter-ui-egui --test panels; keys in the four-deck mixer only, see docs/behavior/effects.md" },
+  { id = "mixer-effect", name = "One-knob mixer effect per channel, with selector and amount", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-ui-egui --test panels; in the four-deck mixer only, see docs/behavior/effects.md" },
+  { id = "eq-models-rest", name = "Remaining three EQ models", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp eq; cargo test -p platter-engine --test mixer_models" },
+  { id = "filter-models-rest", name = "Remaining two filter models", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp filter; cargo test -p platter-engine --test mixer_models" },
 ]
 
 [[area]]
@@ -167,7 +167,7 @@ title = "Master"
 features = [
   { id = "volume-limiter-engine", name = "Main volume and safety limiter in the engine", milestone = "M1", status = "done", evidence = "cargo test -p platter-engine --test mixer" },
   { id = "volume-limiter-ui", name = "Main volume, limiter and master meter in the mixer", milestone = "M2", status = "done", evidence = "cargo test -p platter-engine --test mixer main_volume; cargo test -p platter-ui-egui --test panels" },
-  { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "planned" },
+  { id = "maximiser", name = "Own configurable maximiser", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --lib maximiser; cargo test -p platter-engine --test maximiser; cargo test -p platter-ui-egui --test panels limiter; set by command and kept in the settings file, no preferences controls yet, see docs/behavior/master.md" },
 ]
 
 [[area]]
@@ -183,11 +183,11 @@ features = [
 id = "effects"
 title = "Effects"
 features = [
-  { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "planned" },
-  { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "planned" },
-  { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "planned" },
-  { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "planned" },
-  { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, beatmasher, bitcrusher", milestone = "M4", status = "planned" },
+  { id = "units", name = "Four effect units, in single mode and in group mode of three effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-engine --test effects; cargo test -p platter-ui-egui --test panels; the window shows units 1 and 2 in both layouts, see docs/behavior/effects.md" },
+  { id = "unit-controls", name = "Dry/wet, parameters, reset and snapshot", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; cargo test -p platter-ui-egui --test panels; the snapshot is in the menu of the unit title, see docs/behavior/effects.md" },
+  { id = "units-3-4-optional", name = "Optional units 3 and 4", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels four_units; cargo test -p platter --bins; the Mixer page of the preferences shows two or four, see docs/behavior/effects.md" },
+  { id = "insert-send", name = "Insert and send modes", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test effects; insert and post fader, no send until the input routing of M5, set by command only, see docs/behavior/effects.md" },
+  { id = "first-eight", name = "First eight original effects: delay, reverb, flanger, phaser, filter, gater, slicer, bitcrusher", milestone = "M4", status = "done", evidence = "cargo test -p platter-dsp --test effects; measured with synthesised signals, not listened to, see docs/behavior/effects.md" },
   { id = "catalogue-rest", name = "Rest of the effects and mixer effects catalogue", milestone = "later", status = "planned" },
   { id = "pattern-sequencer", name = "Pattern sequencer inside a unit (kits, patterns, pitch, decay, ducking) with own sounds", milestone = "M5", status = "planned" },
 ]
@@ -196,7 +196,7 @@ features = [
 id = "recording"
 title = "Recording and output"
 features = [
-  { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "planned" },
+  { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test recorder --test realtime_memory; cargo test -p platter-ui-egui --test panels; the level is the master meter of the header, with no gain or meter of its own, and the folder and the split are fixed, see docs/behavior/recording.md" },
   { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "planned" },
   { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "planned" },
   { id = "broadcasting", name = "Broadcasting to a server the user configures", milestone = "M5", status = "planned" },

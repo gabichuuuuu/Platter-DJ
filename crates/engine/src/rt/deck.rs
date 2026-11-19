@@ -1232,7 +1232,7 @@ fn retire(
     memory: Option<Box<TrackMemory>>,
     retired: &mut Producer<Retired>,
 ) {
-    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(track, memory)) {
+    if let Err(rtrb::PushError::Full(item)) = retired.push(Retired(track, memory, None)) {
         std::mem::forget(item);
     }
 }

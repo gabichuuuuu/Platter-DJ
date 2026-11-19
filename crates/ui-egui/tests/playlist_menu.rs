@@ -20,6 +20,11 @@ use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 /// The playlist *Friday warm-up* of the sample scenes.
 const FRIDAY: i64 = 1;
 
+/// The window of these tests: the designed width, and the height that gives the browser of the
+/// two-deck layout the room it had before the effect row took 74 points above the lanes. The
+/// tests reach rows of the tree and of the list that a shorter browser scrolls out of view.
+const WINDOW_HEIGHT: f32 = DESIGN_HEIGHT + 74.0;
+
 struct Stage {
     ctx: egui::Context,
     shell: Shell,
@@ -48,7 +53,7 @@ impl Stage {
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(
                 Pos2::ZERO,
-                egui::vec2(DESIGN_WIDTH, DESIGN_HEIGHT),
+                egui::vec2(DESIGN_WIDTH, WINDOW_HEIGHT),
             )),
             events,
             focused: true,
@@ -1175,7 +1180,7 @@ fn every_picture_offered_for_a_cover_fits_in_the_window() {
         stage.key(Key::ArrowDown, Modifiers::NONE);
     }
     stage.key(Key::Enter, Modifiers::NONE);
-    let window = Rect::from_min_size(Pos2::ZERO, egui::vec2(DESIGN_WIDTH, DESIGN_HEIGHT));
+    let window = Rect::from_min_size(Pos2::ZERO, egui::vec2(DESIGN_WIDTH, WINDOW_HEIGHT));
     let pictures: Vec<Rect> = stage
         .shell
         .controls()

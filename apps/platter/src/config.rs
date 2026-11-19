@@ -10,10 +10,12 @@ use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
 use platter_engine::{
-    CrossfaderCurve, MAX_FADE_BEATS, MIN_FADE_BEATS, MixerMode, SyncMode, TempoRange,
+    CrossfaderCurve, EffectControls, EqModel, FilterModel, MAX_CEILING_DB, MAX_DRIVE_DB,
+    MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS,
+    MaximiserControls, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn, MAX_OUTPUTS};
+use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
 use platter_ui_egui::played::{DEFAULT_PLAYTIME, MAX_PLAYTIME, MIN_PLAYTIME};
@@ -57,6 +59,24 @@ pub fn config_dir() -> Option<PathBuf> {
     }
 }
 
+/// Where the mix recorder writes (`docs/behavior/recording.md`, *Files*): a folder of its own
+/// in the music folder of `home`, or in `home` when it has none, or beside the settings
+/// file without a home folder.
+pub fn recordings_folder(home: Option<&Path>, settings: Option<&Path>) -> Option<PathBuf> {
+    match home {
+        Some(home) => {
+            let music = home.join("Music");
+            let parent = if music.is_dir() {
+                music
+            } else {
+                home.to_path_buf()
+            };
+            Some(parent.join("Platter DJ Recordings"))
+        }
+        None => settings.map(|folder| folder.join("Recordings")),
+    }
+}
+
 /// The home folder of the user, for the file selector.
 pub fn home_dir() -> Option<PathBuf> {
     let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
@@ -83,6 +103,10 @@ pub struct Settings {
     pub buffer_frames: u32,
     pub routing: Routing,
     pub crossfader_curve: CrossfaderCurve,
+    /// The model of the equaliser of every channel.
+    pub eq_model: EqModel,
+    /// The model of the filter of every channel.
+    pub filter_model: FilterModel,
     /// The keys show their tooltips.
     pub tooltips: bool,
     /// The window goes to the whole screen as Platter starts.
@@ -93,6 +117,8 @@ pub struct Settings {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// Two effect units or four: `docs/behavior/effects.md`.
+    pub effect_units: EffectUnits,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
     pub mixer_mode: MixerMode,
     /// The sync mode of the Decks page.
@@ -120,6 +146,11 @@ pub struct Settings {
     pub external_master_volume: bool,
     /// Beats of an automatic fade across the whole travel of the crossfader.
     pub fade_beats: u32,
+    /// The Limiter key and the settings of the maximiser: `docs/behavior/master.md`.
+    pub maximiser: MaximiserControls,
+    /// The effect units and the mixer effects, with every effect off:
+    /// `docs/behavior/effects.md`.
+    pub effects: EffectControls,
     /// The folder the file selector showed last.
     pub folder: Option<PathBuf>,
     /// Folders shown as roots of the file selector beside the home folder, such as a
@@ -142,11 +173,14 @@ impl Default for Settings {
             buffer_frames: 256,
             routing: Routing::default(),
             crossfader_curve: CrossfaderCurve::default(),
+            eq_model: EqModel::default(),
+            filter_model: FilterModel::default(),
             tooltips: true,
             fullscreen_at_start: false,
             tempo_range: 8,
             deck_size: DeckSize::Full,
-            deck_layout: DeckLayout::Two,
+            deck_layout: DeckLayout::Four,
+            effect_units: EffectUnits::Two,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
             key_notation: KeyNotation::default(),
@@ -162,6 +196,8 @@ impl Default for Settings {
             external_eq_gain: false,
             external_master_volume: false,
             fade_beats: 8,
+            maximiser: MaximiserControls::default(),
+            effects: EffectControls::default(),
             folder: None,
             roots: Vec::new(),
             min_playtime: DEFAULT_PLAYTIME,
@@ -185,6 +221,34 @@ impl Settings {
             u32::try_from(table?.get(name)?.as_integer()?).ok()
         };
         let flag = |table: Option<&toml::Table>, name: &str| table?.get(name)?.as_bool();
+        // A whole number is a number too: `release_ms = 250` is as good as `250.0`.
+        let decimal = |table: Option<&toml::Table>, name: &str, min: f64, max: f64| {
+            let value = table?.get(name)?;
+            let value = value
+                .as_float()
+                .or_else(|| value.as_integer().map(|whole| whole as f64))?;
+            (min..=max).contains(&value).then_some(value)
+        };
+        let mixer = table("mixer");
+        let maximiser = MaximiserControls {
+            on: flag(mixer, "limiter").unwrap_or(defaults.maximiser.on),
+            drive_db: decimal(mixer, "maximiser_drive_db", 0.0, MAX_DRIVE_DB)
+                .unwrap_or(defaults.maximiser.drive_db),
+            ceiling_db: decimal(
+                mixer,
+                "maximiser_ceiling_db",
+                MIN_CEILING_DB,
+                MAX_CEILING_DB,
+            )
+            .unwrap_or(defaults.maximiser.ceiling_db),
+            release_ms: decimal(
+                mixer,
+                "maximiser_release_ms",
+                MIN_RELEASE_MS,
+                MAX_RELEASE_MS,
+            )
+            .unwrap_or(defaults.maximiser.release_ms),
+        };
         let audio = table("audio");
         let routing = audio
             .and_then(|audio| audio.get("routing"))
@@ -215,6 +279,13 @@ impl Settings {
                         .find(|layout| layout.name() == name)
                 })
                 .unwrap_or(defaults.deck_layout),
+            effect_units: text(table("effects"), "shown")
+                .and_then(|name| {
+                    EffectUnits::ALL
+                        .into_iter()
+                        .find(|units| units.name() == name)
+                })
+                .unwrap_or(defaults.effect_units),
             device: text(audio, "device").filter(|name| !name.is_empty()),
             sample_rate: number(audio, "sample_rate")
                 .filter(|rate| SAMPLE_RATES.contains(rate))
@@ -235,6 +306,12 @@ impl Settings {
             crossfader_curve: text(table("mixer"), "crossfader_curve")
                 .and_then(|name| CrossfaderCurve::parse(&name).ok())
                 .unwrap_or(defaults.crossfader_curve),
+            eq_model: text(table("mixer"), "eq_model")
+                .and_then(|name| EqModel::parse(&name).ok())
+                .unwrap_or(defaults.eq_model),
+            filter_model: text(table("mixer"), "filter_model")
+                .and_then(|name| FilterModel::parse(&name).ok())
+                .unwrap_or(defaults.filter_model),
             mixer_mode: text(table("mixer"), "mode")
                 .and_then(|name| MixerMode::ALL.into_iter().find(|mode| mode.name() == name))
                 .unwrap_or(defaults.mixer_mode),
@@ -299,9 +376,11 @@ impl Settings {
             fade_beats: number(table("mixer"), "fade_beats")
                 .filter(|beats| (MIN_FADE_BEATS..=MAX_FADE_BEATS).contains(&f64::from(*beats)))
                 .unwrap_or(defaults.fade_beats),
+            maximiser,
             min_playtime: number(table("browser"), "min_playtime")
                 .filter(|seconds| (MIN_PLAYTIME..=MAX_PLAYTIME).contains(seconds))
                 .unwrap_or(defaults.min_playtime),
+            effects: crate::effects_config::read(table("effects")),
             folder: text(table("browser"), "folder")
                 .filter(|folder| !folder.is_empty())
                 .map(PathBuf::from),
@@ -365,6 +444,14 @@ impl Settings {
             toml::Value::String(self.crossfader_curve.name().to_owned()),
         );
         mixer.insert(
+            "eq_model".to_owned(),
+            toml::Value::String(self.eq_model.name().to_owned()),
+        );
+        mixer.insert(
+            "filter_model".to_owned(),
+            toml::Value::String(self.filter_model.name().to_owned()),
+        );
+        mixer.insert(
             "mode".to_owned(),
             toml::Value::String(self.mixer_mode.name().to_owned()),
         );
@@ -376,6 +463,17 @@ impl Settings {
             mixer.insert(name.to_owned(), toml::Value::Boolean(on));
         }
         mixer.insert("fade_beats".to_owned(), integer(self.fade_beats));
+        mixer.insert(
+            "limiter".to_owned(),
+            toml::Value::Boolean(self.maximiser.on),
+        );
+        for (name, value) in [
+            ("maximiser_drive_db", self.maximiser.drive_db),
+            ("maximiser_ceiling_db", self.maximiser.ceiling_db),
+            ("maximiser_release_ms", self.maximiser.release_ms),
+        ] {
+            mixer.insert(name.to_owned(), toml::Value::Float(value));
+        }
         let mut decks = toml::Table::new();
         decks.insert(
             "sync_mode".to_owned(),
@@ -470,6 +568,12 @@ impl Settings {
             toml::Value::String(self.tag_writing.name().to_owned()),
         );
         root.insert("browser".to_owned(), toml::Value::Table(browser));
+        let mut effects = crate::effects_config::write(&self.effects);
+        effects.insert(
+            "shown".to_owned(),
+            toml::Value::String(self.effect_units.name().to_owned()),
+        );
+        root.insert("effects".to_owned(), toml::Value::Table(effects));
         let midi: Vec<toml::Value> = self
             .midi
             .iter()
@@ -519,9 +623,9 @@ mod tests {
     use std::path::PathBuf;
 
     use platter_audio_io::Routing;
-    use platter_engine::{CrossfaderCurve, MixerMode, SyncMode, TempoRange};
+    use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
-    use platter_ui_egui::command::{DeckLayout, DeckSize, ListColumn};
+    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn};
     use platter_ui_egui::i18n::Language;
     use platter_ui_egui::keys::KeyNotation;
 
@@ -539,11 +643,14 @@ mod tests {
                 headphones: [0, 1],
             },
             crossfader_curve: CrossfaderCurve::Sharp,
+            eq_model: EqModel::Steep,
+            filter_model: FilterModel::Ladder,
             tooltips: false,
             fullscreen_at_start: true,
             tempo_range: 16,
             deck_size: DeckSize::Compact,
             deck_layout: DeckLayout::Four,
+            effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
             key_notation: KeyNotation::Sharps,
@@ -559,6 +666,13 @@ mod tests {
             external_eq_gain: true,
             external_master_volume: true,
             fade_beats: 32,
+            maximiser: platter_engine::MaximiserControls {
+                on: true,
+                drive_db: 4.5,
+                ceiling_db: -0.3,
+                release_ms: 250.0,
+            },
+            effects: platter_engine::EffectControls::default(),
             min_playtime: 45,
             folder: Some(PathBuf::from("music").join("sets")),
             roots: vec![PathBuf::from("records"), PathBuf::from("more records")],
@@ -585,7 +699,8 @@ mod tests {
         let source = "language = \"fr\"\n[audio]\ndevice = \"\"\nsample_rate = 12345\n\
                       buffer_frames = 512\n[audio.routing]\nmaster_left = 900\nmaster_right = 5\n\
                       [mixer]\ncrossfader_curve = 7\nmode = \"hardware\"\nautogain = \"no\"\n\
-                      external_eq_gain = true\nfade_beats = 65\n";
+                      external_eq_gain = true\nfade_beats = 65\neq_model = \"loud\"\n\
+                      filter_model = 3\n";
         let settings = Settings::parse(source);
         let defaults = Settings::default();
         assert_eq!(settings.language, defaults.language);
@@ -596,10 +711,42 @@ mod tests {
         assert_eq!(settings.routing.master, [0, 5]);
         assert_eq!(settings.routing.headphones, [2, 3]);
         assert_eq!(settings.crossfader_curve, defaults.crossfader_curve);
+        assert_eq!(settings.eq_model, defaults.eq_model);
+        assert_eq!(settings.filter_model, defaults.filter_model);
         assert_eq!(settings.mixer_mode, defaults.mixer_mode);
         assert_eq!(settings.autogain, defaults.autogain);
         assert!(settings.external_eq_gain);
         assert_eq!(settings.fade_beats, defaults.fade_beats);
+    }
+
+    /// `docs/behavior/master.md`: the maximiser is kept under `[mixer]`; a value out of its
+    /// range, or of another kind, is its default, and the others are kept.
+    #[test]
+    fn the_maximiser_is_kept_and_a_value_it_cannot_take_is_its_default() {
+        let written = Settings::default().to_toml();
+        assert!(written.contains("limiter = false"), "{written}");
+        assert!(written.contains("maximiser_ceiling_db = -1.0"), "{written}");
+        let defaults = platter_engine::MaximiserControls::default();
+        let read = Settings::parse(
+            "[mixer]\nlimiter = true\nmaximiser_drive_db = 13.0\n\
+             maximiser_ceiling_db = \"-3\"\nmaximiser_release_ms = 250\n",
+        )
+        .maximiser;
+        assert_eq!(
+            read,
+            platter_engine::MaximiserControls {
+                on: true,
+                drive_db: defaults.drive_db,
+                ceiling_db: defaults.ceiling_db,
+                release_ms: 250.0,
+            }
+        );
+        let read = Settings::parse(
+            "[mixer]\nlimiter = 1\nmaximiser_drive_db = -1\nmaximiser_ceiling_db = 0.5\n\
+             maximiser_release_ms = nan\n",
+        )
+        .maximiser;
+        assert_eq!(read, defaults);
     }
 
     #[test]
@@ -659,7 +806,7 @@ min_playtime = {written}
         );
         assert_eq!(Settings::default().columns, ListColumn::SHOWN_AT_FIRST);
         let unknown = Settings::parse("[decks]\nlayout = \"six\"\n");
-        assert_eq!(unknown.deck_layout, DeckLayout::Two);
+        assert_eq!(unknown.deck_layout, DeckLayout::Four);
         let unknown = Settings::parse("[decks]\ntempo_range = 10\n");
         assert_eq!(unknown.tempo_range, 8);
         let written = Settings::parse("[decks]\nbpm_min = 85\nbpm_max = 175\n");
@@ -727,5 +874,30 @@ midi = \"Pad\"
         assert_eq!(Settings::load(&path), settings);
         assert!(!path.with_extension("toml.tmp").exists());
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// `docs/behavior/recording.md`, *Files*.
+    #[test]
+    fn recordings_go_to_the_music_folder_then_the_home_folder_then_beside_the_settings() {
+        let home =
+            std::env::temp_dir().join(format!("platter-recordings-test-{}", std::process::id()));
+        let settings = home.join("settings");
+        std::fs::create_dir_all(&home).unwrap();
+        let named = "Platter DJ Recordings";
+        assert_eq!(
+            super::recordings_folder(Some(&home), Some(&settings)),
+            Some(home.join(named))
+        );
+        std::fs::create_dir_all(home.join("Music")).unwrap();
+        assert_eq!(
+            super::recordings_folder(Some(&home), None),
+            Some(home.join("Music").join(named))
+        );
+        assert_eq!(
+            super::recordings_folder(None, Some(&settings)),
+            Some(settings.join("Recordings"))
+        );
+        assert_eq!(super::recordings_folder(None, None), None);
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }

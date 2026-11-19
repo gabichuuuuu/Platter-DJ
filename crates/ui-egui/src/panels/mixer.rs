@@ -8,10 +8,12 @@
 use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Role, Sense, Vec2, WidgetInfo};
 use platter_core::DeckId;
 use platter_dsp::eq::band_gain;
-use platter_engine::{Band, Command, CrossfaderDirection, CrossfaderSide, FADER_UNITY, MixerMode};
+use platter_engine::{
+    Band, Command, CrossfaderDirection, CrossfaderSide, EffectKind, FADER_UNITY, MixerMode,
+};
 
-use crate::command::DeckLayout;
 use crate::command::{Action, AppCommand, MeterId};
+use crate::command::{DeckLayout, EffectUnits};
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::icons::Glyph;
@@ -20,6 +22,7 @@ use crate::paint;
 use crate::panels::waveform::deck_color;
 use crate::shell::ViewState;
 use crate::tokens::{TextStyle, Tokens};
+use crate::widgets::choice::{self, Choice, SelectSpec};
 use crate::widgets::key::{self, Face, KeySpec, Press};
 use crate::widgets::meter::{self, MeterSpec, scale_position};
 use crate::widgets::value::{
@@ -238,6 +241,8 @@ struct ChannelLayout {
     pre_listen: Rect,
     /// The key that restores the autogain value, beside the gain knob, when the channel has one.
     auto: Option<Rect>,
+    /// The mixer effect knob and the keys of effect units 1 and 2, when the channel has them.
+    effects: Option<ChannelEffects>,
     key: Vec2,
     eq: [Vec2; 3],
     /// Where each kill key sits from the top left corner of its knob.
@@ -265,6 +270,16 @@ impl ChannelLayout {
             knob,
             pre_listen: Rect::from_min_size(egui::pos2(108.0, 143.0), egui::vec2(54.0, 22.0)),
             auto: None,
+            // The assign keys side by side, in the row of the crossfader assign keys. The
+            // channel has no room for the mixer effect knob.
+            effects: Some(ChannelEffects {
+                knob: None,
+                keys: egui::pos2(58.0, 294.0),
+                keys_step: egui::vec2(23.0, 0.0),
+                // With four units, keys 3 and 4 go over keys 1 and 2.
+                four: [(58.0, 294.0), (81.0, 294.0), (58.0, 273.0), (81.0, 273.0)]
+                    .map(|(x, y)| Rect::from_min_size(egui::pos2(x, y), ASSIGN_KEY)),
+            }),
             key: egui::vec2(24.0, 272.0),
             eq: EQ_TOPS.map(|top| egui::vec2(16.0, top)),
             kill: egui::vec2(47.0, 19.0),
@@ -297,6 +312,14 @@ impl ChannelLayout {
                 egui::pos2(40.0, 37.0),
                 egui::vec2(31.0, 18.0),
             )),
+            effects: Some(ChannelEffects {
+                knob: Some(egui::pos2(12.0, 277.0)),
+                keys: egui::pos2(49.0, 280.0),
+                keys_step: egui::vec2(0.0, 21.0),
+                // With four units, two narrower columns: 1 and 2 over 3 and 4.
+                four: [(47.0, 280.0), (62.0, 280.0), (47.0, 301.0), (62.0, 301.0)]
+                    .map(|(x, y)| Rect::from_min_size(egui::pos2(x, y), NARROW_ASSIGN_KEY)),
+            }),
             key: egui::vec2(8.0, 327.0),
             eq: [73.0, 121.0, 169.0].map(|top| egui::vec2(2.0, top)),
             kill: egui::vec2(34.0, 14.0),
@@ -313,6 +336,161 @@ impl ChannelLayout {
     }
 }
 
+/// Where the effect controls of a channel sit, from its top left corner.
+struct ChannelEffects {
+    /// The top left corner of the 30 point mixer effect knob, when the channel has one; its
+    /// name goes under it.
+    knob: Option<Pos2>,
+    /// The top left corner of the key of unit 1, and the step to the key of unit 2.
+    keys: Pos2,
+    keys_step: Vec2,
+    /// The keys of units 1 to 4 when the preferences show four units.
+    four: [Rect; 4],
+}
+
+const MIXER_EFFECT_KNOB: f32 = 30.0;
+const ASSIGN_KEY: Vec2 = egui::vec2(20.0, 18.0);
+const NARROW_ASSIGN_KEY: Vec2 = egui::vec2(14.0, 18.0);
+
+/// The mixer effect knob with the name of its effect under it, which opens the list of the
+/// mixer effects, and the keys that send the channel to effect units 1 and 2. In external
+/// mixer mode the knob and its name collapse with the channel, as the filter does; the keys
+/// stay, since a unit in insert routing still acts on the deck before its output.
+fn channel_effects(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelEffects,
+    deck: DeckId,
+    view: &View<'_>,
+) {
+    if let Some(knob) = layout
+        .knob
+        .filter(|_| view.engine.mixer.mode == MixerMode::Internal)
+    {
+        mixer_effect(cx, origin + knob.to_vec2(), deck, view);
+    }
+    assign_keys(cx, origin, layout, deck, view);
+}
+
+fn mixer_effect(cx: &mut Cx<'_>, at: Pos2, deck: DeckId, view: &View<'_>) {
+    let texts = cx.texts;
+    let letter = deck.letter().to_string();
+    let index = deck.index();
+    let mixer = view.engine.effects.mixer[index];
+    let effect = texts.get(crate::panels::effects::effect_key(Some(mixer.effect)));
+    let name = texts.format(
+        "effects.mixer_name",
+        &[("effect", effect), ("deck", &letter)],
+    );
+    let knob_rect = Rect::from_min_size(at, egui::vec2(MIXER_EFFECT_KNOB, MIXER_EFFECT_KNOB));
+    value::knob(
+        cx,
+        knob_rect,
+        id(("mixer-effect", index)),
+        KnobSpec {
+            value: ValueSpec {
+                name: &name,
+                position: mixer.amount,
+                default: 0.0,
+                steps: Steps::PERCENT,
+                enabled: true,
+            },
+            size: MIXER_EFFECT_KNOB,
+            centre_detent: false,
+            hide_arc: false,
+        },
+        |position| Command::MixerEffectSet { deck, position }.into(),
+    );
+    // The name of the effect, a key that looks like a label, opens the list.
+    let labels: Vec<&str> = EffectKind::MIXER
+        .iter()
+        .map(|kind| texts.get(crate::panels::effects::effect_key(Some(*kind))))
+        .collect();
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let select_name = texts.format("effects.mixer_select_name", &[("deck", &letter)]);
+    let label_rect = Rect::from_min_size(
+        egui::pos2(knob_rect.center().x - 20.0, knob_rect.bottom() + 1.0),
+        egui::vec2(40.0, 14.0),
+    );
+    choice::label_select(
+        cx,
+        label_rect,
+        id(("mixer-effect-select", index)),
+        SelectSpec {
+            name: &select_name,
+            choices: &choices,
+            current: EffectKind::MIXER
+                .iter()
+                .position(|kind| *kind == mixer.effect),
+            enabled: true,
+        },
+        |choice| {
+            let effect = EffectKind::MIXER
+                .get(choice)
+                .copied()
+                .unwrap_or(EffectKind::Reverb);
+            Command::MixerEffectSelect { deck, effect }.into()
+        },
+    );
+}
+
+fn assign_keys(
+    cx: &mut Cx<'_>,
+    origin: Pos2,
+    layout: &ChannelEffects,
+    deck: DeckId,
+    view: &View<'_>,
+) {
+    let texts = cx.texts;
+    let tokens = &cx.theme.tokens;
+    let letter = deck.letter().to_string();
+    let index = deck.index();
+    let four = view.settings.effect_units == EffectUnits::Four;
+    for (row, unit) in view
+        .settings
+        .effect_units
+        .units()
+        .iter()
+        .copied()
+        .enumerate()
+    {
+        let number = unit.number().to_string();
+        let name = texts.format(
+            "effects.assign_name",
+            &[("deck", &letter), ("unit", &number)],
+        );
+        let mut spec = KeySpec::text(&number);
+        spec.name = &name;
+        spec.text = Some(tokens.text.label);
+        spec.lit = view
+            .engine
+            .effects
+            .is_assigned(deck, unit)
+            .then_some(tokens.color.text_primary);
+        let rect = if four {
+            layout.four[row].translate(origin.to_vec2())
+        } else {
+            Rect::from_min_size(
+                origin + layout.keys.to_vec2() + layout.keys_step * row as f32,
+                ASSIGN_KEY,
+            )
+        };
+        key::key(
+            cx,
+            rect,
+            id(("mixer-fx-assign", index, row)),
+            spec,
+            Press::Click(Command::MixerFxAssignToggle { deck, unit }.into()),
+        );
+    }
+}
+
 fn channel(
     cx: &mut Cx<'_>,
     origin: Pos2,
@@ -320,6 +498,9 @@ fn channel(
     deck: DeckId,
     (view, state): (&View<'_>, &ViewState),
 ) {
+    if let Some(effects) = &layout.effects {
+        channel_effects(cx, origin, effects, deck, view);
+    }
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -671,6 +852,8 @@ fn channel(
 struct MasterLayout {
     meter: Rect,
     level: Vec2,
+    /// The Limiter key, the middle of its top edge, where the design system draws one.
+    limiter: Option<Vec2>,
     /// The line between the level and the headphones, its top.
     divider: f32,
     phones: f32,
@@ -686,6 +869,7 @@ impl MasterLayout {
     const TWO: Self = Self {
         meter: Rect::from_min_max(egui::pos2(361.0, 38.0), egui::pos2(373.0, 156.0)),
         level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0, 162.0),
+        limiter: None,
         divider: 221.0,
         phones: 230.0,
         mix: egui::vec2(330.0, 250.0),
@@ -698,6 +882,8 @@ impl MasterLayout {
     const FOUR: Self = Self {
         meter: Rect::from_min_max(egui::pos2(362.0, 32.0), egui::pos2(374.0, 142.0)),
         level: egui::vec2(MASTER_CENTRE - MASTER_KNOB / 2.0 + 2.0, 150.0),
+        // 8 points under the name of the level knob, which ends at 201.
+        limiter: Some(egui::vec2(MASTER_CENTRE + 2.0, 209.0)),
         divider: 245.0,
         phones: 256.0,
         mix: egui::vec2(340.0, 278.0),
@@ -799,6 +985,33 @@ fn master(
             .into()
         },
     );
+
+    if let Some(top) = layout.limiter {
+        // Lit while the maximiser is in the path: `docs/behavior/master.md`.
+        let label = texts.get("mixer.limiter");
+        let text = paint::text_width(cx.painter(), theme, label, tokens.text.label);
+        let width = (text + 2.0 * (tokens.space.s2 + 1.0)).ceil().max(28.0);
+        let rect = Rect::from_min_size(
+            panel.min + top - egui::vec2(width / 2.0, 0.0),
+            egui::vec2(width, 18.0),
+        );
+        let spec = KeySpec {
+            face: Face::Text(label),
+            name: label,
+            lit: mixer.maximiser.on.then_some(color.text_primary),
+            held: None,
+            enabled: true,
+            keeps_led: false,
+            text: Some(tokens.text.label),
+        };
+        key::key(
+            cx,
+            rect,
+            id("mixer-limiter"),
+            spec,
+            Press::Click(Command::MasterLimiterToggle.into()),
+        );
+    }
 
     let painter = cx.painter();
     painter.hline(
@@ -914,7 +1127,7 @@ struct CrossfaderRow {
 
 /// The channels of the four-deck layout, left to right: `docs/design/DESIGN.md`, *Four-deck
 /// layout (M4)*.
-const FOUR_ORDER: [DeckId; DeckId::COUNT] = [DeckId::C, DeckId::A, DeckId::B, DeckId::D];
+const FOUR_ORDER: [DeckId; DeckId::COUNT] = DeckId::ALL;
 /// Distance between the left edges of two channels of the four-deck layout.
 const FOUR_STEP: f32 = 79.0;
 const FOUR_PADDING: f32 = 10.0;

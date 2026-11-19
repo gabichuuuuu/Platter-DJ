@@ -99,13 +99,45 @@ impl Stage {
             .collect()
     }
 
+    /// Scrolls the page, which is taller than its room, and lets it settle.
+    fn scroll_to(&mut self, scroll: f32) {
+        self.shell.state.settings.page_scroll = scroll;
+        self.frame(Vec::new());
+        self.frame(Vec::new());
+    }
+
+    /// How many controls emit `command` at the top of the page or at its end, wherever they
+    /// show.
+    fn count_anywhere(&mut self, command: &str) -> usize {
+        let mut most = 0;
+        for scroll in [0.0, f32::MAX] {
+            self.scroll_to(scroll);
+            let count = self
+                .mixer_controls()
+                .iter()
+                .filter(|control| control.command == command && control.enabled)
+                .count();
+            most = most.max(count);
+        }
+        self.scroll_to(0.0);
+        most
+    }
+
     fn click_control(&mut self, command: &str, nth: usize) -> Vec<Action> {
-        let control = self
-            .mixer_controls()
-            .into_iter()
-            .filter(|control| control.command == command)
-            .nth(nth)
-            .unwrap();
+        let find = |stage: &Self| {
+            stage
+                .mixer_controls()
+                .into_iter()
+                .filter(|control| control.command == command)
+                .nth(nth)
+        };
+        let control = match find(self) {
+            Some(control) => control,
+            None => {
+                self.scroll_to(f32::MAX);
+                find(self).unwrap()
+            }
+        };
         self.click(control.rect.center())
     }
 }
@@ -122,14 +154,8 @@ fn engine(actions: Vec<Action>) -> Vec<Command> {
 
 #[test]
 fn the_page_has_a_control_for_each_mixer_setting() {
-    let stage = Stage::new(sample::playing(), Language::English);
-    let count = |command: &str| {
-        stage
-            .mixer_controls()
-            .iter()
-            .filter(|control| control.command == command && control.enabled)
-            .count()
-    };
+    let mut stage = Stage::new(sample::playing(), Language::English);
+    let mut count = |command: &str| stage.count_anywhere(command);
     assert_eq!(count("mixer.mode.set"), 2);
     assert_eq!(count("mixer.autogain.toggle"), 1);
     assert_eq!(count("mixer.external.eq_gain.toggle"), 1);

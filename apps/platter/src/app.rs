@@ -15,11 +15,12 @@ use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::command::SPECS;
 use platter_engine::{
-    Command, Engine, EngineError, Event, PlatterAnalyser, Processor, Recall, TempoRange,
+    Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
+    RecordingNames, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_ui_egui::collection::Collection;
-use platter_ui_egui::command::{Action, AppCommand};
+use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
@@ -119,6 +120,22 @@ fn recall_from(file: PathBuf) -> Recall {
     })
 }
 
+/// Names each recording in `folder` by the moment it starts, in UTC, as the backups of the
+/// collection are: `mix-20261118-214105` (`docs/behavior/recording.md`, *Files*).
+fn recording_names(folder: PathBuf) -> RecordingNames {
+    Arc::new(move || {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+            });
+        let (year, month, day, hour, minute, second) = Timestamp(now).utc();
+        folder.join(format!(
+            "mix-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}"
+        ))
+    })
+}
+
 fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
     let mut roots = Vec::new();
     if let Some(home) = config::home_dir() {
@@ -160,6 +177,8 @@ pub struct PlatterApp {
     notices: [Option<DeckNotice>; DeckId::COUNT],
     /// The window covers the whole screen, as the window last said.
     fullscreen: bool,
+    /// The unit each panel of the effect row shows, with four units shown.
+    fx_panels: [FxUnit; 2],
     /// Full screen asked for by a command, sent to the window in the next frame.
     fullscreen_wanted: Option<bool>,
     /// The MIDI controllers of the settings file that could be opened.
@@ -253,6 +272,10 @@ impl PlatterApp {
         if let Some(recall) = recall {
             engine.set_recall(recall);
         }
+        let home = config::home_dir();
+        if let Some(recordings) = config::recordings_folder(home.as_deref(), folder.as_deref()) {
+            engine.set_recording_names(recording_names(recordings));
+        }
         let settings_min_playtime = settings.min_playtime;
         let mut app = Self {
             folder,
@@ -269,6 +292,7 @@ impl PlatterApp {
             browser,
             notices: [None; DeckId::COUNT],
             fullscreen: false,
+            fx_panels: [FxUnit::ALL[0], FxUnit::ALL[1]],
             fullscreen_wanted: None,
             controllers: Vec::new(),
             manager: Manager::default(),
@@ -303,12 +327,33 @@ impl PlatterApp {
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
         app.apply_mixer_settings();
+        let effects = app.settings.effects.clone();
+        if let Err(error) = app.engine.restore_effects(&effects) {
+            app.log(
+                Level::Warning,
+                &format!("the effects of the settings file: {error}"),
+            );
+        }
         app
     }
 
     fn log(&self, level: Level, message: &str) {
         if let Some(logger) = &self.logger {
             logger.line(level, message);
+        }
+    }
+
+    /// What the mix recorder reported: `docs/behavior/recording.md`.
+    fn log_recording(&self, event: &Event) {
+        match event {
+            Event::Recorded { path, frames } => self.log(
+                Level::Info,
+                &format!("recording: {frames} frames in {}", path.display()),
+            ),
+            Event::RecordingFailed { message } => {
+                self.log(Level::Warning, &format!("recording: {message}"));
+            }
+            _ => {}
         }
     }
 
@@ -877,8 +922,23 @@ impl PlatterApp {
             Command::MixerCrossfaderFadeBeatsSet {
                 beats: f64::from(settings.fade_beats),
             },
+            Command::MixerEqModelSet {
+                model: settings.eq_model,
+            },
+            Command::MixerFilterModelSet {
+                model: settings.filter_model,
+            },
             Command::GlobalSyncModeSet {
                 mode: settings.sync_mode,
+            },
+            Command::MasterMaximiserDriveSet {
+                db: settings.maximiser.drive_db,
+            },
+            Command::MasterMaximiserCeilingSet {
+                db: settings.maximiser.ceiling_db,
+            },
+            Command::MasterMaximiserReleaseSet {
+                ms: settings.maximiser.release_ms,
             },
         ];
         commands.extend(DeckId::ALL.map(|deck| Command::DeckTempoRangeSet {
@@ -906,6 +966,11 @@ impl PlatterApp {
                 settings.load_marker,
                 Command::GlobalLoadMarkerToggle,
             ),
+            (
+                mixer.maximiser.on,
+                settings.maximiser.on,
+                Command::MasterLimiterToggle,
+            ),
         ] {
             if now != wanted {
                 commands.push(toggle);
@@ -924,11 +989,14 @@ impl PlatterApp {
         let kept = Settings {
             sync_mode: snapshot.clock.sync_mode,
             mixer_mode: mixer.mode,
+            eq_model: mixer.eq_model,
+            filter_model: mixer.filter_model,
             autogain: mixer.autogain,
             external_eq_gain: mixer.external_eq_gain,
             external_master_volume: mixer.external_master_volume,
             // A length set by a command between whole beats is saved to the nearest one.
             fade_beats: mixer.fade_beats.round() as u32,
+            maximiser: mixer.maximiser,
             load_marker: snapshot.load_marker,
             ..self.settings.clone()
         };
@@ -971,12 +1039,36 @@ impl PlatterApp {
                 | Command::MixerExternalEqGainToggle
                 | Command::MixerExternalMasterVolumeToggle
                 | Command::MixerCrossfaderFadeBeatsSet { .. }
+                | Command::MixerEqModelSet { .. }
+                | Command::MixerFilterModelSet { .. }
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
+                | Command::MasterLimiterToggle
+                | Command::MasterMaximiserDriveSet { .. }
+                | Command::MasterMaximiserCeilingSet { .. }
+                | Command::MasterMaximiserReleaseSet { .. }
+        );
+        let id = command.id();
+        let effect = id.starts_with("fx.")
+            || id.starts_with("mixer.fx_assign")
+            || id.starts_with("mixer.effect");
+        // A knob is saved at exit rather than at every step of a drag.
+        let continuous = matches!(
+            id,
+            "fx.unit.dry_wet.set"
+                | "fx.slot.amount.set"
+                | "fx.single.knob.set"
+                | "mixer.effect.set"
         );
         self.engine.dispatch(command)?;
         if mixer_setting {
             self.keep_mixer_settings();
+        }
+        if effect {
+            self.settings.effects = crate::effects_config::kept(&self.engine.snapshot().effects);
+            if !continuous {
+                self.save_settings();
+            }
         }
         Ok(())
     }
@@ -1061,6 +1153,16 @@ impl PlatterApp {
             AppCommand::DeckLayoutSet { layout } => {
                 self.settings.deck_layout = layout;
                 self.save_settings();
+            }
+            AppCommand::EffectUnitsSet { units } => {
+                self.settings.effect_units = units;
+                self.fx_panels = [FxUnit::ALL[0], FxUnit::ALL[1]];
+                self.save_settings();
+            }
+            AppCommand::FxPanelShow { unit } => {
+                if self.settings.effect_units == EffectUnits::Four {
+                    self.fx_panels[fx_panel_of(unit)] = unit;
+                }
             }
             AppCommand::TempoRangeSet { percent } => {
                 if TEMPO_RANGE_PERCENTS.contains(&percent) {
@@ -1177,6 +1279,7 @@ impl PlatterApp {
     fn restore_defaults(&mut self) {
         // Where the file selector stands, its roots and the MIDI controllers are not settings
         // of these pages.
+        self.fx_panels = [FxUnit::ALL[0], FxUnit::ALL[1]];
         self.settings = Settings {
             folder: self.settings.folder.clone(),
             roots: self.settings.roots.clone(),
@@ -1308,6 +1411,9 @@ impl PlatterApp {
                 Event::PreviewFailed { message } => {
                     self.log(Level::Warning, &format!("preview: {message}"));
                 }
+                event @ (Event::Recorded { .. } | Event::RecordingFailed { .. }) => {
+                    self.log_recording(&event);
+                }
             }
         }
         self.browser.poll();
@@ -1396,6 +1502,11 @@ impl PlatterApp {
             tempo_range: self.settings.tempo_range,
             deck_size: self.settings.deck_size,
             deck_layout: self.settings.deck_layout,
+            effect_units: self.settings.effect_units,
+            fx_panels: match self.settings.effect_units {
+                EffectUnits::Two => [FxUnit::ALL[0], FxUnit::ALL[1]],
+                EffectUnits::Four => self.fx_panels,
+            },
             settings_file: SETTINGS_FILE.to_owned(),
             keymap_file: KEYMAP_FILE.to_owned(),
             library_file: LIBRARY_FILE.to_owned(),
@@ -1418,7 +1529,13 @@ impl PlatterApp {
 
 impl eframe::App for PlatterApp {
     fn on_exit(&mut self) {
+        // The output still runs, so the processor marks the end and the file is finished.
+        for event in self.engine.finish_recording(EXIT_WAIT) {
+            self.log_recording(&event);
+        }
         self.background.stop.store(true, Ordering::Relaxed);
+        // The knobs of the effects are saved here, not at every step of a drag.
+        self.save_settings();
         for (path, kept) in self.keeping.flush() {
             self.browser.keep(path, kept);
         }

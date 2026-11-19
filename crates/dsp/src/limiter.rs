@@ -33,7 +33,10 @@ impl Limiter {
     pub fn process(&mut self, frame: Frame) -> Frame {
         let frame = frame.map(|sample| if sample.is_finite() { sample } else { 0.0 });
         let peak = frame[0].abs().max(frame[1].abs());
-        self.gain += (1.0 - self.gain) * self.recovery;
+        // Near one the step falls under the resolution of `f32` and the gain would stop short
+        // of it for good; it is then one.
+        let next = self.gain + (1.0 - self.gain) * self.recovery;
+        self.gain = if next == self.gain { 1.0 } else { next };
         if peak * self.gain > CEILING {
             self.gain = CEILING / peak;
         }
@@ -88,6 +91,19 @@ mod tests {
             limiter.process([0.1, 0.1]);
         }
         assert!(limiter.gain() > 0.999);
+    }
+
+    /// Once the loud passage is over the gain comes back to exactly one, so a quiet mix passes
+    /// untouched again; the step towards one must not vanish in the rounding of `f32`.
+    #[test]
+    fn the_gain_comes_back_to_exactly_one() {
+        let mut limiter = Limiter::new(SampleRate::new(RATE).unwrap());
+        limiter.process([8.0, 8.0]);
+        for _ in 0..20 * RATE {
+            limiter.process([0.1, 0.1]);
+        }
+        assert_eq!(limiter.gain(), 1.0);
+        assert_eq!(limiter.process([0.25, -0.5]), [0.25, -0.5]);
     }
 
     #[test]

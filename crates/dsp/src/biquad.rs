@@ -4,7 +4,7 @@
 //! (<https://www.w3.org/TR/audio-eq-cookbook/>). The section runs in transposed direct
 //! form II.
 
-use std::f64::consts::{FRAC_1_SQRT_2, TAU};
+use std::f64::consts::{FRAC_1_SQRT_2, PI, TAU};
 
 use platter_core::SampleRate;
 
@@ -37,6 +37,31 @@ impl Coefficients {
         Self::normalised([-b1 / 2.0, b1, -b1 / 2.0], cos, alpha)
     }
 
+    /// A first-order low-pass: 6 dB per octave. With [`Self::first_order_high_pass`] at
+    /// the same corner it adds up to the input exactly. Bilinear transform with the corner
+    /// prewarped.
+    pub fn first_order_low_pass(rate: SampleRate, hz: f64) -> Self {
+        let k = prewarped(rate, hz);
+        let a0 = 1.0 + k;
+        Self::first_order([k / a0, k / a0], (k - 1.0) / a0)
+    }
+
+    pub fn first_order_high_pass(rate: SampleRate, hz: f64) -> Self {
+        let k = prewarped(rate, hz);
+        let a0 = 1.0 + k;
+        Self::first_order([1.0 / a0, -1.0 / a0], (k - 1.0) / a0)
+    }
+
+    fn first_order(b: [f64; 2], a1: f64) -> Self {
+        Self {
+            b0: b[0] as f32,
+            b1: b[1] as f32,
+            b2: 0.0,
+            a1: a1 as f32,
+            a2: 0.0,
+        }
+    }
+
     fn normalised(b: [f64; 3], cos: f64, alpha: f64) -> Self {
         let a0 = 1.0 + alpha;
         Self {
@@ -60,6 +85,12 @@ fn prototype(rate: SampleRate, hz: f64, q: f64) -> (f64, f64) {
     };
     let omega = TAU * hz.clamp(10.0, 0.45 * rate.as_f64()) / rate.as_f64();
     (omega.cos(), omega.sin() / (2.0 * q))
+}
+
+/// `tan(pi f / fs)` for a corner kept inside the band where a section is stable.
+fn prewarped(rate: SampleRate, hz: f64) -> f64 {
+    let hz = if hz.is_finite() { hz } else { 1_000.0 };
+    (PI * hz.clamp(10.0, 0.45 * rate.as_f64()) / rate.as_f64()).tan()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -134,6 +165,22 @@ mod tests {
         assert!(gain_db(high_pass, 10_000.0).abs() < 0.1);
         assert!((gain_db(high_pass, 1_000.0) + 3.01).abs() < 0.1);
         assert!((gain_db(high_pass, 250.0) + 24.1).abs() < 0.5);
+    }
+
+    #[test]
+    fn first_order_sections_fall_six_decibels_per_octave_and_add_up_to_the_input() {
+        let rate = SampleRate::new(RATE).unwrap();
+        let low_pass = Coefficients::first_order_low_pass(rate, 1_000.0);
+        let high_pass = Coefficients::first_order_high_pass(rate, 1_000.0);
+        assert!((gain_db(low_pass, 1_000.0) + 3.01).abs() < 0.1);
+        // Two octaves away: 12 dB down, a little more towards Nyquist where the bilinear
+        // transform compresses the axis.
+        assert!((-13.5..-11.5).contains(&gain_db(low_pass, 4_000.0)));
+        assert!((gain_db(high_pass, 250.0) + 12.3).abs() < 0.3);
+        let (mut low, mut high) = (Biquad::new(low_pass), Biquad::new(high_pass));
+        for x in sine(3_000.0, RATE, 4_800, 0.9) {
+            assert!((low.process(x) + high.process(x) - x).abs() < 1e-6);
+        }
     }
 
     #[test]

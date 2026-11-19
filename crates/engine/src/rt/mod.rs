@@ -1,8 +1,8 @@
 //! The real-time side of the engine: everything the audio callback runs.
 //!
 //! Rules of this module, from `AGENTS.md`: no allocation and no deallocation, no lock, no
-//! I/O, no system call, bounded time. It talks to the rest of the program through three
-//! lock-free queues and a block of atomics. It uses `platter-core`, `platter-dsp` and the
+//! I/O, no system call, bounded time. It talks to the rest of the program through four
+//! lock-free queues, the fourth carrying the master to the recorder, and a block of atomics. It uses `platter-core`, `platter-dsp` and the
 //! queue crate only; `cargo xtask layers` checks that.
 //!
 //! Memory is the delicate part. A track arrives inside a command and leaves through the
@@ -14,11 +14,13 @@
 
 mod clock;
 mod deck;
+mod effects;
 mod lock;
 mod looper;
 mod metronome;
 mod preview;
 mod processor;
+mod recorder;
 mod shared;
 mod strip;
 mod tick;
@@ -31,16 +33,26 @@ use platter_core::{
 };
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
-use platter_dsp::eq::Band;
+use platter_dsp::effects::Effect;
+use platter_dsp::effects::unit::{Place, UnitValues};
+use platter_dsp::eq::{Band, EqModel};
+use platter_dsp::filter::FilterModel;
 use rtrb::{Consumer, Producer, RingBuffer};
+
+pub use effects::{FxRouting, UNITS};
 
 pub use lock::Stretcher;
 pub use processor::Processor;
+pub use recorder::Recorded;
 pub use shared::{DeckShared, MasterChoice, Shared};
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
 pub const COMMAND_CAPACITY: usize = 256;
+
+/// Seconds of the master the queue of the recorder holds, so the disk may fall behind that
+/// long before a frame is dropped: `docs/behavior/recording.md`.
+pub const RECORDER_QUEUE_SECONDS: usize = 4;
 
 /// The most the key of a deck moves either way, in semitones.
 pub const MAX_KEY_SHIFT: f64 = 12.0;
@@ -243,6 +255,12 @@ pub enum RtCommand {
     CrossfaderCurve {
         curve: CrossfaderCurve,
     },
+    EqModel {
+        model: EqModel,
+    },
+    FilterModel {
+        model: FilterModel,
+    },
     CrossfaderAssign {
         deck: DeckId,
         side: CrossfaderSide,
@@ -254,6 +272,14 @@ pub enum RtCommand {
     },
     MasterGain {
         linear: f32,
+    },
+    /// The maximiser of the master: switched in or out, its drive and ceiling, linear, and
+    /// its release.
+    Maximiser {
+        on: bool,
+        drive: f32,
+        ceiling: f32,
+        release_seconds: f32,
     },
     /// Sends each deck to its own outputs instead of mixing them, and which controls of the
     /// mixer still act then.
@@ -334,8 +360,47 @@ pub enum RtCommand {
         on: bool,
     },
     /// A click on every beat of the clock, on the headphones.
+    /// The values of an effect unit, for every channel it is assigned to.
+    FxValues {
+        unit: usize,
+        values: UnitValues,
+    },
+    FxRouting {
+        unit: usize,
+        routing: FxRouting,
+    },
+    /// Puts the channel through the unit, or takes it out, with a short fade.
+    FxAssign {
+        deck: DeckId,
+        unit: usize,
+        on: bool,
+    },
+    /// Puts an effect, built on the control side, in a place of a channel's chain; `None`
+    /// empties it. Exactly one item comes back through the retired queue per command.
+    FxPlace {
+        deck: DeckId,
+        unit: usize,
+        place: Place,
+        effect: Option<Box<Effect>>,
+    },
+    /// Puts an effect behind the mixer effect knob of a channel; as [`Self::FxPlace`].
+    MixerEffectPlace {
+        deck: DeckId,
+        effect: Option<Box<Effect>>,
+    },
+    /// The mixer effect knob of a channel, 0 to 1.
+    MixerEffectAmount {
+        deck: DeckId,
+        amount: f32,
+    },
     Metronome {
         on: bool,
+    },
+    /// Starts or stops sending the master to the recorder, for the recording with this
+    /// number.
+    Record {
+        on: bool,
+        recording: u32,
     },
 }
 
@@ -447,7 +512,11 @@ pub struct LoopState {
 
 /// Audio the processor no longer uses, on its way to be freed by a normal thread.
 #[derive(Debug)]
-pub struct Retired(pub Option<DeckTrack>, pub Option<Box<TrackMemory>>);
+pub struct Retired(
+    pub Option<DeckTrack>,
+    pub Option<Box<TrackMemory>>,
+    pub Option<Box<Effect>>,
+);
 
 /// What changed in a deck that the control side keeps a copy of: each part is there when it
 /// changed since the report before.
@@ -477,15 +546,19 @@ struct Queues {
     commands: Consumer<RtCommand>,
     retired: Producer<Retired>,
     reports: Producer<DeckReport>,
+    recorded: Producer<Recorded>,
 }
 
-/// Builds a processor for `rate` and the ends the control side keeps.
-pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
+/// Builds a processor for `rate`, the ends the control side keeps and the end of the queue of
+/// the recorder, which goes to the worker of each recording in turn.
+pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor) {
     let (commands, incoming) = RingBuffer::new(COMMAND_CAPACITY);
     // Each swap retires one item and at most `COMMAND_CAPACITY` swaps are in flight, so
     // this queue cannot fill up.
     let (outgoing, retired) = RingBuffer::new(COMMAND_CAPACITY + DeckId::COUNT);
     let (outgoing_reports, reports) = RingBuffer::new(REPORT_CAPACITY);
+    let (outgoing_recorded, recorded) =
+        RingBuffer::new(rate.hz() as usize * RECORDER_QUEUE_SECONDS);
     let shared = Arc::new(Shared::default());
     let processor = Processor::new(
         rate,
@@ -493,6 +566,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
             commands: incoming,
             retired: outgoing,
             reports: outgoing_reports,
+            recorded: outgoing_recorded,
         },
         Arc::clone(&shared),
     );
@@ -503,6 +577,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Processor) {
             reports,
             shared,
         },
+        recorded,
         processor,
     )
 }

@@ -86,7 +86,10 @@ until it is done and its result is written in the note or the decision it names:
   a transposed deck, its change of shift and the untransposed bridge after a jump
   (`docs/decisions/0031-transposition.md`); the level autogain aims at
   (`docs/decisions/0029-autogain-level.md`); the step and the automatic fade of the crossfader
-  (`docs/behavior/mixer.md`). Until then the README says nobody has listened to them.
+  (`docs/behavior/mixer.md`); the maximiser limiting hard, the bass above all, and its key
+  switched while the music plays (`docs/decisions/0034-maximiser.md`); a set recorded by the mix
+  recorder, played back, and a recording through a change of device
+  (`docs/behavior/recording.md`). Until then the README says nobody has listened to them.
 - **An audio device with four outputs.** The beat tick and the metronome in the headphones
   against a real track (`docs/behavior/beatgrid.md`, `docs/behavior/sync.md`), and external
   mixer mode feeding a hardware mixer (`docs/behavior/external-mixer.md`).

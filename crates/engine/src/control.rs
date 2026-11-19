@@ -8,7 +8,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use platter_analysis::Transposed;
 use platter_core::{
@@ -17,16 +17,22 @@ use platter_core::{
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
-use platter_dsp::eq::{Band, band_gain};
+use platter_dsp::effects::unit::Place;
+use platter_dsp::effects::{Controls, DEFAULT_AMOUNT, Effect, EffectKind};
+use platter_dsp::eq::{Band, EqModel, band_gain};
+use platter_dsp::filter::FilterModel;
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
-    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CHANNEL_GAIN_DB,
-    MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS,
-    MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_SEEK_SECONDS, MIN_FADE_BEATS, MixerMode, MoveMode, MoveSize,
-    SizeStep, SyncMode,
+    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CEILING_DB,
+    MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT,
+    MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_RELEASE_MS, MAX_SEEK_SECONDS,
+    MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep,
+    SyncMode,
 };
+use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
+use crate::recorder::{Recorder, RecorderSnapshot, RecordingNames};
 use crate::rt::{
     self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
     LoopPart, LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
@@ -70,6 +76,15 @@ pub enum Event {
     PreviewFailed {
         message: String,
     },
+    /// The recorder finished a file: `docs/behavior/recording.md`.
+    Recorded {
+        path: PathBuf,
+        frames: u64,
+    },
+    /// The recording stopped by itself, or lost frames, for this reason.
+    RecordingFailed {
+        message: String,
+    },
 }
 
 #[derive(Debug)]
@@ -80,6 +95,8 @@ pub enum EngineError {
     Busy,
     /// A worker thread could not be started.
     Worker(std::io::Error),
+    /// Nothing says where the recordings go.
+    NoRecordingFolder,
 }
 
 impl fmt::Display for EngineError {
@@ -88,6 +105,7 @@ impl fmt::Display for EngineError {
             Self::Value(error) => error.fmt(f),
             Self::Busy => f.write_str("the engine is busy; the command was not applied"),
             Self::Worker(error) => write!(f, "cannot start a worker thread: {error}"),
+            Self::NoRecordingFolder => f.write_str("there is no folder for the recordings"),
         }
     }
 }
@@ -150,11 +168,17 @@ impl Default for DeckControls {
 pub struct MixerControls {
     pub crossfader: f64,
     pub crossfader_curve: CrossfaderCurve,
+    /// The model of the equaliser of every channel.
+    pub eq_model: EqModel,
+    /// The model of the filter of every channel.
+    pub filter_model: FilterModel,
     /// The side of the crossfader each channel is on, deck A first.
     pub crossfader_sides: [CrossfaderSide; DeckId::COUNT],
     /// Beats of the master clock an automatic fade across the whole travel takes.
     pub fade_beats: f64,
     pub master_gain_db: f64,
+    /// The maximiser of the master, which the Limiter key switches.
+    pub maximiser: MaximiserControls,
     /// Balance in the headphones: the pre-listened decks alone at zero, the master at one.
     pub headphone_mix: f64,
     pub headphone_gain_db: f64,
@@ -175,15 +199,54 @@ impl Default for MixerControls {
         Self {
             crossfader: 0.5,
             crossfader_curve: CrossfaderCurve::default(),
+            eq_model: EqModel::default(),
+            filter_model: FilterModel::default(),
             crossfader_sides: CROSSFADER_SIDES,
             fade_beats: 8.0,
             master_gain_db: 0.0,
+            maximiser: MaximiserControls::default(),
             headphone_mix: 0.0,
             headphone_gain_db: 0.0,
             autogain: true,
             mode: MixerMode::Internal,
             external_eq_gain: false,
             external_master_volume: false,
+        }
+    }
+}
+
+/// The maximiser of the master: `docs/behavior/master.md`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MaximiserControls {
+    /// The Limiter key is lit: the master goes through the maximiser.
+    pub on: bool,
+    /// Gain before limiting, in decibels.
+    pub drive_db: f64,
+    /// Highest sample peak of the master, in decibels of full scale.
+    pub ceiling_db: f64,
+    /// Time to recover 90 % of a gain reduction, in milliseconds.
+    pub release_ms: f64,
+}
+
+impl Default for MaximiserControls {
+    fn default() -> Self {
+        Self {
+            on: false,
+            drive_db: 0.0,
+            ceiling_db: -1.0,
+            release_ms: 100.0,
+        }
+    }
+}
+
+impl MaximiserControls {
+    fn command(&self) -> RtCommand {
+        let linear = |db: f64| Gain::from_db(db).map_or(1.0, Gain::linear);
+        RtCommand::Maximiser {
+            on: self.on,
+            drive: linear(self.drive_db),
+            ceiling: linear(self.ceiling_db),
+            release_seconds: (self.release_ms / 1_000.0) as f32,
         }
     }
 }
@@ -310,11 +373,16 @@ pub struct Snapshot {
     pub load_marker: bool,
     pub preview: PreviewSnapshot,
     pub mixer: MixerControls,
+    /// The effect units and the mixer effects: `docs/behavior/effects.md`.
+    pub effects: EffectControls,
     pub clock: ClockSnapshot,
     /// Peak level of the left and the right side of the master output, linear.
     pub master_levels: [f32; 2],
     /// Gain the safety limiter is applying; below one while it works.
     pub limiter_gain: f32,
+    /// Gain the maximiser is applying; one while it is off or idle.
+    pub maximiser_gain: f32,
+    pub recorder: RecorderSnapshot,
 }
 
 #[derive(Default)]
@@ -402,6 +470,7 @@ pub struct Engine {
     decks: [DeckControl; DeckId::COUNT],
     preview: PreviewControl,
     mixer: MixerControls,
+    effects: EffectControls,
     /// The tempo master is chosen automatically.
     clock_auto: bool,
     sync_mode: SyncMode,
@@ -422,6 +491,7 @@ pub struct Engine {
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
     recall: Option<Recall>,
+    recorder: Recorder,
     rate: SampleRate,
 }
 
@@ -441,15 +511,36 @@ impl Engine {
         self.recall = Some(recall);
     }
 
+    /// Sets where each recording goes and how it is named. Without it `recorder.toggle` is
+    /// refused.
+    pub fn set_recording_names(&mut self, names: RecordingNames) {
+        self.recorder.names = Some(names);
+    }
+
+    /// Stops a recording that runs and waits up to `wait` for its file to be finished, for
+    /// the application to call before it closes. The processor must go on running meanwhile:
+    /// it marks where the recording ends.
+    pub fn finish_recording(&mut self, wait: Duration) -> Vec<Event> {
+        let mut events = Vec::new();
+        self.recorder.finish(
+            wait,
+            &mut self.ends.commands,
+            &self.ends.shared,
+            &mut events,
+        );
+        events
+    }
+
     /// As [`Self::new`], with another analysis of the loaded tracks.
     pub fn with_analyser(rate: SampleRate, analyser: Arc<dyn Analyser>) -> (Self, Processor) {
-        let (ends, processor) = rt::channel(rate);
+        let (ends, recorded, processor) = rt::channel(rate);
         let (load_reports, finished_loads) = channel();
         let engine = Self {
             ends,
             decks: Default::default(),
             preview: PreviewControl::default(),
             mixer: MixerControls::default(),
+            effects: EffectControls::default(),
             clock_auto: true,
             sync_mode: SyncMode::default(),
             snap: false,
@@ -464,8 +555,12 @@ impl Engine {
             load_reports,
             analyser,
             recall: None,
+            recorder: Recorder::new(recorded),
             rate,
         };
+        let mut engine = engine;
+        // The mixer effect of every channel starts on its effect; a fresh queue has room.
+        let _ = engine.replay_effects(&EffectControls::default());
         (engine, processor)
     }
 
@@ -477,6 +572,8 @@ impl Engine {
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
         let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
         engine.recall = previous.recall.clone();
+        // A recording is not carried over: it ends with the engine that made it.
+        engine.recorder.names = previous.recorder.names.clone();
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();
@@ -547,6 +644,8 @@ impl Engine {
         engine.quantize = previous.quantize;
         engine.metronome = previous.metronome;
         engine.load_marker = previous.load_marker;
+        // A fresh queue has room for all of it: see `docs/decisions/0033-effect-chain.md`.
+        let _ = engine.replay_effects(&previous.effects);
         (engine, processor)
     }
 
@@ -832,6 +931,13 @@ impl Engine {
                 self.metronome = on;
                 return Ok(());
             }
+            Command::RecorderToggle => {
+                return self.recorder.toggle(self.rate, &mut self.ends.commands);
+            }
+            Command::RecorderCut => {
+                self.recorder.cut();
+                return Ok(());
+            }
             Command::GlobalSyncModeSet { mode } => {
                 let on = mode == SyncMode::Beat;
                 self.send(RtCommand::KeepBeat { on })?;
@@ -969,6 +1075,14 @@ impl Engine {
                 self.send(RtCommand::CrossfaderCurve { curve })?;
                 self.mixer.crossfader_curve = curve;
             }
+            Command::MixerEqModelSet { model } => {
+                self.send(RtCommand::EqModel { model })?;
+                self.mixer.eq_model = model;
+            }
+            Command::MixerFilterModelSet { model } => {
+                self.send(RtCommand::FilterModel { model })?;
+                self.mixer.filter_model = model;
+            }
             Command::MixerModeSet { mode } => self.set_external(MixerControls {
                 mode,
                 ..self.mixer.clone()
@@ -1003,6 +1117,31 @@ impl Engine {
                 self.mixer.master_gain_db = db.max(Gain::MIN_DB);
             }
             Command::MasterTestTone { output } => self.send(RtCommand::TestTone { output })?,
+            Command::MasterLimiterToggle => self.set_maximiser(MaximiserControls {
+                on: !self.mixer.maximiser.on,
+                ..self.mixer.maximiser
+            })?,
+            Command::MasterMaximiserDriveSet { db } => {
+                let drive_db = ValueError::check("db", db, 0.0, MAX_DRIVE_DB)?;
+                self.set_maximiser(MaximiserControls {
+                    drive_db,
+                    ..self.mixer.maximiser
+                })?;
+            }
+            Command::MasterMaximiserCeilingSet { db } => {
+                let ceiling_db = ValueError::check("db", db, MIN_CEILING_DB, MAX_CEILING_DB)?;
+                self.set_maximiser(MaximiserControls {
+                    ceiling_db,
+                    ..self.mixer.maximiser
+                })?;
+            }
+            Command::MasterMaximiserReleaseSet { ms } => {
+                let release_ms = ValueError::check("ms", ms, MIN_RELEASE_MS, MAX_RELEASE_MS)?;
+                self.set_maximiser(MaximiserControls {
+                    release_ms,
+                    ..self.mixer.maximiser
+                })?;
+            }
             Command::MixerAutogainToggle => {
                 let on = !self.mixer.autogain;
                 self.mixer.autogain = on;
@@ -1014,6 +1153,21 @@ impl Engine {
                 }
                 self.send_pending_analyses();
             }
+            effect @ (Command::FxUnitModeSet { .. }
+            | Command::FxUnitDryWetSet { .. }
+            | Command::FxUnitRoutingSet { .. }
+            | Command::FxUnitReset { .. }
+            | Command::FxUnitSnapshotSave { .. }
+            | Command::FxSlotEffectSet { .. }
+            | Command::FxSlotAmountSet { .. }
+            | Command::FxSlotToggle { .. }
+            | Command::FxSingleEffectSet { .. }
+            | Command::FxSingleKnobSet { .. }
+            | Command::FxSingleKeyToggle { .. }
+            | Command::FxSingleToggle { .. }
+            | Command::MixerFxAssignToggle { .. }
+            | Command::MixerEffectSelect { .. }
+            | Command::MixerEffectSet { .. }) => self.dispatch_effects(effect)?,
             // Every other command is handled before this point.
             _ => {}
         }
@@ -1024,6 +1178,12 @@ impl Engine {
     fn set_external(&mut self, mixer: MixerControls) -> Result<(), EngineError> {
         self.send(mixer.external())?;
         self.mixer = mixer;
+        Ok(())
+    }
+
+    fn set_maximiser(&mut self, maximiser: MaximiserControls) -> Result<(), EngineError> {
+        self.send(maximiser.command())?;
+        self.mixer.maximiser = maximiser;
         Ok(())
     }
 
@@ -1075,6 +1235,254 @@ impl Engine {
         while self.ends.retired.pop().is_ok() {
             self.swaps_in_flight = self.swaps_in_flight.saturating_sub(1);
         }
+    }
+
+    /// Applies a command of the effect units or of a mixer effect: `docs/behavior/effects.md`.
+    fn dispatch_effects(&mut self, command: Command) -> Result<(), EngineError> {
+        let unit_value = |position: f64| ValueError::check("position", position, 0.0, 1.0);
+        match command {
+            Command::FxUnitModeSet { unit, mode } => {
+                self.update_unit(unit, |controls| controls.values.mode = mode)
+            }
+            Command::FxUnitDryWetSet { unit, position } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| controls.values.dry_wet = position)
+            }
+            Command::FxUnitRoutingSet { unit, routing } => {
+                self.send(RtCommand::FxRouting {
+                    unit: unit.index(),
+                    routing,
+                })?;
+                self.effects.units[unit.index()].routing = routing;
+                Ok(())
+            }
+            Command::FxUnitReset { unit } => self.update_unit(unit, |controls| {
+                if let Some(kind) = controls.single {
+                    controls.values.single.controls = kind.defaults();
+                }
+            }),
+            Command::FxUnitSnapshotSave { unit } => {
+                let controls = &mut self.effects.units[unit.index()];
+                if let Some(index) = controls
+                    .single
+                    .and_then(|kind| EffectKind::ALL.iter().position(|each| *each == kind))
+                {
+                    controls.snapshots[index] = Some(controls.values.single.controls);
+                }
+                Ok(())
+            }
+            Command::FxSlotEffectSet { unit, slot, effect } => {
+                self.set_place(unit, Place::Group(slot), effect)
+            }
+            Command::FxSlotAmountSet {
+                unit,
+                slot,
+                position,
+            } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| {
+                    if let Some(values) = controls.values.slots.get_mut(slot) {
+                        values.amount = position;
+                    }
+                })
+            }
+            Command::FxSlotToggle { unit, slot } => self.update_unit(unit, |controls| {
+                if let Some(values) = controls.values.slots.get_mut(slot) {
+                    values.on = !values.on;
+                }
+            }),
+            Command::FxSingleEffectSet { unit, effect } => {
+                self.set_place(unit, Place::Single, effect)
+            }
+            Command::FxSingleKnobSet {
+                unit,
+                knob,
+                position,
+            } => {
+                let position = unit_value(position)? as f32;
+                self.update_unit(unit, |controls| {
+                    if let Some(value) = controls.values.single.controls.knobs.get_mut(knob) {
+                        *value = position;
+                    }
+                })
+            }
+            Command::FxSingleKeyToggle { unit, key } => self.update_unit(unit, |controls| {
+                if let Some(value) = controls.values.single.controls.keys.get_mut(key) {
+                    *value = !*value;
+                }
+            }),
+            Command::FxSingleToggle { unit } => self.update_unit(unit, |controls| {
+                controls.values.single.on = !controls.values.single.on;
+            }),
+            Command::MixerFxAssignToggle { deck, unit } => self.toggle_assign(deck, unit),
+            Command::MixerEffectSelect { deck, effect } => {
+                self.ensure_swap_room(1)?;
+                self.send_effect_swap(RtCommand::MixerEffectPlace {
+                    deck,
+                    effect: Some(self.build_effect(effect)),
+                })?;
+                self.effects.mixer[deck.index()].effect = effect;
+                Ok(())
+            }
+            Command::MixerEffectSet { deck, position } => {
+                let position = unit_value(position)?;
+                self.send(RtCommand::MixerEffectAmount {
+                    deck,
+                    amount: position as f32,
+                })?;
+                self.effects.mixer[deck.index()].amount = position;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Changes the values of a unit and sends them; nothing changes if they cannot be sent.
+    fn update_unit(
+        &mut self,
+        unit: FxUnit,
+        change: impl FnOnce(&mut UnitControls),
+    ) -> Result<(), EngineError> {
+        let mut controls = self.effects.units[unit.index()].clone();
+        change(&mut controls);
+        self.send(RtCommand::FxValues {
+            unit: unit.index(),
+            values: controls.values,
+        })?;
+        self.effects.units[unit.index()] = controls;
+        Ok(())
+    }
+
+    /// Puts `effect` in a place of a unit, built for every channel the unit is assigned to.
+    fn set_place(
+        &mut self,
+        unit: FxUnit,
+        place: Place,
+        effect: Option<EffectKind>,
+    ) -> Result<(), EngineError> {
+        let decks: Vec<DeckId> = self.effects.decks_of(unit).collect();
+        self.ensure_swap_room(decks.len())?;
+        for deck in decks {
+            self.send_effect_swap(RtCommand::FxPlace {
+                deck,
+                unit: unit.index(),
+                place,
+                effect: effect.map(|kind| self.build_effect(kind)),
+            })?;
+        }
+        self.update_unit(unit, |controls| match place {
+            Place::Group(slot) => {
+                if let Some(kind) = controls.slots.get_mut(slot) {
+                    *kind = effect;
+                }
+                if let Some(values) = controls.values.slots.get_mut(slot) {
+                    values.amount = DEFAULT_AMOUNT;
+                }
+            }
+            Place::Single => {
+                controls.single = effect;
+                controls.values.single.controls =
+                    effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+            }
+        })
+    }
+
+    /// Puts a channel through a unit, with the unit's effects built for it, or takes it out.
+    fn toggle_assign(&mut self, deck: DeckId, unit: FxUnit) -> Result<(), EngineError> {
+        let on = !self.effects.is_assigned(deck, unit);
+        let places: Vec<(Place, EffectKind)> = self.effects.unit(unit).places().collect();
+        self.ensure_swap_room(places.len())?;
+        self.send(RtCommand::FxAssign {
+            deck,
+            unit: unit.index(),
+            on,
+        })?;
+        for (place, kind) in places {
+            self.send_effect_swap(RtCommand::FxPlace {
+                deck,
+                unit: unit.index(),
+                place,
+                effect: on.then(|| self.build_effect(kind)),
+            })?;
+        }
+        self.effects.assigned[deck.index()][unit.index()] = on;
+        Ok(())
+    }
+
+    /// Puts the effect units and the mixer effects as `effects` has them, as the settings
+    /// file kept them.
+    pub fn restore_effects(&mut self, effects: &EffectControls) -> Result<(), EngineError> {
+        self.replay_effects(effects)
+    }
+
+    /// Sends the whole state of the effects to the processor, building every instance it
+    /// needs: at the start, and after a restart, which loses them.
+    fn replay_effects(&mut self, effects: &EffectControls) -> Result<(), EngineError> {
+        self.effects = effects.clone();
+        for unit in FxUnit::ALL {
+            let controls = self.effects.unit(unit).clone();
+            self.send(RtCommand::FxValues {
+                unit: unit.index(),
+                values: controls.values,
+            })?;
+            self.send(RtCommand::FxRouting {
+                unit: unit.index(),
+                routing: controls.routing,
+            })?;
+            for deck in DeckId::ALL {
+                if !self.effects.is_assigned(deck, unit) {
+                    continue;
+                }
+                self.send(RtCommand::FxAssign {
+                    deck,
+                    unit: unit.index(),
+                    on: true,
+                })?;
+                for (place, kind) in controls.places() {
+                    self.send_effect_swap(RtCommand::FxPlace {
+                        deck,
+                        unit: unit.index(),
+                        place,
+                        effect: Some(self.build_effect(kind)),
+                    })?;
+                }
+            }
+        }
+        for deck in DeckId::ALL {
+            let mixer = self.effects.mixer[deck.index()];
+            self.send_effect_swap(RtCommand::MixerEffectPlace {
+                deck,
+                effect: Some(self.build_effect(mixer.effect)),
+            })?;
+            self.send(RtCommand::MixerEffectAmount {
+                deck,
+                amount: mixer.amount as f32,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Builds an effect for the rate of the engine, with its buffers, on this thread.
+    fn build_effect(&self, kind: EffectKind) -> Box<Effect> {
+        Box::new(Effect::new(kind, self.rate))
+    }
+
+    /// Fails at once when `count` more swaps would not fit, so a command is sent whole or not
+    /// at all.
+    fn ensure_swap_room(&mut self, count: usize) -> Result<(), EngineError> {
+        self.collect_retired();
+        if self.swaps_in_flight + count > COMMAND_CAPACITY {
+            Err(EngineError::Busy)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn send_effect_swap(&mut self, command: RtCommand) -> Result<(), EngineError> {
+        self.ensure_swap_room(1)?;
+        self.send(command)?;
+        self.swaps_in_flight += 1;
+        Ok(())
     }
 
     fn start_load(&mut self, deck: DeckId, path: PathBuf) -> Result<(), EngineError> {
@@ -1230,6 +1638,9 @@ impl Engine {
         while let Ok(finished) = self.finished_loads.try_recv() {
             events.extend(self.finish_load(finished));
         }
+        let dropped = self.ends.shared.recorder_dropped.get();
+        self.recorder
+            .poll(&mut self.ends.commands, dropped, &mut events);
         events
     }
 
@@ -1387,6 +1798,7 @@ impl Engine {
                 crossfader: self.crossfader(),
                 ..self.mixer.clone()
             },
+            effects: self.effects.clone(),
             clock: ClockSnapshot {
                 auto: self.clock_auto,
                 sync_mode: self.sync_mode,
@@ -1398,6 +1810,8 @@ impl Engine {
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),
+            maximiser_gain: shared.maximiser_gain.get(),
+            recorder: self.recorder.snapshot(shared, self.rate),
             load_marker: self.load_marker,
             preview: PreviewSnapshot {
                 track: self.preview.track.clone(),
@@ -1477,6 +1891,12 @@ impl MixerControls {
             RtCommand::CrossfaderCurve {
                 curve: self.crossfader_curve,
             },
+            RtCommand::EqModel {
+                model: self.eq_model,
+            },
+            RtCommand::FilterModel {
+                model: self.filter_model,
+            },
             RtCommand::MasterGain {
                 linear: linear(self.master_gain_db),
             },
@@ -1486,6 +1906,7 @@ impl MixerControls {
             RtCommand::HeadphoneGain {
                 linear: linear(self.headphone_gain_db),
             },
+            self.maximiser.command(),
             self.external(),
         ];
         assigns.into_iter().chain(rest)

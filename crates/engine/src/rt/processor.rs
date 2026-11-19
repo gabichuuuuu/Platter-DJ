@@ -7,14 +7,17 @@ use platter_core::{DeckId, SampleRate};
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::limiter::Limiter;
+use platter_dsp::maximiser::{Aligner, Maximiser};
 use platter_dsp::meter::PeakMeter;
 use platter_dsp::smooth::Smoothed;
 use rtrb::{Consumer, Producer};
 
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
+use super::effects::Effects;
 use super::metronome::Metronome;
 use super::preview::PreviewPlayer;
+use super::recorder::Tap;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
@@ -53,6 +56,10 @@ pub struct Processor {
     /// The length of one frame in minutes.
     frame_minutes: f64,
     master_gain: Smoothed,
+    /// Before the safety limiter, while the Limiter key is lit: `docs/behavior/master.md`.
+    maximiser: Maximiser,
+    /// Keeps what the headphones take beside the master in time with it.
+    aligner: Aligner,
     limiter: Limiter,
     master_meter: PeakMeter,
     headphone_mix: Smoothed,
@@ -70,6 +77,8 @@ pub struct Processor {
     external_master_volume: Smoothed,
     /// The limiters of the first and the second pair in external mode.
     pair_limiters: [Limiter; 2],
+    effects: Effects,
+    recorder: Tap,
 }
 
 impl Processor {
@@ -99,6 +108,9 @@ impl Processor {
             fade: None,
             frame_minutes: 1.0 / (rate.as_f64() * 60.0),
             master_gain: parameter(1.0),
+            // Off; every command to it carries all of its settings.
+            maximiser: Maximiser::new(rate, PARAMETER_RAMP_MS, 1.0, 0.1),
+            aligner: Aligner::new(rate),
             limiter: Limiter::new(rate),
             master_meter: PeakMeter::new(rate),
             headphone_mix: parameter(0.0),
@@ -111,6 +123,8 @@ impl Processor {
             external_eq_gain: parameter(0.0),
             external_master_volume: parameter(0.0),
             pair_limiters: [Limiter::new(rate), Limiter::new(rate)],
+            effects: Effects::new(rate),
+            recorder: Tap::new(queues.recorded),
         }
     }
 
@@ -146,6 +160,7 @@ impl Processor {
             }
         }
         frames.into_remainder().fill(0.0);
+        self.effects.collect(&mut self.retired);
         self.publish();
     }
 
@@ -221,6 +236,24 @@ impl Processor {
                 }
             }
             RtCommand::Metronome { on } => self.metronome.set_on(on),
+            RtCommand::Record { on, recording } => self.recorder.set(on, recording),
+            RtCommand::FxValues { unit, values } => self.effects.set_values(unit, values),
+            RtCommand::FxRouting { unit, routing } => self.effects.set_routing(unit, routing),
+            RtCommand::FxAssign { deck, unit, on } => self.effects.set_assigned(deck, unit, on),
+            RtCommand::FxPlace {
+                deck,
+                unit,
+                place,
+                effect,
+            } => self
+                .effects
+                .place(deck, unit, place, effect, &mut self.retired),
+            RtCommand::MixerEffectPlace { deck, effect } => {
+                self.effects.mixer_place(deck, effect, &mut self.retired);
+            }
+            RtCommand::MixerEffectAmount { deck, amount } => {
+                self.effects.set_mixer_amount(deck, amount);
+            }
             mixer => self.apply_mixer(mixer),
         }
     }
@@ -248,6 +281,16 @@ impl Processor {
                 self.crossfader_position = position;
                 self.retarget_crossfader();
             }
+            RtCommand::EqModel { model } => {
+                for channel in &mut self.channels {
+                    channel.strip.set_eq_model(model);
+                }
+            }
+            RtCommand::FilterModel { model } => {
+                for channel in &mut self.channels {
+                    channel.strip.set_filter_model(model);
+                }
+            }
             RtCommand::CrossfaderCurve { curve } => {
                 self.crossfader_curve = curve;
                 self.retarget_crossfader();
@@ -260,6 +303,17 @@ impl Processor {
                 self.retarget_crossfader();
             }
             RtCommand::MasterGain { linear } => self.master_gain.set(linear),
+            RtCommand::Maximiser {
+                on,
+                drive,
+                ceiling,
+                release_seconds,
+            } => {
+                self.maximiser.set_on(on);
+                self.maximiser.set_drive(drive);
+                self.maximiser.set_ceiling(ceiling);
+                self.maximiser.set_release(release_seconds);
+            }
             RtCommand::HeadphoneMix { position } => self.headphone_mix.set(position),
             RtCommand::HeadphoneGain { linear } => self.headphone_gain.set(linear),
             RtCommand::TestTone { output } => self.tone.play(output),
@@ -333,13 +387,17 @@ impl Processor {
         let pulse = self.clock.tick(lead);
         let click = self.metronome.next(pulse.phase);
         self.advance_fade(pulse.bpm);
+        self.effects.follow(pulse);
+        let effects = &mut self.effects;
         let channels = DeckId::ALL.into_iter().zip(&mut self.channels);
         for (index, (deck, channel)) in channels.enumerate() {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
             channel.player.follow(clock, self.keep_beat);
             let played = channel.player.next(&mut self.retired);
-            let strip = channel.strip.process(played);
+            let strip = channel.strip.process(played, |stage, frame| {
+                effects.process(deck, stage, frame, metered_outside)
+            });
             let side = channel.crossfade.advance();
             mix[0] += strip.post[0] * side;
             mix[1] += strip.post[1] * side;
@@ -355,7 +413,10 @@ impl Processor {
                 pre_listened[1] += strip.pre[1] * send;
             }
             let sent = |side: usize| {
-                let source = played[side] + (strip.equalised[side] - played[side]) * eq_gain;
+                // The effects of the insert point act whether the equaliser does or not.
+                let source = played[side]
+                    + (strip.equalised[side] - played[side]) * eq_gain
+                    + (strip.inserted[side] - strip.equalised[side]);
                 source * external_gain
             };
             decks[index] = [sent(0), sent(1)];
@@ -367,14 +428,29 @@ impl Processor {
             });
         }
         let tone = self.tone.next(Output::Master);
+        // The test tone comes after the maximiser, so its drive does not change its level.
+        let maximised = self.maximiser.process([mix[0] * gain, mix[1] * gain]);
         let master = self
             .limiter
-            .process([mix[0] * gain + tone, mix[1] * gain + tone]);
+            .process([maximised[0] + tone, maximised[1] + tone]);
+        // The internal mix, in either mode: `docs/behavior/recording.md`.
+        self.recorder.feed(master);
         // The preview plays on, heard or not, so its position moves as it would.
         let preview = self.preview.next();
+        // The pre-listened decks and the ticks wait as long as the master does, so a deck
+        // heard in both does not comb in the headphones. The aligner runs every frame, so it
+        // holds nothing stale when the headphones come back.
+        let clicks = if two_pairs {
+            click + ticks.iter().sum::<f32>()
+        } else {
+            0.0
+        };
+        let [left, right, clicks] = self.aligner.process(
+            [pre_listened[0], pre_listened[1], clicks],
+            self.maximiser.weight(),
+        );
         let headphones = if two_pairs {
-            let clicks = click + ticks.iter().sum::<f32>();
-            self.headphones(pre_listened, master, clicks, preview)
+            self.headphones([left, right], master, clicks, preview)
         } else {
             [0.0; 2]
         };
@@ -497,6 +573,9 @@ impl Processor {
             self.limiter.gain()
         };
         self.shared.limiter_gain.set(limiter);
+        self.shared.maximiser_gain.set(self.maximiser.gain());
+        self.shared.recorded_frames.set(self.recorder.frames());
+        self.shared.recorder_dropped.set(self.recorder.dropped());
     }
 }
 
@@ -506,4 +585,18 @@ impl Processor {
 struct Fade {
     to: f32,
     beats: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Processor;
+
+    /// The processor is built on the stack of the thread that starts the engine, 1 MB on the
+    /// main thread of Windows. At 70 KB a debug build overflowed it
+    /// (`docs/decisions/0033-effect-chain.md`); what grows goes in a box.
+    #[test]
+    fn the_processor_stays_small_enough_to_build_on_any_stack() {
+        let size = std::mem::size_of::<Processor>();
+        assert!(size <= 64 * 1024, "the processor takes {size} bytes");
+    }
 }

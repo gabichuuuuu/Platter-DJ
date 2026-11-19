@@ -28,7 +28,8 @@ crossfader is on that side. Fade buttons move the crossfader step by step toward
 auto fade buttons move it by itself from one side to the other; a preference of the mixer
 page sets the time the automatic crossfade takes (*Preferences*, section *Mixer page*, read
 on 15 November 2026). The manual gives neither the size of a step nor the unit of that time. The preferences
-also offer several equaliser types and filter types. The section of the manual on the mixer
+also offer several equaliser types and filter types; see *Equaliser and filter models* below.
+The section of the manual on the mixer
 channel does not describe the one-knob filter; the behaviour below (low-pass one way,
 high-pass the other) is Platter's own definition.
 
@@ -56,6 +57,8 @@ pre-listened channel after its filter and before its fader.
 | `mixer.crossfader.auto_fade` | `direction` `left` or `right`: moves the crossfader to that end by itself |
 | `mixer.crossfader.fade_beats.set` | `beats` 1 to 64: how long an automatic fade across the whole travel takes |
 | `mixer.xfader_assign.set` | `side` of the crossfader the channel is on: `left`, `thru` or `right` |
+| `mixer.eq.model.set` | `model` of the equaliser of every channel: `smooth`, `soft`, `isolator` or `steep` |
+| `mixer.filter.model.set` | `model` of the filter of every channel: `gentle`, `steep` or `ladder` |
 
 - Every parameter follows a 10 ms ramp; none of them steps. That includes the kill buttons
   and the pre-listen buttons.
@@ -95,7 +98,8 @@ pre-listened channel after its filter and before its fader.
 ## Differences
 
 - The crossfader has three named curves instead of a continuous control.
-- One equaliser model and one filter model; the others are M4.
+- Four equaliser models and three filter models of Platter's own: see *Equaliser and filter
+  models* below.
 - The pan knob and the pre-listen button are always visible; the documented application shows them
   only in some layouts.
 - The fader adds up to 5 dB above its unity mark.
@@ -128,6 +132,61 @@ pre-listened channel after its filter and before its fader.
 | `direction` other than `left` or `right`, `beats` outside 1 to 64 | The command is rejected |
 | Pre-listening or a headphone test tone on a device with two outputs | Nothing reaches the outputs |
 | Everything turned up in the headphones | The output stays inside full scale |
+
+## Equaliser and filter models
+
+### What the public manual says
+
+*Preferences*, section *Mixer page*, *EQ / Filter Selection*, read on 18 November 2026. The
+equaliser type of the internal mixer is chosen among six. One is the standard three-band
+equaliser of the application, four are three-band equalisers modelled on other mixers, one
+of them a full-kill isolator with slopes of 24 dB per octave, and one adds a second mid band,
+four bands in all, which a controller may not reach. The filter type is chosen among three: a
+ladder with a steep response and a lot of resonance, one with a mellow slope and less
+resonance, and one that is steep but less resonant than the ladder. The manual describes the
+other types only by the mixers they are modelled on.
+
+### What Platter does
+
+- One equaliser model and one filter model for every channel, chosen on the Mixer page of the
+  preferences (`docs/behavior/settings.md`) and kept in the settings file.
+- Equaliser models, all with the bands at 250 Hz and 2.5 kHz, the same knobs and the same
+  kill: `smooth` (edges of 6 dB per octave), `soft` (12), `isolator` (24, the default) and
+  `steep` (48). The steeper the edge, the less of its neighbours a removed band takes with it:
+  two octaves below the edge of the low band, a removed low band leaves a tone 12, 25, 48 or
+  96 dB down. Every model is flat with the knobs at the centre and silent with all bands at
+  zero.
+- Filter models, all with the same knob, ranges and fade around the centre: `gentle` (12 dB
+  per octave, a slight emphasis at the corner, the default), `steep` (24 dB per octave, no
+  emphasis) and `ladder` (24 dB per octave with a resonant peak about 8 dB high at the
+  corner).
+- A change of model fades over 10 ms while the music plays, so it does not click. A change
+  asked for during that fade follows when it ends.
+- The models are kept when the audio device changes its sample rate.
+- The design of each model and how it was measured: `docs/decisions/0032-mixer-models.md`.
+
+### Differences
+
+- The models are Platter's own and are named by their response; none imitates a mixer.
+- Four equaliser models instead of six. There is no four-band model: a fourth knob per
+  channel needs a design of the mixer channel that does not exist yet.
+- The ladder can lift the corner by about 8 dB; the safety limiter of the master holds what
+  passes full scale.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| A `model` the mixer does not have | The command is rejected; nothing changes |
+| A model stored in the settings file that Platter does not know | The default model |
+| A change of model while a band is killed or the filter is turned | The kill and the position stay; the new model applies them |
+| Several changes of model faster than 10 ms | Each waits for the fade before it; the last one asked for stays |
+
+### Tests
+
+`crates/dsp/src/eq.rs`, `crates/dsp/src/filter.rs`, `crates/dsp/src/switch.rs`,
+`crates/engine/tests/mixer_models.rs`, `crates/engine/tests/realtime_memory.rs` and
+`apps/platter/src/config.rs`.
 
 ## Tests
 
