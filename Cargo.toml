@@ -39,3 +39,25 @@ timestretch = { version = "0.16.0", default-features = false }
 toml = "1.2.1"
 zune-jpeg = "0.5.15"
 zune-png = "0.5.2"
+
+# The interface tests draw tens of thousands of frames; unoptimised, the layout, the shaping
+# and the rasterising of the text take most of their time. The crates on that path are
+# optimised in the builds of the tests, and of debug runs, too. See
+# docs/decisions/0036-optimised-interface-dependencies.md.
+[profile.dev.package]
+ahash = { opt-level = 2 }
+ecolor = { opt-level = 2 }
+egui = { opt-level = 2 }
+emath = { opt-level = 2 }
+epaint = { opt-level = 2 }
+fearless_simd = { opt-level = 2 }
+font-types = { opt-level = 2 }
+harfrust = { opt-level = 2 }
+hashbrown = { opt-level = 2 }
+kurbo = { opt-level = 2 }
+peniko = { opt-level = 2 }
+read-fonts = { opt-level = 2 }
+skrifa = { opt-level = 2 }
+smallvec = { opt-level = 2 }
+vello_common = { opt-level = 2 }
+vello_cpu = { opt-level = 2 }
