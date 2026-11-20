@@ -233,6 +233,20 @@ command = "browser.select.all"
 keys = "Delete"
 command = "browser.playlist.remove"
 
+# Loop recorder: Redo and Delete, which its panel keeps in the menu of Undo.
+
+[[binding]]
+keys = "Ctrl + Z"
+command = "loop_recorder.undo"
+
+[[binding]]
+keys = "Ctrl + Y"
+command = "loop_recorder.redo"
+
+[[binding]]
+keys = "Ctrl + Delete"
+command = "loop_recorder.delete"
+
 # Layouts: the first nine of the list of the Layouts page.
 
 [[binding]]

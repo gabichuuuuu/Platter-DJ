@@ -294,6 +294,8 @@ impl PlatterApp {
             ));
         }
         engine.set_recording_split(u64::from(settings.recording_split) * MIB);
+        // A fresh queue has room for it, and the settings keep the decay in range.
+        let _ = engine.set_loop_decay(f64::from(settings.loop_decay) / 100.0);
         let settings_min_playtime = settings.min_playtime;
         let mut app = Self {
             folder,
@@ -409,6 +411,16 @@ impl PlatterApp {
 
     /// Gives the preferences of the Recording page to the engine and to the tree, for the next
     /// recording, and keeps them.
+    fn apply_loop_decay(&mut self) {
+        let decay = f64::from(self.settings.loop_decay) / 100.0;
+        if let Err(error) = self.engine.set_loop_decay(decay) {
+            self.log(
+                Level::Warning,
+                &format!("the overdub decay was not applied: {error}"),
+            );
+        }
+    }
+
     fn apply_recorder(&mut self) {
         let recordings = self.recordings();
         self.browser.set_recordings(recordings.clone());
@@ -1297,6 +1309,11 @@ impl PlatterApp {
             AppCommand::RecorderSplitSet { megabytes } => {
                 self.settings.recording_split = megabytes;
                 self.apply_recorder();
+            }
+            AppCommand::LoopDecaySet { percent } => {
+                self.settings.loop_decay = percent.min(100);
+                self.apply_loop_decay();
+                self.save_settings();
             }
             AppCommand::MusicFolderAdd { path } => {
                 if !path.as_os_str().is_empty()

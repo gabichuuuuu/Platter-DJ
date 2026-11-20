@@ -585,6 +585,22 @@ fn the_recording_page_sets_the_folder_the_prefix_and_the_split_of_the_recorder()
             prefix: "mix-friday".to_owned()
         }]
     );
+
+    // The overdub decay of the loop recorder, 0 by default, moves by one percent per key.
+    let decay = control(&stage, "recorder.loop_decay.set").unwrap();
+    assert!(decay.enabled);
+    stage.click(decay.rect.center());
+    let up = Event::Key {
+        key: egui::Key::ArrowUp,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    assert_eq!(
+        app(&stage.frame(vec![up])),
+        [AppCommand::LoopDecaySet { percent: 1 }]
+    );
 }
 
 /// `docs/behavior/interface.md`, *Layouts*: a row chooses its layout, and a built-in layout

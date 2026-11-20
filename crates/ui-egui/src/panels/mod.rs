@@ -6,6 +6,7 @@ pub mod deck;
 pub mod details;
 pub mod effects;
 pub mod header;
+pub mod loop_recorder;
 pub mod maintenance;
 pub mod mixer;
 pub mod recorder;

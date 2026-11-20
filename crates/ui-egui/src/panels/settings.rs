@@ -29,6 +29,7 @@ use crate::panels::header::problem_keys;
 use crate::widgets::choice::{self, Choice, SelectSpec};
 use crate::widgets::field;
 use crate::widgets::key::{self, KeySpec, Press};
+use crate::widgets::value::{self, Steps, ValueSpec};
 
 pub const DIALOG_SIZE: egui::Vec2 = egui::vec2(880.0, 620.0);
 const NAV_WIDTH: f32 = 200.0;
@@ -1547,7 +1548,46 @@ fn recording_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
         texts.get("settings.recording_split_help"),
     );
+
+    // The loop recorder: the overdub decay, in percent.
+    let top = section(cx, page, 230.0, "settings.loop_recorder_section");
+    let control = setting(cx, page, top, "settings.loop_decay");
+    let decay = view.engine.loop_recorder.decay;
+    let percent = (decay * 100.0).round();
+    let field = Rect::from_min_size(
+        control.min,
+        egui::vec2(DECAY_FIELD_WIDTH, tokens.size.button_h),
+    );
+    value::field(
+        cx,
+        field,
+        id("settings-loop-decay"),
+        ValueSpec {
+            name: texts.get("settings.loop_decay"),
+            position: decay,
+            default: 0.0,
+            steps: Steps::PERCENT,
+            enabled: true,
+        },
+        &texts.format(
+            "settings.loop_decay_value",
+            &[("percent", &format!("{percent:.0}"))],
+        ),
+        |position| {
+            Action::App(AppCommand::LoopDecaySet {
+                percent: (position * 100.0).round().clamp(0.0, 100.0) as u32,
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(field.min, egui::pos2(control.right(), field.bottom())),
+        texts.get("settings.loop_decay_help"),
+    );
 }
+
+/// The width of the field of the overdub decay.
+const DECAY_FIELD_WIDTH: f32 = 96.0;
 
 /// The ranges of the tempo faders the Decks page offers, in percent: those of the deck.
 const TEMPO_RANGE_PERCENTS: [u32; 3] = [8, 16, 50];

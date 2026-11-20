@@ -286,6 +286,8 @@ pub struct Settings {
     pub recording_folder: Option<PathBuf>,
     pub recording_prefix: String,
     pub recording_split: u32,
+    /// The overdub decay of the loop recorder, in percent.
+    pub loop_decay: u32,
     /// The columns the list of the browser shows besides the title.
     pub columns: Vec<ListColumn>,
     pub check_at_start: bool,
@@ -346,6 +348,7 @@ impl Default for Settings {
             recording_folder: None,
             recording_prefix: DEFAULT_PREFIX.to_owned(),
             recording_split: SPLIT_DEFAULT,
+            loop_decay: 0,
             columns: ListColumn::SHOWN_AT_FIRST.to_vec(),
             check_at_start: false,
             tag_writing: TagWriting::default(),
@@ -539,6 +542,9 @@ impl Settings {
             recording_split: number(table("recorder"), "split_mb")
                 .filter(|megabytes| RECORDING_SPLITS.contains(megabytes))
                 .unwrap_or(defaults.recording_split),
+            loop_decay: number(table("recorder"), "loop_decay")
+                .filter(|percent| *percent <= 100)
+                .unwrap_or(defaults.loop_decay),
             import_at_start: flag(table("browser"), "import_at_start")
                 .unwrap_or(defaults.import_at_start),
             check_at_start: flag(table("browser"), "check_at_start")
@@ -765,6 +771,7 @@ impl Settings {
             toml::Value::String(self.recording_prefix.clone()),
         );
         recorder.insert("split_mb".to_owned(), integer(self.recording_split));
+        recorder.insert("loop_decay".to_owned(), integer(self.loop_decay));
         root.insert("recorder".to_owned(), toml::Value::Table(recorder));
         let mut effects = crate::effects_config::write(&self.effects);
         effects.insert(
@@ -856,6 +863,7 @@ mod tests {
             recording_folder: Some(PathBuf::from("Sets")),
             recording_prefix: "night".to_owned(),
             recording_split: 1024,
+            loop_decay: 35,
             effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
@@ -1048,16 +1056,20 @@ min_playtime = {written}
             recording_folder: Some(PathBuf::from("Sets/Recordings ñ")),
             recording_prefix: "friday".to_owned(),
             recording_split: 512,
+            loop_decay: 100,
             ..Settings::default()
         };
         let read = Settings::parse(&chosen.to_toml());
         assert_eq!(read.recording_folder, chosen.recording_folder);
         assert_eq!(read.recording_prefix, "friday");
         assert_eq!(read.recording_split, 512);
-        let defaults = Settings::parse("[recorder]\nfolder = \"\"\nsplit_mb = 700\n");
+        assert_eq!(read.loop_decay, 100);
+        let defaults =
+            Settings::parse("[recorder]\nfolder = \"\"\nsplit_mb = 700\nloop_decay = 101\n");
         assert_eq!(defaults.recording_folder, None);
         assert_eq!(defaults.recording_prefix, "mix");
         assert_eq!(defaults.recording_split, 2048);
+        assert_eq!(defaults.loop_decay, 0, "a decay above 100 percent");
         assert_eq!(super::recording_prefix("  live: <set>  "), "live set");
         assert_eq!(super::recording_prefix("a/b\\c?"), "abc");
         assert_eq!(super::recording_prefix(" \t* "), "mix");

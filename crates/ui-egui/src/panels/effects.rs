@@ -65,7 +65,15 @@ pub fn row(cx: &mut Cx<'_>, [left, middle, right]: [Rect; 3], view: &View<'_>) {
     }
     let [shown_left, shown_right] = view.settings.fx_panels;
     unit(cx, left, shown_left, view);
-    super::recorder::panel(cx, middle, &view.engine.recorder);
+    let mix = super::recorder::panel(cx, middle, &view.engine.recorder);
+    let looper = egui::Rect::from_min_max(
+        egui::pos2(middle.left() + super::loop_recorder::PADDING, middle.top()),
+        egui::pos2(
+            mix.left() - super::loop_recorder::GAP_TO_MIX,
+            middle.bottom(),
+        ),
+    );
+    super::loop_recorder::panel(cx, looper, view);
     unit(cx, right, shown_right, view);
 }
 

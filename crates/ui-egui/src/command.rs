@@ -397,6 +397,11 @@ pub enum AppCommand {
     RecorderSplitSet {
         megabytes: u32,
     },
+    /// The overdub decay of the loop recorder, in percent: `docs/behavior/recording.md`,
+    /// *Loop recorder*.
+    LoopDecaySet {
+        percent: u32,
+    },
     /// The music folders of the Library page: `docs/behavior/library.md`.
     MusicFolderAdd {
         path: PathBuf,
@@ -1327,6 +1332,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[choice("megabytes", SPLIT_NAMES)],
     },
     CommandSpec {
+        id: "recorder.loop_decay.set",
+        label: "Overdub decay of the loop recorder",
+        params: &[number("percent", 0.0, 100.0)],
+    },
+    CommandSpec {
         id: "app.min_playtime.set",
         label: "Minimum play time",
         params: &[number("seconds", 5.0, 600.0)],
@@ -2090,6 +2100,9 @@ impl AppCommand {
             "recorder.prefix.set" => Self::RecorderPrefixSet {
                 prefix: read.text("prefix")?.to_owned(),
             },
+            "recorder.loop_decay.set" => Self::LoopDecaySet {
+                percent: u32::try_from(read.integer("percent")?.clamp(0, 100)).unwrap_or(0),
+            },
             "recorder.split.set" => Self::RecorderSplitSet {
                 megabytes: read.choice(
                     "megabytes",
@@ -2426,6 +2439,7 @@ impl AppCommand {
             Self::RecorderFolderReset => "recorder.folder.reset",
             Self::RecorderPrefixSet { .. } => "recorder.prefix.set",
             Self::RecorderSplitSet { .. } => "recorder.split.set",
+            Self::LoopDecaySet { .. } => "recorder.loop_decay.set",
             Self::MusicFolderAdd { .. } => "library.music_folder.add",
             Self::MusicFolderRemove { .. } => "library.music_folder.remove",
             Self::MusicFolderSelect { .. } => "library.music_folder.select",

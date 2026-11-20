@@ -82,6 +82,17 @@ pub enum Press {
 
 /// Draws a key in `rect` and emits its command when it is operated.
 pub fn key(cx: &mut Cx<'_>, rect: Rect, id: Id, spec: KeySpec<'_>, press: Press) {
+    let _ = key_response(cx, rect, id, spec, press);
+}
+
+/// [`key`], giving its response, for a key that also opens a context menu.
+pub fn key_response(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: KeySpec<'_>,
+    press: Press,
+) -> egui::Response {
     let (command, kind) = match &press {
         Press::Click(action) => (action.id(), ControlKind::Button),
         Press::Hold { down, .. } => (down.id(), ControlKind::Hold),
@@ -212,6 +223,7 @@ pub fn key(cx: &mut Cx<'_>, rect: Rect, id: Id, spec: KeySpec<'_>, press: Press)
     if focused {
         paint::focus_ring(painter, cx.theme, rect, tokens.radius.md);
     }
+    response
 }
 
 /// Width a key needs for its text: the text and the padding of a button on both sides. A

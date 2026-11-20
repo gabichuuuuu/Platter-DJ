@@ -22,7 +22,8 @@ const LABEL_HEIGHT: f32 = 14.0;
 const LABEL_GAP: f32 = 4.0;
 
 /// The recorder, right-aligned in `rect`: its label over Rec, the time recorded and Cut.
-pub fn panel(cx: &mut Cx<'_>, rect: Rect, recorder: &RecorderSnapshot) {
+/// Returns the rectangle it takes, for the loop recorder to its left.
+pub fn panel(cx: &mut Cx<'_>, rect: Rect, recorder: &RecorderSnapshot) -> Rect {
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let color = &tokens.color;
@@ -90,6 +91,7 @@ pub fn panel(cx: &mut Cx<'_>, rect: Rect, recorder: &RecorderSnapshot) {
         spec,
         Press::Click(Command::RecorderCut.into()),
     );
+    Rect::from_min_max(egui::pos2(left, top), egui::pos2(cut.right(), cut.bottom()))
 }
 
 /// The indicator of the status header while a recording runs: a dot and the label. The time
