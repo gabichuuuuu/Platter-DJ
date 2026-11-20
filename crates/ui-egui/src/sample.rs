@@ -251,6 +251,8 @@ fn playlists() -> Vec<PlaylistRow> {
         name: name.to_owned(),
         depth,
         folder: entries.is_none(),
+        smart: false,
+        rules: String::new(),
         entries,
         current: false,
         preparation: id == 2,

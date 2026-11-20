@@ -9,10 +9,11 @@ use egui::emath::GuiRounding as _;
 use egui::{CornerRadius, Key, Rect, Sense};
 use platter_core::DeckId;
 use platter_engine::Command;
+use platter_library::{MAX_RULES, NodeId, parse_rules};
 
 use crate::command::{
     Action, AppCommand, DeckLayout, DeckPage, DeckSize, DetailField, DetailFields, DetailsThen,
-    MeterId, SettingsPage, TrackDetails,
+    MeterId, RuleField, SettingsPage, TrackDetails,
 };
 use crate::cx::{Control, Cx, FrameOutput, id};
 use crate::i18n::{Language, TextError, Texts};
@@ -20,10 +21,11 @@ use crate::keymap::KeymapState;
 use crate::model::{AudioState, CollectionView, FileRow, RowKind, View};
 use crate::panels::browser::BrowserMemory;
 use crate::panels::details::{DetailsEdit, DetailsForm};
+use crate::panels::rules::{RuleRow, RulesForm};
 use crate::panels::settings::{DIALOG_SIZE, SettingsMemory};
 use crate::panels::waveform::{DEFAULT_ZOOM, ZOOM_SECONDS};
 use crate::panels::{
-    browser, deck, details, effects, header, maintenance, mixer, settings, waveform,
+    browser, deck, details, effects, header, maintenance, mixer, rules, settings, waveform,
 };
 use crate::theme::{Theme, ThemeError};
 use crate::widgets::meter::MeterMemory;
@@ -76,6 +78,9 @@ pub struct ViewState {
     pub details_position: usize,
     /// What the dialog saved since it opened, shown at once while the library answers.
     pub details_edits: Vec<DetailsEdit>,
+    /// The smart playlist whose dialog of rules is asked for, and what it holds once open.
+    pub rules_wanted: Option<NodeId>,
+    pub rules: Option<RulesForm>,
 }
 
 impl Default for ViewState {
@@ -95,11 +100,54 @@ impl Default for ViewState {
             details: None,
             details_position: 0,
             details_edits: Vec::new(),
+            rules_wanted: None,
+            rules: None,
         }
     }
 }
 
 impl ViewState {
+    fn close_rules(&mut self) {
+        self.rules_wanted = None;
+        self.rules = None;
+    }
+
+    /// The commands of the dialog of the rules of a smart playlist.
+    fn edit_rules(&mut self, command: &AppCommand) {
+        match command {
+            AppCommand::BrowserSmartRulesOpen { smart } => {
+                self.rules_wanted = Some(*smart);
+                self.rules = None;
+            }
+            AppCommand::BrowserSmartRulesClose | AppCommand::BrowserSmartRulesSet { .. } => {
+                self.close_rules();
+            }
+            _ => {}
+        }
+        let Some(form) = &mut self.rules else {
+            return;
+        };
+        match command {
+            AppCommand::BrowserSmartRuleAdd if form.rows.len() < MAX_RULES => {
+                form.rows.push(RuleRow::new(RuleField::Genre));
+            }
+            AppCommand::BrowserSmartRuleRemove { row } if *row < form.rows.len() => {
+                form.rows.remove(*row);
+            }
+            AppCommand::BrowserSmartRuleField { row, field } => {
+                if let Some(row) = form.rows.get_mut(*row) {
+                    *row = RuleRow::new(*field);
+                }
+            }
+            AppCommand::BrowserSmartRuleChoice { row, value } => {
+                if let Some(row) = form.rows.get_mut(*row) {
+                    row.choice = *value;
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn close_details(&mut self) {
         self.details_wanted = false;
         self.details = None;
@@ -235,6 +283,13 @@ impl Shell {
                 state.details_edits.clear();
             }
             AppCommand::BrowserTrackDetailsClose => state.close_details(),
+            AppCommand::BrowserSmartRulesOpen { .. }
+            | AppCommand::BrowserSmartRulesClose
+            | AppCommand::BrowserSmartRulesSet { .. }
+            | AppCommand::BrowserSmartRuleAdd
+            | AppCommand::BrowserSmartRuleRemove { .. }
+            | AppCommand::BrowserSmartRuleField { .. }
+            | AppCommand::BrowserSmartRuleChoice { .. } => state.edit_rules(command),
             AppCommand::BrowserTrackDetailsSave {
                 details,
                 fields,
@@ -309,8 +364,35 @@ impl Shell {
         {
             self.state.close_details();
         }
+        // The dialog of the rules opens on the smart playlist of the tree, and closes when it
+        // is gone.
+        if let Some(smart) = self.state.rules_wanted {
+            let row = view.browser.collection.as_ref().and_then(|collection| {
+                collection
+                    .playlists
+                    .iter()
+                    .find(|row| row.id == smart && row.smart)
+            });
+            match (row, &self.state.rules) {
+                (None, _) => self.state.close_rules(),
+                (Some(row), None) => {
+                    self.state.rules = Some(RulesForm {
+                        smart,
+                        name: row.name.clone(),
+                        rows: parse_rules(&row.rules)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(RuleRow::of)
+                            .collect(),
+                    });
+                }
+                (Some(_), Some(_)) => {}
+            }
+        }
         let dialog = self.state.settings_page;
+        // The dialog of the details goes first; the one of the rules waits behind it.
         let details_open = self.state.details.is_some() && dialog.is_none();
+        let rules_open = self.state.rules.is_some() && dialog.is_none() && !details_open;
         let mut state = self.state.clone();
         let zones = Zones::of(screen, view, self.theme.tokens.space.s1);
         {
@@ -319,7 +401,7 @@ impl Shell {
                 theme: &self.theme,
                 texts: &self.texts,
                 out: &mut out,
-                interactive: dialog.is_none() && !details_open,
+                interactive: dialog.is_none() && !details_open && !rules_open,
                 help: view.settings.tooltips.then_some(view.keymap),
             };
             header::header(&mut cx, zones.header, view, &state);
@@ -359,6 +441,26 @@ impl Shell {
             let escape = ui.input(|input| input.key_pressed(Key::Escape));
             if escape && !out.is_claimed(Key::Escape, &egui::Modifiers::NONE) {
                 out.emit(AppCommand::BrowserTrackDetailsClose);
+            }
+        }
+        if let Some(form) = state.rules.as_mut().filter(|_| rules_open) {
+            let veil = self.theme.tokens.color.bg_app.gamma_multiply(DIALOG_VEIL);
+            ui.painter().rect_filled(screen, CornerRadius::ZERO, veil);
+            ui.interact(screen, id("rules-backdrop"), Sense::click_and_drag());
+            let rect = Rect::from_center_size(screen.center(), rules::rules_size(form.rows.len()))
+                .round_ui();
+            let mut cx = Cx {
+                ui,
+                theme: &self.theme,
+                texts: &self.texts,
+                out: &mut out,
+                interactive: true,
+                help: view.settings.tooltips.then_some(view.keymap),
+            };
+            rules::rules(&mut cx, rect, form, view.settings.key_notation);
+            let escape = ui.input(|input| input.key_pressed(Key::Escape));
+            if escape && !out.is_claimed(Key::Escape, &egui::Modifiers::NONE) {
+                out.emit(AppCommand::BrowserSmartRulesClose);
             }
         }
         if let Some(page) = dialog {
@@ -415,12 +517,12 @@ impl Shell {
             self.keys.release_all(view.keymap)
         };
         // With a dialog open, the shortcuts of the decks and the mixer rest.
-        if dialog.is_some() || details_open {
+        if dialog.is_some() || details_open || rules_open {
             actions.retain(|action| matches!(action, Action::App(_)));
         }
         // Control and A belongs to a text field while one has the keyboard, and the list
         // behind a dialog keeps its selection.
-        if dialog.is_some() || details_open || out.takes_text() {
+        if dialog.is_some() || details_open || rules_open || out.takes_text() {
             actions.retain(|action| !matches!(action, Action::App(AppCommand::BrowserSelectAll)));
         }
         out.actions.extend(actions);

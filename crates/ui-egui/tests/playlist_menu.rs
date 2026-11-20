@@ -489,8 +489,8 @@ fn a_folder_cannot_be_moved_into_itself() {
     let archive = summer - egui::vec2(0.0, 27.0);
     stage.click(archive, PointerButton::Secondary);
     assert!(stage.menu_open());
-    // New playlist, New folder, Rename, Move to.
-    for _ in 0..3 {
+    // New playlist, New folder, New smart playlist, Rename, Move to.
+    for _ in 0..4 {
         stage.key(Key::ArrowDown, Modifiers::NONE);
     }
     stage.key(Key::Enter, Modifiers::NONE);

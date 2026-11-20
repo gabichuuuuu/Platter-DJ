@@ -336,6 +336,30 @@ at its end.
   Up and Down move, Enter or Space operates the item, Escape closes. The pointer takes the
   highlight when it moves over an item. A press outside closes it
   and still reaches what it lands on. Rows of the explorer have no menu.
+- **Smart playlists** (`docs/behavior/library.md`, *Smart playlists*). The menu of *Playlists*,
+  or of a folder, also offers *New smart playlist*, named in the same field
+  (`browser.playlist.create` with `item=smart`); it starts without rules, so it holds the
+  whole collection. It sits in the tree with the playlists, with the playlist glyph and the
+  number of tracks it holds now, and is shown as a playlist is, in the order of the collection.
+  Its menu offers *Edit rules*, which opens the dialog of its rules
+  (`browser.smart.rules.open`), then *Rename*, *Move to*, *Save as playlist*, which makes a playlist beside it with its name and
+  the tracks it holds now, at most 1000 (`browser.smart.to_playlist`), *Duplicate*
+  (`browser.smart.duplicate`), *Delete playlist* and the export to the folder of the explorer.
+  Tracks dropped on it are not taken, and the menu of its rows has no *Remove from playlist*.
+- **The dialog of the rules** shows the name of the smart playlist, the line "A track must pass
+  every rule." and one row per rule. Each row chooses its field (`browser.smart.rule.field`),
+  which empties its value, and takes the value its field needs: words for the title, the
+  artist, the album and the genre; *From* and *to* for the tempo in BPM, the length in seconds,
+  the rating, the plays and the dates of import and of last play, written `YYYY-MM-DD` in UTC,
+  either one empty; one of the eight colours or of the 24 keys, in the key notation of the
+  preferences; *Yes* or *No* for a missing file and for an analysed track
+  (`browser.smart.rule.choice`). A key at the end of the row takes it out
+  (`browser.smart.rule.remove`); *Add rule* adds a row for the genre, up to 16
+  (`browser.smart.rule.add`). A row whose value means nothing, such as a tempo of letters or a
+  range turned round, is outlined in the warning colour, and *Save* waits until every row holds
+  a rule; then it replaces the rules (`browser.smart.rules.set`) and closes the dialog.
+  *Cancel* and Escape close it without saving (`browser.smart.rules.close`). The upper date
+  takes its whole day. The dialog closes when its smart playlist is gone.
 - **Changes run on the worker of the library**, in the order they were asked for. After each
   one the tree and the list are read again; a change that fails, such as on a playlist that is
   gone, changes nothing and leaves the library available.
@@ -352,6 +376,9 @@ at its end.
 - Delete takes the selected entry out of the playlist shown. The public manual does it only
   from the menu; the key is Platter's, for the keyboard.
 - The menus hold only what Platter does so far: no export, import, colours or played state.
+- A smart playlist has no glyph of its own: the design system draws none. The public manual
+  also opens the window of filters right after a smart playlist is created; Platter opens it
+  from *Edit rules*.
 - The design system names `browser.node.select` for showing a node of the tree. A playlist is
   shown with `browser.playlist.select` instead, because a command takes typed parameters and
   the choices of `browser.node.select` are fixed names, while a playlist is named by the number
@@ -376,6 +403,9 @@ at its end.
 | The folder or item of an open name field is gone | The field closes |
 | A track dropped on a folder of playlists, or on the collection | Nothing happens |
 | Insert with a folder row selected in the list | Nothing happens |
+| A date that does not exist, such as `2026-02-30`, or a tempo of letters | The row is outlined and *Save* waits |
+| A rule kept in the file that this version cannot read | Left out of the dialog; saving drops it |
+| A track dropped on a smart playlist | Nothing happens |
 
 ## Played state
 

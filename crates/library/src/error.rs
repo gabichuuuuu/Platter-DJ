@@ -36,8 +36,12 @@ pub enum LibraryError {
     NoSuchSession,
     /// The entry is not in that playlist.
     NoSuchEntry,
-    /// A playlist was expected and the node is a folder, or the other way round.
+    /// A playlist was expected and the node is a folder or a smart playlist, or the other way
+    /// round.
     WrongKind,
+    /// A rule of a smart playlist that means nothing, or more than [`crate::MAX_RULES`] of
+    /// them.
+    InvalidRule,
     /// A folder cannot move into itself or into a folder inside it.
     Cycle,
     /// Another track already has that path.
@@ -68,6 +72,11 @@ impl fmt::Display for LibraryError {
             Self::NoSuchSession => formatter.write_str("no such session"),
             Self::NoSuchEntry => formatter.write_str("no such entry in the playlist"),
             Self::WrongKind => formatter.write_str("a playlist and a folder were mixed up"),
+            Self::InvalidRule => write!(
+                formatter,
+                "a smart playlist has up to {} rules, each with a value in its range",
+                crate::MAX_RULES
+            ),
             Self::Cycle => formatter.write_str("a folder cannot go inside itself"),
             Self::PathTaken => formatter.write_str("another track already has that path"),
             Self::OutOfRange => formatter.write_str("a colour or a rating out of its range"),

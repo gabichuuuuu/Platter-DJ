@@ -25,8 +25,9 @@ of English letters only, or fold the text in Rust and compare the folded form.
   Apache-2.0 or Zlib. The crate `platter-library` alone uses it, and no type of rusqlite shows
   in its interface: `StoreError` keeps the cause behind its `source`.
 - The file says it is a library with `PRAGMA application_id` set to "PLTR", and gives the
-  version of its tables in `PRAGMA user_version`, now 4: version 2 added the preparation list,
-  version 3 the favourites and version 4 the colour, rating and comment of a track, and an older
+  version of its tables in `PRAGMA user_version`, now 6: version 2 added the preparation list,
+  version 3 the favourites, version 4 the colour, rating and comment of a track, version 5 what
+  a deck learned of it and version 6 the rules of the smart playlists, and an older
   file is brought up to date when opened. Opening reads both before writing
   anything: an empty file is given the tables, a file with another id or with tables of its own
   is refused, and a version above the one the code writes is refused. A later schema adds a

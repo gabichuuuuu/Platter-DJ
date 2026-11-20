@@ -702,6 +702,13 @@ fn context_menu(
                     item: NewItem::Folder,
                 },
             ),
+            opens(
+                "browser.menu_new_smart",
+                Naming::New {
+                    folder,
+                    item: NewItem::Smart,
+                },
+            ),
         ]
     };
     let (entries, back): (Vec<(Item<'_>, Then)>, egui::Id) = match open.target {
@@ -716,6 +723,44 @@ fn context_menu(
             entries.push(move_to(folder));
             entries.extend(import(Some(folder)));
             (entries, id(("tree-playlist", folder)))
+        }
+        MenuTarget::Playlist(smart) if item_of(smart).is_some_and(|row| row.smart) => {
+            let mut entries = vec![
+                sends(
+                    "browser.menu_edit_rules",
+                    AppCommand::BrowserSmartRulesOpen { smart },
+                ),
+                opens("browser.menu_rename", Naming::Rename(smart)),
+                move_to(smart),
+                sends(
+                    "browser.menu_save_playlist",
+                    AppCommand::BrowserSmartToPlaylist { smart },
+                ),
+                sends(
+                    "browser.menu_duplicate",
+                    AppCommand::BrowserSmartDuplicate { smart },
+                ),
+                sends(
+                    "browser.menu_delete",
+                    AppCommand::BrowserPlaylistDelete { playlist: smart },
+                ),
+            ];
+            if let (Some(path), Some(label)) = (explorer, export_label.as_deref()) {
+                entries.push((
+                    Item {
+                        label,
+                        action: Some(
+                            AppCommand::BrowserPlaylistExport {
+                                playlist: smart,
+                                path: path.clone(),
+                            }
+                            .into(),
+                        ),
+                    },
+                    Then::Nothing,
+                ));
+            }
+            (entries, id(("tree-playlist", smart)))
         }
         MenuTarget::Playlist(playlist) if item_of(playlist).is_some_and(|row| !row.folder) => {
             let mut entries = vec![
@@ -776,7 +821,14 @@ fn context_menu(
         }
         MenuTarget::Entry if collection.shown() && browser.selected.is_some() => {
             let mut entries = Vec::new();
-            if collection.playlist.is_some() {
+            // A smart playlist has no entries to take out.
+            let entries_shown = collection.playlist.is_some_and(|shown| {
+                collection
+                    .playlists
+                    .iter()
+                    .any(|row| row.id == shown && !row.smart)
+            });
+            if entries_shown {
                 entries.push(sends(
                     "browser.menu_remove",
                     AppCommand::BrowserPlaylistRemove,
@@ -1574,6 +1626,10 @@ fn name_row(
             item: NewItem::Folder,
             ..
         } => ("browser.playlist.create", "browser.name_folder"),
+        Naming::New {
+            item: NewItem::Smart,
+            ..
+        } => ("browser.playlist.create", "browser.name_smart"),
         Naming::New { .. } => ("browser.playlist.create", "browser.name_playlist"),
         Naming::Rename(_) => ("browser.playlist.rename", "browser.name_playlist"),
     };
@@ -1687,7 +1743,8 @@ fn playlist_node<'a>(row: &'a PlaylistRow, browser: &BrowserView) -> Node<'a> {
         } else {
             MenuTarget::Playlist(row.id)
         }),
-        takes: (!row.folder).then_some(row.id),
+        // A smart playlist takes its tracks from its rules, not from a drop.
+        takes: (!row.folder && !row.smart).then_some(row.id),
         open: row.folder.then(|| {
             (
                 !browser.closed_folders.contains(&row.id),

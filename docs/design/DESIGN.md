@@ -264,6 +264,24 @@ They follow the components below and the pattern of the nearest screen. Ask befo
 the layout selector and the mix recorder. Not drawn: effect units 3 and 4, single mode, the loop recorder, smart playlists, the remaining
 layouts, and everything in M5 (remix decks, pattern sequencer, DVS, live input, broadcasting).
 
+### Smart playlist rules (M4)
+
+Approved by the maintainer on 20 November 2026. A dialog in the pattern of `Track-details.html`, 560px wide and as tall as its
+rows, opened by *Edit rules* in the menu of a smart playlist of `BrowserTree`.
+
+- Top: *Rules of* and the name of the smart playlist, `title` style; under it the line "A track must pass every rule.", `body`
+  in `text-secondary`.
+- One row per rule, 32px high, 8px apart, up to 16, which fit in the window at 1440 × 900. Each row: a `Select` of the field,
+  140px wide (Title, Artist, Album, Genre, Tempo, Length, Rating, Plays, Imported, Last played, Colour, Key, Missing,
+  Analysed); then its value; then a key of 28 × 28 with the `close` icon that removes the row.
+- The value: a form field for words; two form fields, *From* and *to*, with the unit after them (BPM, s, `YYYY-MM-DD`) for a
+  range; a `Select` of the eight colours or of the 24 keys in the key notation of the preferences; the segmented control of
+  the preferences with *Yes* and *No* for the missing file and the analysis.
+- A row whose value means nothing is outlined with a hairline in `status-warn`.
+- Under the rows, *Add rule*, a text key, disabled at 16 rules.
+- Foot: *Cancel* and *Save*, as in `Track-details.html`. *Save* is disabled until every row holds a rule.
+- A smart playlist has the `playlist` glyph in the tree; no icon of its own.
+
 ### Four-deck layout (M4)
 
 Measured on `M4-effects.html` at 1440 × 900. Zones top to bottom, separated by 2px seams of `bg-app`:

@@ -14,15 +14,19 @@ use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{ClockMode, Command, EffectKind, MixerMode, UnitMode};
-use platter_library::{NodeId, SessionId};
+use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
-use platter_ui_egui::model::DeckNotice;
+use platter_ui_egui::model::{DeckNotice, PlaylistRow};
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 use platter_ui_egui::{BrowserMenu, MenuTarget, Naming};
+
+/// The rules of the smart playlist of the states: one of each kind of value.
+const RULES: &str =
+    "genre techno; tempo 128..134; played 1793491200..; colour 3; key 8; analysed yes";
 
 const OPEN: char = '\u{27e6}';
 const CLOSE: char = '\u{27e7}';
@@ -51,6 +55,8 @@ struct State {
     maintenance: (bool, bool),
     /// The dialog of the details of the selected track is open.
     details: bool,
+    /// The dialog of the rules of this smart playlist is open.
+    rules: Option<NodeId>,
     /// Controls the state draws at least, so a state that failed to draw is caught: more than
     /// five for the window or the preferences, the keys of a small dialog over them.
     min_controls: usize,
@@ -79,6 +85,7 @@ fn states() -> Vec<State> {
         page_scroll: 0.0,
         maintenance: (false, false),
         details: false,
+        rules: None,
         min_controls: 6,
     };
     let mut trouble = sample::playing();
@@ -216,6 +223,36 @@ fn states() -> Vec<State> {
     other_preview.scene.engine.preview.track = other_preview.scene.engine.decks[0].track.clone();
     let mut rename = state("rename-playlist", sample::playing(), None);
     rename.naming = Some(Naming::Rename(NodeId::new(1)));
+    // The menu of the smart playlist *Peak time*, and the field of its rules.
+    let with_smart = |rules: &str| {
+        let mut scene = sample::playing();
+        if let Some(collection) = &mut scene.browser.collection {
+            collection.playlists.push(PlaylistRow {
+                id: NodeId::new(5),
+                name: "Peak time".to_owned(),
+                depth: 0,
+                folder: false,
+                smart: true,
+                rules: rules.to_owned(),
+                entries: Some(37),
+                current: false,
+                preparation: false,
+                favourite: None,
+            });
+        }
+        scene
+    };
+    let mut smart_menu = state("smart-menu", with_smart(RULES), None);
+    smart_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Playlist(NodeId::new(5)),
+        at: egui::pos2(120.0, 760.0),
+    });
+    // The dialog of its rules, with a rule of each kind of value, and with sixteen rules.
+    let mut smart_rules = state("smart-rules", with_smart(RULES), None);
+    smart_rules.rules = Some(NodeId::new(5));
+    let sixteen = vec!["genre house"; MAX_RULES].join("; ");
+    let mut smart_full = state("smart-rules-full", with_smart(&sixteen), None);
+    smart_full.rules = Some(NodeId::new(5));
     // The mix recorder runs in the two-deck layout, so Cut can be operated and the indicator
     // of the header shows beside the MIDI one.
     let mut recording = sample::playing();
@@ -247,6 +284,9 @@ fn states() -> Vec<State> {
         entry_menu,
         new_playlist,
         rename,
+        smart_menu,
+        smart_rules,
+        smart_full,
         move_menu,
         state("history", sample::history(), None),
         explorer,
@@ -336,6 +376,7 @@ impl Stage {
         shell.state.settings.page_scroll = state.page_scroll;
         (shell.state.maintenance, shell.state.remove_asked) = state.maintenance;
         shell.state.details_wanted = state.details;
+        shell.state.rules_wanted = state.rules;
         let ctx = egui::Context::default();
         shell.install(&ctx);
         let mut stage = Self {
@@ -558,7 +599,7 @@ fn the_controls_of_a_deck_do_not_overlap_in_either_language() {
             // dialog.
             for state in states()
                 .into_iter()
-                .filter(|state| state.page.is_none() && !state.details)
+                .filter(|state| state.page.is_none() && !state.details && state.rules.is_none())
             {
                 let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
                 stage.shell.state.deck_page = shown(pages);
@@ -594,7 +635,7 @@ fn the_controls_of_the_header_do_not_overlap_in_either_language() {
     for language in Language::ALL {
         for state in states()
             .into_iter()
-            .filter(|state| state.page.is_none() && !state.details)
+            .filter(|state| state.page.is_none() && !state.details && state.rules.is_none())
         {
             let stage = Stage::with_texts(&state, Texts::load(language).unwrap());
             let controls: Vec<Control> = stage
@@ -629,7 +670,7 @@ fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
     for language in Language::ALL {
         for state in states()
             .into_iter()
-            .filter(|state| state.page.is_none() && !state.details)
+            .filter(|state| state.page.is_none() && !state.details && state.rules.is_none())
         {
             let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
             stage.frame(Vec::new());
@@ -1251,6 +1292,14 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     if let Some(collection) = &scene.browser.collection {
         data.extend(collection.playlists.iter().map(|row| row.name.clone()));
+        // The words of the rules of a smart playlist, as its dialog shows them.
+        data.extend(collection.playlists.iter().flat_map(|row| {
+            row.rules
+                .split(';')
+                .filter_map(|rule| rule.trim().split_once(' '))
+                .map(|(_, value)| value.trim().to_owned())
+                .collect::<Vec<_>>()
+        }));
         data.extend(
             collection
                 .session

@@ -243,7 +243,12 @@ pub struct PlaylistRow {
     /// Level below *Playlists*.
     pub depth: usize,
     pub folder: bool,
-    /// Entries of a playlist; `None` for a folder.
+    /// A smart playlist, whose tracks come from its rules.
+    pub smart: bool,
+    /// The rules of a smart playlist as text (`platter_library::rules_text`); empty for the
+    /// others.
+    pub rules: String,
+    /// Entries of a playlist, or tracks a smart playlist holds; `None` for a folder.
     pub entries: Option<usize>,
     /// The playlist the list shows.
     pub current: bool,
