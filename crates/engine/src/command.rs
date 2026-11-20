@@ -19,7 +19,7 @@ use platter_dsp::filter::FilterModel;
 
 use crate::effects::{FxRouting, FxUnit, KEYS, KNOBS, UNITS, index_of};
 pub use crate::rt::MAX_KEY_SHIFT;
-use crate::rt::Output;
+use crate::rt::{LoopSource, Output};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
@@ -490,6 +490,25 @@ pub enum Command {
     RecorderToggle,
     /// Closes the file of the recording and goes on in a new one, without losing a frame.
     RecorderCut,
+    /// Rec of the loop recorder: waits for the beat and records a pass, or starts or ends an
+    /// overdub: `docs/behavior/recording.md`, *Loop recorder*.
+    LoopRecorderRecord,
+    /// Pauses the loop or plays it on.
+    LoopRecorderPlay,
+    LoopRecorderUndo,
+    LoopRecorderRedo,
+    LoopRecorderDelete,
+    /// The length of the next loop, 1, 2, 4 or 8 bars.
+    LoopRecorderSizeSet {
+        bars: f64,
+    },
+    LoopRecorderSourceSet {
+        source: LoopSource,
+    },
+    /// 0 is the mix alone, 0.5 both at full level, 1 the loop alone.
+    LoopRecorderDryWetSet {
+        amount: f64,
+    },
 }
 
 /// Kind of a command parameter, for anything that builds commands from untyped input.
@@ -586,6 +605,9 @@ const CUE_STEPS: &[&str] = &["previous", "next"];
 const CUE_TYPES: &[&str] = &["cue", "fade_in", "fade_out", "load", "loop"];
 const CLOCK_MODES: &[&str] = &["auto", "master"];
 const SYNC_MODES: &[&str] = &["tempo", "beat"];
+
+/// The sources of the loop recorder, by name: the mix, then the decks.
+pub const LOOP_SOURCES: &[&str] = &["master", "a", "b", "c", "d"];
 
 /// Who the tempo master is: `docs/behavior/sync.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1459,6 +1481,49 @@ pub const SPECS: &[CommandSpec] = &[
         label: "Cut the recording into a new file",
         params: &[],
     },
+    CommandSpec {
+        id: "loop_recorder.record",
+        label: "Record a loop or overdub it",
+        params: &[],
+    },
+    CommandSpec {
+        id: "loop_recorder.play",
+        label: "Play or pause the loop",
+        params: &[],
+    },
+    CommandSpec {
+        id: "loop_recorder.undo",
+        label: "Undo the last overdub",
+        params: &[],
+    },
+    CommandSpec {
+        id: "loop_recorder.redo",
+        label: "Redo the overdub",
+        params: &[],
+    },
+    CommandSpec {
+        id: "loop_recorder.delete",
+        label: "Delete the loop",
+        params: &[],
+    },
+    CommandSpec {
+        id: "loop_recorder.size.set",
+        label: "Set the size of the loop",
+        params: &[number("bars", 1.0, 8.0)],
+    },
+    CommandSpec {
+        id: "loop_recorder.source.set",
+        label: "Set the source of the loop recorder",
+        params: &[ParamSpec {
+            name: "source",
+            kind: ParamKind::Choice(LOOP_SOURCES),
+        }],
+    },
+    CommandSpec {
+        id: "loop_recorder.dry_wet.set",
+        label: "Set the dry / wet of the loop recorder",
+        params: &[number("amount", 0.0, 1.0)],
+    },
 ];
 
 /// An untyped parameter value, as a script, a mapping or a remote caller provides it.
@@ -1555,6 +1620,18 @@ impl Reader<'_> {
 
     fn deck(&self) -> Result<DeckId, CommandError> {
         Ok(DeckId::parse(self.text("deck")?)?)
+    }
+
+    fn loop_source(&self) -> Result<LoopSource, CommandError> {
+        match self.text("source")? {
+            "master" => Ok(LoopSource::Master),
+            deck => DeckId::parse(deck).map(LoopSource::Deck).map_err(|_| {
+                CommandError::Value(ValueError::UnknownChoice {
+                    name: "source",
+                    expected: "master, a, b, c, d",
+                })
+            }),
+        }
     }
 
     fn unit(&self) -> Result<FxUnit, CommandError> {
@@ -1867,6 +1944,20 @@ impl Command {
             "global.fade_markers.toggle" => Self::GlobalFadeMarkersToggle,
             "recorder.toggle" => Self::RecorderToggle,
             "recorder.cut" => Self::RecorderCut,
+            "loop_recorder.record" => Self::LoopRecorderRecord,
+            "loop_recorder.play" => Self::LoopRecorderPlay,
+            "loop_recorder.undo" => Self::LoopRecorderUndo,
+            "loop_recorder.redo" => Self::LoopRecorderRedo,
+            "loop_recorder.delete" => Self::LoopRecorderDelete,
+            "loop_recorder.size.set" => Self::LoopRecorderSizeSet {
+                bars: read.number("bars")?,
+            },
+            "loop_recorder.source.set" => Self::LoopRecorderSourceSet {
+                source: read.loop_source()?,
+            },
+            "loop_recorder.dry_wet.set" => Self::LoopRecorderDryWetSet {
+                amount: read.number("amount")?,
+            },
             mixer => return Self::mixer_from_args(mixer, &read),
         })
     }
@@ -2227,6 +2318,14 @@ impl Command {
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
             Self::RecorderToggle => "recorder.toggle",
             Self::RecorderCut => "recorder.cut",
+            Self::LoopRecorderRecord => "loop_recorder.record",
+            Self::LoopRecorderPlay => "loop_recorder.play",
+            Self::LoopRecorderUndo => "loop_recorder.undo",
+            Self::LoopRecorderRedo => "loop_recorder.redo",
+            Self::LoopRecorderDelete => "loop_recorder.delete",
+            Self::LoopRecorderSizeSet { .. } => "loop_recorder.size.set",
+            Self::LoopRecorderSourceSet { .. } => "loop_recorder.source.set",
+            Self::LoopRecorderDryWetSet { .. } => "loop_recorder.dry_wet.set",
         }
     }
 }

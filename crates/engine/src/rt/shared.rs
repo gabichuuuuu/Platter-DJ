@@ -161,6 +161,15 @@ pub struct Shared {
     /// recorder had no room for.
     pub recorded_frames: Count,
     pub recorder_dropped: Count,
+    /// The loop recorder: what it does, as a [`super::LoopPhase`] code, how far into the
+    /// loop it is, from zero to one, the length of the loop and the bars of the size at the
+    /// tempo of the clock.
+    pub loop_phase: Count,
+    pub loop_progress: AtomicF32,
+    pub loop_seconds: AtomicF64,
+    pub loop_bars: Count,
+    pub loop_can_undo: Flag,
+    pub loop_can_redo: Flag,
 }
 
 impl Default for Shared {
@@ -177,6 +186,12 @@ impl Default for Shared {
             preview_position: AtomicF64::default(),
             recorded_frames: Count::default(),
             recorder_dropped: Count::default(),
+            loop_phase: Count::default(),
+            loop_progress: AtomicF32::default(),
+            loop_seconds: AtomicF64::default(),
+            loop_bars: Count::default(),
+            loop_can_undo: Flag::default(),
+            loop_can_redo: Flag::default(),
         }
     }
 }

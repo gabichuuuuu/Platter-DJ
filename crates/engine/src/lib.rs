@@ -24,13 +24,14 @@ pub use analyser::{
 };
 pub use command::{
     BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
-    Direction, MAX_CEILING_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB,
-    MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep, SyncMode,
+    Direction, LOOP_SOURCES, MAX_CEILING_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_RELEASE_MS,
+    MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep,
+    SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
-    FINE_MOVE_SECONDS, MaximiserControls, MixerControls, PreviewSnapshot, Recall, Snapshot,
-    TEMPO_RANGES, TrackInfo,
+    FINE_MOVE_SECONDS, LoopRecorderSnapshot, MaximiserControls, MixerControls, PreviewSnapshot,
+    Recall, Snapshot, TEMPO_RANGES, TrackInfo,
 };
 pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;
@@ -42,5 +43,5 @@ pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
 pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
-pub use rt::{LoopState, Output, Processor};
+pub use rt::{LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor};
 pub use wav::WavWriter;

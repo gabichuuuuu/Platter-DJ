@@ -34,8 +34,9 @@ use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
 use crate::recorder::{MIN_SPLIT_BYTES, Recorder, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 use crate::rt::{
-    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
-    LoopPart, LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
+    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LOOP_BARS,
+    LoopEdit, LoopPart, LoopPhase, LoopSource, LoopState, Processor, RtCommand, Span, Stretcher,
+    TrackAudio,
 };
 use crate::stretch::TrackStretch;
 use crate::tap::TapTempo;
@@ -97,6 +98,9 @@ pub enum EngineError {
     Worker(std::io::Error),
     /// Nothing says where the recordings go.
     NoRecordingFolder,
+    /// The loop recorder does not record in external mixer mode, where the mix it plays into
+    /// is not heard.
+    ExternalMixer,
 }
 
 impl fmt::Display for EngineError {
@@ -106,6 +110,9 @@ impl fmt::Display for EngineError {
             Self::Busy => f.write_str("the engine is busy; the command was not applied"),
             Self::Worker(error) => write!(f, "cannot start a worker thread: {error}"),
             Self::NoRecordingFolder => f.write_str("there is no folder for the recordings"),
+            Self::ExternalMixer => {
+                f.write_str("the loop recorder does not record in external mixer mode")
+            }
         }
     }
 }
@@ -386,6 +393,83 @@ pub struct Snapshot {
     /// Gain the maximiser is applying; one while it is off or idle.
     pub maximiser_gain: f32,
     pub recorder: RecorderSnapshot,
+    pub loop_recorder: LoopRecorderSnapshot,
+}
+
+/// What the interface shows of the loop recorder: `docs/behavior/recording.md`, *Loop
+/// recorder*.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LoopRecorderSnapshot {
+    pub phase: LoopPhase,
+    /// The size chosen, in bars.
+    pub bars: u32,
+    /// The bars a loop recorded now would have, at the tempo of the clock.
+    pub fitting_bars: u32,
+    pub source: LoopSource,
+    pub dry_wet: f64,
+    /// The share of the loop taken away on each pass of an overdub, 0 to 1.
+    pub decay: f64,
+    /// How far into the loop the position is, from zero to one.
+    pub progress: f32,
+    /// The length of the loop; zero while nothing is recorded.
+    pub seconds: f64,
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+impl Default for LoopRecorderSnapshot {
+    fn default() -> Self {
+        let controls = LoopControls::default();
+        Self {
+            phase: LoopPhase::Empty,
+            bars: controls.bars,
+            fitting_bars: controls.bars,
+            source: controls.source,
+            dry_wet: controls.dry_wet,
+            decay: controls.decay,
+            progress: 0.0,
+            seconds: 0.0,
+            can_undo: false,
+            can_redo: false,
+        }
+    }
+}
+
+/// The settings of the loop recorder the control side keeps, to give a new engine.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LoopControls {
+    bars: u32,
+    source: LoopSource,
+    dry_wet: f64,
+    decay: f64,
+}
+
+impl Default for LoopControls {
+    fn default() -> Self {
+        Self {
+            bars: 4,
+            source: LoopSource::Master,
+            dry_wet: 0.5,
+            decay: 0.0,
+        }
+    }
+}
+
+impl LoopControls {
+    fn as_commands(self) -> [RtCommand; 4] {
+        [
+            RtCommand::LoopBars { bars: self.bars },
+            RtCommand::LoopSource {
+                source: self.source,
+            },
+            RtCommand::LoopDryWet {
+                amount: self.dry_wet as f32,
+            },
+            RtCommand::LoopDecay {
+                decay: self.decay as f32,
+            },
+        ]
+    }
 }
 
 #[derive(Default)]
@@ -499,6 +583,7 @@ pub struct Engine {
     analyser: Arc<dyn Analyser>,
     recall: Option<Recall>,
     recorder: Recorder,
+    loop_recorder: LoopControls,
     rate: SampleRate,
 }
 
@@ -529,6 +614,17 @@ impl Engine {
     /// *Split*. A recording that runs keeps the size it started with.
     pub fn set_recording_split(&mut self, bytes: u64) {
         self.recorder.split_bytes = bytes.clamp(MIN_SPLIT_BYTES, SPLIT_BYTES);
+    }
+
+    /// Sets the share of the loop an overdub takes away on each pass, 0 to 1:
+    /// `docs/behavior/recording.md`, *Loop recorder*.
+    pub fn set_loop_decay(&mut self, decay: f64) -> Result<(), EngineError> {
+        let decay = ValueError::check("decay", decay, 0.0, 1.0)?;
+        self.send(RtCommand::LoopDecay {
+            decay: decay as f32,
+        })?;
+        self.loop_recorder.decay = decay;
+        Ok(())
     }
 
     /// Stops a recording that runs and waits up to `wait` for its file to be finished, for
@@ -572,6 +668,7 @@ impl Engine {
             analyser,
             recall: None,
             recorder: Recorder::new(recorded),
+            loop_recorder: LoopControls::default(),
             rate,
         };
         let mut engine = engine;
@@ -591,6 +688,11 @@ impl Engine {
         // A recording is not carried over: it ends with the engine that made it.
         engine.recorder.names = previous.recorder.names.clone();
         engine.recorder.split_bytes = previous.recorder.split_bytes;
+        // The loop is lost with the engine; its settings are not.
+        for command in previous.loop_recorder.as_commands() {
+            let _ = engine.send(command);
+        }
+        engine.loop_recorder = previous.loop_recorder;
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();
@@ -964,6 +1066,14 @@ impl Engine {
                 self.recorder.cut();
                 return Ok(());
             }
+            Command::LoopRecorderRecord
+            | Command::LoopRecorderPlay
+            | Command::LoopRecorderUndo
+            | Command::LoopRecorderRedo
+            | Command::LoopRecorderDelete
+            | Command::LoopRecorderSizeSet { .. }
+            | Command::LoopRecorderSourceSet { .. }
+            | Command::LoopRecorderDryWetSet { .. } => return self.dispatch_loop_recorder(command),
             Command::GlobalSyncModeSet { mode } => {
                 let on = mode == SyncMode::Beat;
                 self.send(RtCommand::KeepBeat { on })?;
@@ -1199,6 +1309,57 @@ impl Engine {
             _ => {}
         }
         Ok(())
+    }
+
+    /// The commands of the loop recorder. Rec is refused in external mixer mode, where the
+    /// mix the loop plays into is not heard.
+    fn dispatch_loop_recorder(&mut self, command: Command) -> Result<(), EngineError> {
+        let rt = match command {
+            Command::LoopRecorderRecord => {
+                if self.mixer.mode == MixerMode::External {
+                    return Err(EngineError::ExternalMixer);
+                }
+                RtCommand::LoopRecord
+            }
+            Command::LoopRecorderPlay => RtCommand::LoopPlay,
+            Command::LoopRecorderUndo => RtCommand::LoopUndo,
+            Command::LoopRecorderRedo => RtCommand::LoopRedo,
+            Command::LoopRecorderDelete => RtCommand::LoopDelete,
+            Command::LoopRecorderSizeSet { bars } => {
+                let bars = LOOP_BARS
+                    .into_iter()
+                    .find(|size| f64::from(*size) == bars)
+                    .ok_or(ValueError::UnknownChoice {
+                        name: "bars",
+                        expected: "1, 2, 4, 8",
+                    })?;
+                // The processor takes a size only while nothing is recorded.
+                if LoopPhase::from_code(
+                    u8::try_from(self.ends.shared.loop_phase.get()).unwrap_or(0),
+                ) != LoopPhase::Empty
+                {
+                    return Ok(());
+                }
+                self.send(RtCommand::LoopBars { bars })?;
+                self.loop_recorder.bars = bars;
+                return Ok(());
+            }
+            Command::LoopRecorderSourceSet { source } => {
+                self.send(RtCommand::LoopSource { source })?;
+                self.loop_recorder.source = source;
+                return Ok(());
+            }
+            Command::LoopRecorderDryWetSet { amount } => {
+                let amount = ValueError::check("amount", amount, 0.0, 1.0)?;
+                self.send(RtCommand::LoopDryWet {
+                    amount: amount as f32,
+                })?;
+                self.loop_recorder.dry_wet = amount;
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+        self.send(rt)
     }
 
     /// Sends the external mode and its options of `mixer`, and keeps them once sent.
@@ -1910,6 +2071,19 @@ impl Engine {
             limiter_gain: shared.limiter_gain.get(),
             maximiser_gain: shared.maximiser_gain.get(),
             recorder: self.recorder.snapshot(shared, self.rate),
+            loop_recorder: LoopRecorderSnapshot {
+                phase: LoopPhase::from_code(u8::try_from(shared.loop_phase.get()).unwrap_or(0)),
+                bars: self.loop_recorder.bars,
+                fitting_bars: u32::try_from(shared.loop_bars.get())
+                    .unwrap_or(self.loop_recorder.bars),
+                source: self.loop_recorder.source,
+                dry_wet: self.loop_recorder.dry_wet,
+                decay: self.loop_recorder.decay,
+                progress: shared.loop_progress.get(),
+                seconds: shared.loop_seconds.get(),
+                can_undo: shared.loop_can_undo.get(),
+                can_redo: shared.loop_can_redo.get(),
+            },
             load_marker: self.load_marker,
             fade_markers: self.fade_markers,
             preview: PreviewSnapshot {

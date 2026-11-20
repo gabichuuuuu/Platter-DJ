@@ -15,8 +15,8 @@ use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, MixerMode,
-    MoveMode, Output, SizeStep, SyncMode, UnitMode,
+    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, LoopSource,
+    MixerMode, MoveMode, Output, SizeStep, SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -515,6 +515,34 @@ fn process_neither_allocates_nor_frees() {
     rig.send(Command::RecorderToggle);
     run(&mut rig, 2);
     rig.engine.finish_recording(WAIT);
+    // The loop recorder: a pass of a bar, an overdub, undo and redo, an overdub that copies
+    // the loop while an undo waits for the copy, then delete, each with its fades.
+    rig.send(Command::MixerModeSet {
+        mode: MixerMode::Internal,
+    });
+    rig.send(Command::DeckPlay { deck: DeckId::A });
+    rig.send(Command::LoopRecorderSizeSet { bars: 1.0 });
+    rig.send(Command::LoopRecorderSourceSet {
+        source: LoopSource::Deck(DeckId::A),
+    });
+    rig.send(Command::LoopRecorderRecord);
+    run(&mut rig, 260);
+    for (command, blocks) in [
+        (Command::LoopRecorderRecord, 100),
+        (Command::LoopRecorderRecord, 5),
+        (Command::LoopRecorderUndo, 10),
+        (Command::LoopRecorderRedo, 10),
+        (Command::LoopRecorderRecord, 1),
+        (Command::LoopRecorderUndo, 60),
+        (Command::LoopRecorderPlay, 5),
+        (Command::LoopRecorderPlay, 5),
+        (Command::LoopRecorderDryWetSet { amount: 0.8 }, 5),
+        (Command::LoopRecorderDelete, 5),
+    ] {
+        rig.send(command);
+        run(&mut rig, blocks);
+    }
+    rig.send(Command::DeckPause { deck: DeckId::A });
     // Replacing a track while it plays is the case where a buffer changes hands: the old
     // one must travel back to this thread instead of being freed by the processor.
     rig.send(Command::DeckPlay { deck: DeckId::A });

@@ -2,8 +2,8 @@
 
 The mix recorder: it writes what the master output plays into audio files, counts the time
 of the recording and cuts it into a new file on demand. M4 delivers the recorder and its
-indicator in the status header. The loop recorder, recordings in the tree of the browser and
-broadcasting are later items of `docs/parity.toml`. How the samples travel from the audio
+indicator in the status header, and the loop recorder (*Loop recorder*, below). Broadcasting
+is a later item of `docs/parity.toml`. How the samples travel from the audio
 thread to the disk: `docs/decisions/0035-mix-recorder.md`.
 
 ## What the public manual says
@@ -176,3 +176,129 @@ a recording that runs keeps its folder, its name and its split size until it sto
 - `crates/ui-egui/tests/settings_mixer.rs`: the Recording page takes the explorer folder, sets
   the split size and keeps a typed prefix on Enter; `apps/platter/src/config.rs`: the three
   are kept in the settings file, and a prefix or a size that cannot be used is the default.
+
+# Loop recorder
+
+The loop recorder records a loop of a few bars from the mix or from one deck, plays it back
+over the mix and records more on top of it, with undo and redo of the last layer.
+
+## What the public manual says
+
+Sections of the public manual, read on 21 November 2026:
+
+- *Overview*, *Global Section*, *Loop Recorder*
+- *Preferences*, *Loop Recorder page*
+
+**Panel.** The loop recorder shares the left side of the global section with the first effect
+unit. It records loops on the fly from the main output of the mixer, from one deck or from an
+external input. Its controls:
+
+- a dry / wet knob, the ratio of the main signal to the recorded one;
+- a progress bar, the current length of the recording;
+- a size key, the initial length of the recording;
+- Delete, which removes the recorded loop; Undo, which undoes the last overdub; Redo, which
+  brings back what Undo removed;
+- a play key, which starts and stops the playback of the recording;
+- a record key, which starts and stops the recording and the overdubbing;
+- a menu of the source.
+
+With an external mixer the only source is the external input.
+
+**Preferences.** *Rec. Latency* corrects the latency of the recording in external mixer mode.
+*LoopDecay* sets, as a percentage, how long recorded audio takes to fade out while overdubbing.
+
+The sections read do not say when a recording starts, which sizes exist, whether the loop
+follows the tempo after it is recorded, what the ends of the dry / wet knob do, or what 0 and
+100 percent of the decay mean.
+
+## What Platter does
+
+**Panel.** In the middle panel of the effect row, left of the mix recorder, as the design system
+draws it (`docs/design/DESIGN.md`, *Loop recorder (M4)*): the source, the size, Rec, play,
+Undo, the dry / wet knob and the progress bar under them. Redo and Delete are in the context
+menu of Undo, opened with the right button or Shift+F10, and have keys of the keyboard:
+Ctrl+Z undoes, Ctrl+Y redoes and Ctrl+Delete deletes. Rec is lit in the error colour while it
+waits for the beat, records or overdubs; play is lit while the loop plays. The bar fills as
+the loop plays, in the error colour during the first pass. Undo keeps its English name in
+Spanish, as Rec does: the key is 32 points wide.
+
+**Size and tempo.** 1, 2, 4 or 8 bars of four beats (`loop_recorder.size.set`), 4 by default,
+at the tempo of the master clock when Rec is pressed. The clock always has a tempo: that of the
+tempo master deck or its own (`docs/behavior/sync.md`). The size is chosen while nothing is
+recorded. The longest loop is 32 seconds, 8 bars at 60 beats per minute; at a slower tempo a
+size that does not fit is halved until it does. The loop keeps its length when the tempo
+changes later: it is not stretched.
+
+**Record.** Rec (`loop_recorder.record`) on an empty recorder waits for the next beat of the
+clock and records one pass of the size; at the end of the pass the loop plays. Rec pressed
+during the first pass ends it: the rest of the loop stays silent and it plays. Rec pressed
+while the loop plays starts an overdub, recording on top of the loop where it is, and pressed
+again ends it. The overdub does not start by itself after the first pass: with the mix as the
+source it would add the mix to the loop on every pass. Rec pressed while it waits for
+the beat cancels the wait.
+
+**Play.** Play (`loop_recorder.play`) pauses the loop where it is and plays it again from there.
+Pausing ends an overdub. Rec on a paused loop plays it and overdubs.
+
+**Undo and redo.** Each overdub, from Rec to Rec, is a layer. Undo (`loop_recorder.undo`)
+removes the last layer, ending an overdub that runs; Redo (`loop_recorder.redo`) puts it back.
+One layer is kept: a new overdub after an undo replaces what Redo would bring back, and Undo
+after Undo does nothing. The first pass is not a layer: Delete removes it.
+
+**Delete.** Delete (`loop_recorder.delete`) stops the loop and empties the recorder; the size
+can be chosen again.
+
+**Source.** `Master` (default), the mix of the decks before the master volume, or one deck,
+`Deck A` to `Deck D`, after its equaliser, filter and effects and before its fader, so a deck
+heard only in the headphones can be recorded (`loop_recorder.source.set`). The source can
+change during an overdub. The loop is never recorded into itself: the source is taken before
+the loop is added to the mix.
+
+**Where the loop plays.** The loop is added to the mix of the decks before the master volume, so
+the master volume, the maximiser and the safety limiter act on it and the mix recorder records
+it. The dry / wet knob (`loop_recorder.dry_wet.set`, 0 to 1, 0.5 by default) sets both: from
+0 to 0.5 the loop rises to full level with the mix at full level, from 0.5 to 1 the mix falls to
+silence. The knob acts only while the loop plays; with nothing playing the mix is at full level.
+
+**Decay.** *Overdub decay* on the Recording page (`recorder.loop_decay.set`, 0 to 100 percent,
+0 by default) is how much of what the loop held is taken away on each pass of an overdub: 0
+keeps it all, 50 halves it on every pass, 100 replaces it with what the overdub records. It is
+kept in the settings file under `[recorder]`.
+
+**Without clicks.** The loop fades in and out over 5 ms at its seam, when it starts and stops
+playing and around an undo or a redo; an overdub fades its input in and out over 5 ms.
+
+## Differences
+
+- Rec waits for the next beat instead of starting at once, so the loop lies on the beats of the
+  mix and repeats in time.
+- No external input and no *Rec. Latency*: Platter has no audio input until M5 (input
+  routing). In external mixer mode the panel is disabled and Rec is refused, since the mix of
+  the decks the loop would play into is not heard.
+- One layer of undo, as the manual describes Undo as undoing the last overdub.
+- The loop is not stretched when the tempo changes; nothing in the sections read says it is.
+- The size is a menu of four lengths, as the design system draws it.
+
+## Edge cases
+
+| Input | Result |
+| --- | --- |
+| Play, Undo, Redo or the knob with nothing recorded | Nothing; the keys are disabled |
+| Undo with a loop but no overdub to undo | Nothing; Undo stays enabled so its menu opens |
+| Size while a loop is recorded or Rec waits | Refused; the key is disabled |
+| 8 bars at 50 beats per minute | 4 bars, 19.2 seconds |
+| Undo right after an overdub starts, before the previous state is copied | Done as soon as the copy ends, within a few blocks |
+| Redo after a new overdub | Nothing: the new overdub replaced the undone layer |
+| A source deck that is empty | Silence is recorded |
+| Rec in external mixer mode | Refused |
+| A new audio device | The engine is built again and the loop is lost |
+
+## Tests
+
+- `crates/engine/tests/loop_recorder.rs`: a pass waits for the beat and has the length of the
+  size at the tempo, the loop plays and overdubs, decay takes away what the note says, undo
+  and redo, delete, a size that does not fit, the refused commands.
+- `crates/engine/tests/realtime_memory.rs`: record, overdub, undo, redo and delete in `process`
+  neither allocate nor free.
+- `crates/ui-egui/tests/panels.rs`: the keys of the panel emit their commands and are
+  disabled as above; `crates/ui-egui/tests/settings_mixer.rs`: the decay on the Recording page.
