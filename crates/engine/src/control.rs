@@ -32,7 +32,7 @@ use crate::command::{
 };
 use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
-use crate::recorder::{Recorder, RecorderSnapshot, RecordingNames};
+use crate::recorder::{MIN_SPLIT_BYTES, Recorder, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 use crate::rt::{
     self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LoopEdit,
     LoopPart, LoopState, Processor, RtCommand, Span, Stretcher, TrackAudio,
@@ -524,6 +524,13 @@ impl Engine {
         self.recorder.names = Some(names);
     }
 
+    /// Sets the size of samples at which the next recording closes a file and opens the next
+    /// one, between [`MIN_SPLIT_BYTES`] and [`SPLIT_BYTES`]: `docs/behavior/recording.md`,
+    /// *Split*. A recording that runs keeps the size it started with.
+    pub fn set_recording_split(&mut self, bytes: u64) {
+        self.recorder.split_bytes = bytes.clamp(MIN_SPLIT_BYTES, SPLIT_BYTES);
+    }
+
     /// Stops a recording that runs and waits up to `wait` for its file to be finished, for
     /// the application to call before it closes. The processor must go on running meanwhile:
     /// it marks where the recording ends.
@@ -583,6 +590,7 @@ impl Engine {
         engine.recall = previous.recall.clone();
         // A recording is not carried over: it ends with the engine that made it.
         engine.recorder.names = previous.recorder.names.clone();
+        engine.recorder.split_bytes = previous.recorder.split_bytes;
         // A fresh queue holds every one of these commands, so none can be refused.
         for deck in DeckId::ALL {
             let controls = previous.decks[deck.index()].controls.clone();

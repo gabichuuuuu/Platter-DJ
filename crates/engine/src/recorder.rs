@@ -27,9 +27,11 @@ use crate::wav::WavWriter;
 /// [`crate::Engine::set_recording_names`].
 pub type RecordingNames = Arc<dyn Fn() -> PathBuf + Send + Sync>;
 
-/// A file is closed and the next one opened at this size of samples: the largest split the
-/// public manual offers. A WAV file cannot pass 4 GiB.
+/// A file is closed and the next one opened at this size of samples by default: the largest
+/// split the public manual offers. A WAV file cannot pass 4 GiB.
 pub const SPLIT_BYTES: u64 = 2048 * 1024 * 1024;
+/// The smallest split [`crate::Engine::set_recording_split`] takes.
+pub const MIN_SPLIT_BYTES: u64 = 1024 * 1024;
 const BYTES_PER_FRAME: u64 = 8;
 /// How long the worker waits, after a stop, for the processor to mark the end. The processor
 /// does not run without an output, and then the file is finished anyway.
@@ -83,6 +85,8 @@ pub(crate) struct Recorder {
     queue: Option<Consumer<Recorded>>,
     worker: Option<Worker>,
     pub(crate) names: Option<RecordingNames>,
+    /// The size of samples at which the next recording splits its files.
+    pub(crate) split_bytes: u64,
     /// The number of the last recording started.
     number: u32,
     recording: bool,
@@ -98,6 +102,7 @@ impl Recorder {
             queue: Some(queue),
             worker: None,
             names: None,
+            split_bytes: SPLIT_BYTES,
             number: 0,
             recording: false,
             stop_wanted: false,
@@ -138,7 +143,7 @@ impl Recorder {
             names,
             rate,
             number,
-            split_frames: split_frames(),
+            split_frames: split_frames(self.split_bytes),
             orders: orders_in,
             reports: reports_out,
         };
@@ -313,8 +318,8 @@ pub(crate) struct Job {
     pub(crate) reports: Sender<Report>,
 }
 
-pub(crate) fn split_frames() -> u64 {
-    SPLIT_BYTES / BYTES_PER_FRAME
+pub(crate) fn split_frames(bytes: u64) -> u64 {
+    bytes / BYTES_PER_FRAME
 }
 
 /// The body of a worker: it writes the frames of recording `job.number` until their end comes,

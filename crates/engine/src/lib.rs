@@ -40,7 +40,7 @@ pub use platter_dsp::effects::unit::{UnitMode, UnitValues};
 pub use platter_dsp::effects::{Controls, EffectKind};
 pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
-pub use recorder::{RecorderSnapshot, RecordingNames};
+pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{LoopState, Output, Processor};
 pub use wav::WavWriter;
