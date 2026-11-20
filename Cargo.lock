@@ -2228,7 +2228,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "platter"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "eframe",
  "platter-audio-io",
@@ -2243,21 +2243,21 @@ dependencies = [
 
 [[package]]
 name = "platter-analysis"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-core",
 ]
 
 [[package]]
 name = "platter-audio-io"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cpal",
 ]
 
 [[package]]
 name = "platter-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-core",
  "platter-decode",
@@ -2269,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "platter-control"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "toml",
@@ -2277,11 +2277,11 @@ dependencies = [
 
 [[package]]
 name = "platter-core"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "platter-decode"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-core",
  "platter-testkit",
@@ -2293,14 +2293,14 @@ dependencies = [
 
 [[package]]
 name = "platter-device-io"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "midir",
 ]
 
 [[package]]
 name = "platter-dsp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-core",
  "platter-testkit",
@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "platter-engine"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-analysis",
  "platter-core",
@@ -2322,7 +2322,7 @@ dependencies = [
 
 [[package]]
 name = "platter-library"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "platter-core",
  "proptest",
@@ -2331,11 +2331,11 @@ dependencies = [
 
 [[package]]
 name = "platter-testkit"
-version = "0.5.0"
+version = "0.6.0"
 
 [[package]]
 name = "platter-ui-egui"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "egui",
  "platter-core",
@@ -4254,7 +4254,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "cargo_metadata",
  "serde",

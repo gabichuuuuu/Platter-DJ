@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.5.0...v0.6.0) - 2026-11-20
+
+### Added
+
+- *(engine)* recordings node, keep values, fade-cue mixing and tempo zones ([#48](https://github.com/gabichuuuuu/Platter-DJ/pull/48))
+
 ## [0.5.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.4.0...v0.5.0) - 2026-11-19
 
 ### Added
