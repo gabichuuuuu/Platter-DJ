@@ -143,6 +143,13 @@ pub struct SettingsView {
     pub bpm_range: (u32, u32),
     /// A playing deck takes no track.
     pub load_stopped_only: bool,
+    /// The folder the mix recorder writes into, as the Recording page shows it, and whether
+    /// it is one the user chose.
+    pub recording_folder: String,
+    pub recording_folder_chosen: bool,
+    /// The start of the names of the recordings, and the size their files split at, in MiB.
+    pub recording_prefix: String,
+    pub recording_split: u32,
     /// The music folders of the Library page, and the one it shows.
     pub music_folders: Vec<PathBuf>,
     pub music_folder: Option<usize>,

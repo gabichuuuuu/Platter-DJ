@@ -77,8 +77,8 @@ cut add a part number (`mix-20261118-214105-2.wav`). A file is never written ove
 use takes the next number. *Recordings*, last in the tree of the browser, shows the folder
 (`docs/behavior/browser.md`, *Recordings*).
 
-**Split.** A file is closed and the next one opened, as a cut does, when it reaches 2048 MiB,
-the largest split the public manual offers. A WAV file stores its size in 32 bits and cannot
+**Split.** A file is closed and the next one opened, as a cut does, when it reaches the split
+size of the preferences, 2048 MiB by default, the largest split the public manual offers. A WAV file stores its size in 32 bits and cannot
 pass 4 GiB; at 48 kHz a split comes every 93 minutes.
 
 **Stop.** A stop ends the recording at the end of the block the processor plays after it,
@@ -93,6 +93,22 @@ behind for more than four seconds, the frames it could not take are counted, not
 the file then lacks them, the time turns to the warning colour and the log says how many were
 lost when the recording ends.
 
+**Preferences.** The Recording page of the preferences (`docs/design/DESIGN.md`,
+*Preferences: Recording and Layouts pages*) holds, in its section *Mix recorder*:
+
+- *Folder*: the folder of the recordings. *Use explorer folder* (`recorder.folder.set`) takes
+  the folder the explorer of the browser shows, as *Add* of the music folders does; *Default*
+  (`recorder.folder.reset`) goes back to the folder of *Files*. *Recordings* in the tree shows
+  the folder chosen.
+- *Prefix* (`recorder.prefix.set`): the start of the name of each file, `mix` by default, then
+  a dash and the moment, as in *Files*. Enter keeps it. Characters a file name cannot hold
+  (`< > : " / \ | ? *` and control characters) are left out, and spaces at either end; at most
+  32 characters are kept. An empty prefix is `mix`.
+- *Split at* (`recorder.split.set`): 512, 1024 or 2048 MiB.
+
+The three are kept in the settings file under `[recorder]` and apply from the next recording:
+a recording that runs keeps its folder, its name and its split size until it stops.
+
 ## Differences
 
 - No gain knob and no level meter in the panel: the design system draws neither, and the
@@ -100,8 +116,11 @@ lost when the recording ends.
   already shows. The *level* of the inventory item is therefore the master level; a gain of
   its own is a question for the maintainer.
 - No external source: Platter has no audio input until M5 (input routing).
-- No preferences page for the recorder: the folder, the names and the split size are fixed
-  (*Files*, *Split*). The page of the inventory (`preferences`, `recorders`) stays planned.
+- Three split sizes instead of any size up to 2048 MB: the manual gives the largest only, and
+  three steps of a segmented choice are quicker to set than a number.
+- The folder is taken from the explorer of the browser, as the music folders are: Platter has
+  no dialog of the system to pick a folder.
+- The source is always the internal mix: an external input waits for input routing (M5).
 - The display shows the time, not the size of the file.
 - In external mixer mode the file holds the internal mix, which the collapsed mixer of that
   mode does not show; recording the external mixer needs an input.
@@ -126,7 +145,11 @@ lost when the recording ends.
 | The folder cannot be created or the file opened | The recording stops at once; the reason is shown and logged |
 | The disk fails during a recording | The recording stops; the file keeps what was written |
 | The disk is slower than the audio for more than four seconds | The frames it cannot take are counted and left out |
-| A file reaches 2048 MiB | It is closed and the next part opened, with no frame lost |
+| A file reaches the split size | It is closed and the next part opened, with no frame lost |
+| A prefix of spaces or of characters a file name cannot hold | `mix` |
+| A split size in the settings file other than 512, 1024 or 2048 | 2048 |
+| A folder in the settings file that no longer exists | Kept; the first recording creates it, or fails as a folder that cannot be created does |
+| The folder or the prefix changed while recording | The recording goes on as it started; the next one uses the new ones |
 | A change of sample rate while recording | The engine is built again at the new rate: the recording ends and its file is finished; Rec starts a new one |
 | A change of device at the same rate | When the stream hands the processor back, the recording goes on and the frames the device did not ask for while it changed are not in the file; when it does not, the engine is built again and the recording ends as on a change of rate. No test covers it |
 | No audio device, and no silent output either | The processor does not run, so no frame is recorded; a stop finishes the file after two seconds |
@@ -148,3 +171,8 @@ lost when the recording ends.
 - `crates/ui-egui/tests/panels.rs`: Rec and Cut emit their commands, Cut is disabled without a
   recording, the indicator of the header shows only while recording, in both languages and
   without overlaps.
+- `crates/engine/tests/recorder.rs`, `the_split_size_set_closes_a_file_at_that_size`: the split
+  size of the preferences closes the first file at that size, with no frame lost.
+- `crates/ui-egui/tests/settings_mixer.rs`: the Recording page takes the explorer folder, sets
+  the split size and keeps a typed prefix on Enter; `apps/platter/src/config.rs`: the three
+  are kept in the settings file, and a prefix or a size that cannot be used is the default.

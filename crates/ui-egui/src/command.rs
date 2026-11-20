@@ -146,17 +146,19 @@ pub enum SettingsPage {
     General,
     Decks,
     Mixer,
+    Recording,
     Library,
     Controllers,
     Keyboard,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Audio,
         Self::General,
         Self::Decks,
         Self::Mixer,
+        Self::Recording,
         Self::Library,
         Self::Controllers,
         Self::Keyboard,
@@ -168,6 +170,7 @@ impl SettingsPage {
             Self::General => "general",
             Self::Decks => "decks",
             Self::Mixer => "mixer",
+            Self::Recording => "recording",
             Self::Library => "library",
             Self::Controllers => "controllers",
             Self::Keyboard => "keyboard",
@@ -365,6 +368,17 @@ pub enum AppCommand {
     },
     /// Turns on or off the rule that a playing deck takes no track.
     LoadStoppedOnlyToggle,
+    /// The preferences of the mix recorder: `docs/behavior/recording.md`, *Preferences*.
+    RecorderFolderSet {
+        path: PathBuf,
+    },
+    RecorderFolderReset,
+    RecorderPrefixSet {
+        prefix: String,
+    },
+    RecorderSplitSet {
+        megabytes: u32,
+    },
     /// The music folders of the Library page: `docs/behavior/library.md`.
     MusicFolderAdd {
         path: PathBuf,
@@ -689,6 +703,7 @@ const PAGES: &[&str] = &[
     "general",
     "decks",
     "mixer",
+    "recording",
     "library",
     "controllers",
     "keyboard",
@@ -836,6 +851,17 @@ impl DeckLayout {
 pub const DECK_SIZES: &[&str] = &["full", "compact"];
 pub const DECK_LAYOUTS: &[&str] = &["two", "four"];
 pub const WAVE_COLOURS: &[&str] = &["deck", "bands", "mono", "bass"];
+/// The sizes the Recording page splits the files of the mix recorder at, in MiB.
+pub const RECORDING_SPLITS: [u32; 3] = [512, 1024, 2048];
+const SPLIT_NAMES: &[&str] = &["512", "1024", "2048"];
+
+fn split_name(megabytes: u32) -> &'static str {
+    match megabytes {
+        512 => "512",
+        1024 => "1024",
+        _ => "2048",
+    }
+}
 
 /// The colours of the three bands of every waveform: `docs/behavior/waveform.md`, *Colour
 /// modes*.
@@ -1222,6 +1248,29 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.tempo_range.set",
         label: "Tempo range of every deck",
         params: &[number("percent", 8.0, 50.0)],
+    },
+    CommandSpec {
+        id: "recorder.folder.set",
+        label: "Folder of the recordings",
+        params: &[ParamSpec {
+            name: "path",
+            kind: ParamKind::Path,
+        }],
+    },
+    CommandSpec {
+        id: "recorder.folder.reset",
+        label: "Default folder of the recordings",
+        params: &[],
+    },
+    CommandSpec {
+        id: "recorder.prefix.set",
+        label: "Prefix of the recordings",
+        params: &[text("prefix")],
+    },
+    CommandSpec {
+        id: "recorder.split.set",
+        label: "Split the recordings at",
+        params: &[choice("megabytes", SPLIT_NAMES)],
     },
     CommandSpec {
         id: "app.min_playtime.set",
@@ -1967,6 +2016,21 @@ impl AppCommand {
             "midi.learn.toggle" => Self::MidiLearnToggle,
             "midi.target.set" => Self::MidiTargetSet { deck: read.deck()? },
             "app.load_stopped_only.toggle" => Self::LoadStoppedOnlyToggle,
+            "recorder.folder.set" => Self::RecorderFolderSet {
+                path: PathBuf::from(read.text("path")?),
+            },
+            "recorder.folder.reset" => Self::RecorderFolderReset,
+            "recorder.prefix.set" => Self::RecorderPrefixSet {
+                prefix: read.text("prefix")?.to_owned(),
+            },
+            "recorder.split.set" => Self::RecorderSplitSet {
+                megabytes: read.choice(
+                    "megabytes",
+                    &RECORDING_SPLITS,
+                    split_name,
+                    "512, 1024, 2048",
+                )?,
+            },
             "library.music_folder.add" => Self::MusicFolderAdd {
                 path: PathBuf::from(read.text("path")?),
             },
@@ -2284,6 +2348,10 @@ impl AppCommand {
             Self::KeyNotationSet { .. } => "app.key_notation.set",
             Self::AnalysisRangeSet { .. } => "app.analysis_range.set",
             Self::LoadStoppedOnlyToggle => "app.load_stopped_only.toggle",
+            Self::RecorderFolderSet { .. } => "recorder.folder.set",
+            Self::RecorderFolderReset => "recorder.folder.reset",
+            Self::RecorderPrefixSet { .. } => "recorder.prefix.set",
+            Self::RecorderSplitSet { .. } => "recorder.split.set",
             Self::MusicFolderAdd { .. } => "library.music_folder.add",
             Self::MusicFolderRemove { .. } => "library.music_folder.remove",
             Self::MusicFolderSelect { .. } => "library.music_folder.select",
@@ -2443,8 +2511,9 @@ mod tests {
 
     use super::{
         APP_SPECS, Action, AppCommand, BrowserNode, DECK_LAYOUTS, DETAIL_FIELDS, DeckLayout,
-        DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, RULE_FIELDS, RuleField,
-        SORT_COLUMNS, SettingsPage, SortColumn, WAVE_COLOURS, WaveColour,
+        DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, RECORDING_SPLITS, RULE_FIELDS,
+        RuleField, SORT_COLUMNS, SPLIT_NAMES, SettingsPage, SortColumn, WAVE_COLOURS, WaveColour,
+        split_name,
     };
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
@@ -2561,6 +2630,8 @@ mod tests {
         assert_eq!(layouts, DECK_LAYOUTS);
         let modes: Vec<_> = WaveColour::ALL.into_iter().map(WaveColour::name).collect();
         assert_eq!(modes, WAVE_COLOURS);
+        let splits: Vec<_> = RECORDING_SPLITS.into_iter().map(split_name).collect();
+        assert_eq!(splits, SPLIT_NAMES);
     }
 
     /// `docs/behavior/interface.md`, *Deck layout*, edge cases.

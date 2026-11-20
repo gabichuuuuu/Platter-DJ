@@ -528,3 +528,61 @@ fn the_decks_page_chooses_the_colour_mode_of_the_waveforms() {
         }]
     );
 }
+
+/// `docs/behavior/recording.md`, *Preferences*.
+#[test]
+fn the_recording_page_sets_the_folder_the_prefix_and_the_split_of_the_recorder() {
+    let mut scene = sample::playing();
+    scene.browser.explorer = Some(std::path::PathBuf::from("Music/Sets"));
+    let mut stage = Stage::on_page(scene, Language::English, SettingsPage::Recording);
+    // The folder is the default one: only the explorer folder can be taken.
+    let reset = control(&stage, "recorder.folder.reset").unwrap();
+    assert!(!reset.enabled);
+    let explorer = control(&stage, "recorder.folder.set").unwrap();
+    assert_eq!(
+        app(&stage.click(explorer.rect.center())),
+        [AppCommand::RecorderFolderSet {
+            path: std::path::PathBuf::from("Music/Sets")
+        }]
+    );
+
+    let mut splits: Vec<Control> = stage
+        .shell
+        .controls()
+        .iter()
+        .filter(|control| control.command == "recorder.split.set")
+        .cloned()
+        .collect();
+    splits.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    assert_eq!(splits.len(), 3);
+    assert_eq!(
+        app(&stage.click(splits[0].rect.center())),
+        [AppCommand::RecorderSplitSet { megabytes: 512 }]
+    );
+
+    // The prefix is typed into its field and kept by Enter.
+    let prefix = control(&stage, "recorder.prefix.set").unwrap();
+    stage.click(prefix.rect.center());
+    let backspace = |pressed| Event::Key {
+        key: egui::Key::Backspace,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    stage.frame(vec![backspace(true), backspace(false)]);
+    stage.frame(vec![Event::Text("x-friday".to_owned())]);
+    let enter = Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    assert_eq!(
+        app(&stage.frame(vec![enter])),
+        [AppCommand::RecorderPrefixSet {
+            prefix: "mix-friday".to_owned()
+        }]
+    );
+}

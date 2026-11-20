@@ -66,6 +66,7 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
         "preferences-general" => Some((sample::playing(), Some(SettingsPage::General))),
         "preferences-decks" => Some((sample::playing(), Some(SettingsPage::Decks))),
         "preferences-mixer" => Some((sample::playing(), Some(SettingsPage::Mixer))),
+        "preferences-recording" => Some((sample::playing(), Some(SettingsPage::Recording))),
         "preferences-library" | "maintenance" => {
             Some((sample::playing(), Some(SettingsPage::Library)))
         }

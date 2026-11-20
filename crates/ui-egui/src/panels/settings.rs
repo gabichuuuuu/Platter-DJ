@@ -14,7 +14,8 @@ use platter_engine::{
 
 use crate::collection::TagWriting;
 use crate::command::{
-    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RouteSlot, SettingsPage, WaveColour,
+    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RECORDING_SPLITS, RouteSlot,
+    SettingsPage, WaveColour,
 };
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
@@ -25,6 +26,7 @@ use crate::model::{AudioState, ControlType, View};
 use crate::paint;
 use crate::panels::header::problem_keys;
 use crate::widgets::choice::{self, Choice, SelectSpec};
+use crate::widgets::field;
 use crate::widgets::key::{self, KeySpec, Press};
 
 pub const DIALOG_SIZE: egui::Vec2 = egui::vec2(880.0, 620.0);
@@ -153,6 +155,7 @@ pub fn settings(
             SettingsPage::General => "settings.general",
             SettingsPage::Decks => "settings.decks",
             SettingsPage::Mixer => "settings.mixer",
+            SettingsPage::Recording => "settings.recording",
             SettingsPage::Library => "settings.library",
             SettingsPage::Controllers => "settings.controllers",
             SettingsPage::Keyboard => "settings.keyboard",
@@ -211,6 +214,7 @@ pub fn settings(
             (MIXER_PAGE_HEIGHT, &mut memory.page_scroll),
             |cx, page| mixer_page(cx, page, view),
         ),
+        SettingsPage::Recording => recording_page(cx, page_rect, view),
         SettingsPage::Library => library_page(cx, page_rect, view),
         SettingsPage::Controllers => controllers_page(cx, page_rect, view),
     }
@@ -1134,6 +1138,140 @@ fn decks_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         cx,
         Rect::from_min_max(select.min, egui::pos2(control.right(), select.bottom())),
         texts.get("settings.wave_colour_help"),
+    );
+}
+
+/// The Recording page: `docs/behavior/recording.md`, *Preferences*.
+fn recording_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
+    let texts = cx.texts;
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let settings = &view.settings;
+    let top = section(cx, page, 20.0, "settings.mix_recorder_section");
+
+    // The folder: a line in the place of a control, then the keys that change it.
+    let control = setting(cx, page, top, "settings.recording_folder");
+    let explorer = view.browser.explorer.clone();
+    let mut keys = Vec::new();
+    let mut right = control.right();
+    for (key_id, label, action, enabled) in [
+        (
+            "settings-recording-default",
+            "settings.recording_default",
+            AppCommand::RecorderFolderReset,
+            settings.recording_folder_chosen,
+        ),
+        (
+            "settings-recording-explorer",
+            "settings.recording_use_explorer",
+            AppCommand::RecorderFolderSet {
+                path: explorer.clone().unwrap_or_default(),
+            },
+            explorer
+                .as_ref()
+                .is_some_and(|folder| folder.display().to_string() != settings.recording_folder),
+        ),
+    ] {
+        let label = texts.get(label);
+        let width = key::width_for(cx, label, 72.0);
+        let rect = Rect::from_min_size(
+            egui::pos2(right - width, control.top()),
+            egui::vec2(width, tokens.size.button_h),
+        );
+        right = rect.left() - tokens.space.s3;
+        keys.push((key_id, label, action, enabled, rect));
+    }
+    let line = Rect::from_min_max(
+        control.min,
+        egui::pos2(right, control.top() + tokens.size.button_h),
+    );
+    paint::text_elided(
+        cx.painter(),
+        theme,
+        line,
+        &settings.recording_folder,
+        tokens.text.readout,
+        tokens.color.text_primary,
+    );
+    for (key_id, label, action, enabled, rect) in keys.into_iter().rev() {
+        key::key(
+            cx,
+            rect,
+            id(key_id),
+            KeySpec::text(label).enabled(enabled),
+            Press::Click(Action::App(action)),
+        );
+    }
+
+    // The prefix: kept by Enter or by leaving the field.
+    let control = setting(cx, page, top + 44.0, "settings.recording_prefix");
+    let rect = Rect::from_min_size(control.min, egui::vec2(160.0, tokens.size.button_h));
+    let field_id = id("settings-recording-prefix");
+    let was_focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+    let mut draft = cx
+        .ui
+        .data(|data| data.get_temp::<String>(field_id))
+        .unwrap_or_else(|| settings.recording_prefix.clone());
+    field::text(
+        cx,
+        rect,
+        field_id,
+        &mut draft,
+        texts.get("settings.recording_prefix"),
+        "recorder.prefix.set",
+    );
+    let focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+    let enter = focused && cx.ui.input(|input| input.key_pressed(egui::Key::Enter));
+    if enter || (was_focused && !focused) {
+        if draft != settings.recording_prefix {
+            cx.out.emit(AppCommand::RecorderPrefixSet { prefix: draft });
+        }
+        cx.ui.data_mut(|data| data.remove::<String>(field_id));
+        if enter {
+            cx.ui.memory_mut(|memory| memory.surrender_focus(field_id));
+        }
+    } else if focused {
+        cx.ui.data_mut(|data| data.insert_temp(field_id, draft));
+    }
+    help(
+        cx,
+        Rect::from_min_max(rect.min, egui::pos2(control.right(), rect.bottom())),
+        texts.get("settings.recording_prefix_help"),
+    );
+
+    // The split size.
+    let control = setting(cx, page, top + 94.0, "settings.recording_split");
+    let labels = RECORDING_SPLITS.map(|megabytes| {
+        texts.format(
+            "settings.recording_megabytes",
+            &[("size", &megabytes.to_string())],
+        )
+    });
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-recording-split"),
+        &choices,
+        RECORDING_SPLITS
+            .iter()
+            .position(|megabytes| *megabytes == settings.recording_split),
+        |index| {
+            Action::App(AppCommand::RecorderSplitSet {
+                megabytes: RECORDING_SPLITS[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.recording_split_help"),
     );
 }
 

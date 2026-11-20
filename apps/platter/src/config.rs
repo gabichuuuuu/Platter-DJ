@@ -16,7 +16,7 @@ use platter_engine::{
 };
 use platter_ui_egui::collection::TagWriting;
 use platter_ui_egui::command::{
-    DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS, WaveColour,
+    DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS, RECORDING_SPLITS, WaveColour,
 };
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
@@ -58,6 +58,32 @@ pub fn config_dir() -> Option<PathBuf> {
         var("XDG_CONFIG_HOME")
             .or_else(|| var("HOME").map(|home| home.join(".config")))
             .map(|base| base.join("platter"))
+    }
+}
+
+/// The prefix of the names of the recordings when none is set.
+pub const DEFAULT_PREFIX: &str = "mix";
+/// The split size of the recordings when none is set, in MiB: the largest.
+const SPLIT_DEFAULT: u32 = 2048;
+/// The longest prefix kept, in characters.
+const MAX_PREFIX_CHARS: usize = 32;
+
+/// The prefix of the names of the recordings made of `text`: without the characters a file
+/// name cannot hold nor the spaces around it, at most 32 characters, and `mix` when nothing is
+/// left (`docs/behavior/recording.md`, *Preferences*).
+pub fn recording_prefix(text: &str) -> String {
+    let kept: String = text
+        .chars()
+        .filter(|c| {
+            !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+        .collect();
+    let kept: String = kept.trim().chars().take(MAX_PREFIX_CHARS).collect();
+    let kept = kept.trim_end();
+    if kept.is_empty() {
+        DEFAULT_PREFIX.to_owned()
+    } else {
+        kept.to_owned()
     }
 }
 
@@ -140,6 +166,12 @@ pub struct Settings {
     /// says so.
     pub music_folders: Vec<PathBuf>,
     pub import_at_start: bool,
+    /// The preferences of the mix recorder, from the Recording page
+    /// (`docs/behavior/recording.md`, *Preferences*): the folder the user chose, if any, the
+    /// prefix of the names and the split size in MiB.
+    pub recording_folder: Option<PathBuf>,
+    pub recording_prefix: String,
+    pub recording_split: u32,
     /// The columns the list of the browser shows besides the title.
     pub columns: Vec<ListColumn>,
     pub check_at_start: bool,
@@ -196,6 +228,9 @@ impl Default for Settings {
             load_stopped_only: false,
             music_folders: Vec::new(),
             import_at_start: true,
+            recording_folder: None,
+            recording_prefix: DEFAULT_PREFIX.to_owned(),
+            recording_split: SPLIT_DEFAULT,
             columns: ListColumn::SHOWN_AT_FIRST.to_vec(),
             check_at_start: false,
             tag_writing: TagWriting::default(),
@@ -372,6 +407,15 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            recording_folder: text(table("recorder"), "folder")
+                .filter(|folder| !folder.is_empty())
+                .map(PathBuf::from),
+            recording_prefix: recording_prefix(
+                &text(table("recorder"), "prefix").unwrap_or_default(),
+            ),
+            recording_split: number(table("recorder"), "split_mb")
+                .filter(|megabytes| RECORDING_SPLITS.contains(megabytes))
+                .unwrap_or(defaults.recording_split),
             import_at_start: flag(table("browser"), "import_at_start")
                 .unwrap_or(defaults.import_at_start),
             check_at_start: flag(table("browser"), "check_at_start")
@@ -585,6 +629,16 @@ impl Settings {
             toml::Value::String(self.tag_writing.name().to_owned()),
         );
         root.insert("browser".to_owned(), toml::Value::Table(browser));
+        let mut recorder = toml::Table::new();
+        if let Some(folder) = self.recording_folder.as_deref().and_then(Path::to_str) {
+            recorder.insert("folder".to_owned(), toml::Value::String(folder.to_owned()));
+        }
+        recorder.insert(
+            "prefix".to_owned(),
+            toml::Value::String(self.recording_prefix.clone()),
+        );
+        recorder.insert("split_mb".to_owned(), integer(self.recording_split));
+        root.insert("recorder".to_owned(), toml::Value::Table(recorder));
         let mut effects = crate::effects_config::write(&self.effects);
         effects.insert(
             "shown".to_owned(),
@@ -668,6 +722,9 @@ mod tests {
             deck_size: DeckSize::Compact,
             deck_layout: DeckLayout::Four,
             wave_colour: WaveColour::Bass,
+            recording_folder: Some(PathBuf::from("Sets")),
+            recording_prefix: "night".to_owned(),
+            recording_split: 1024,
             effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
@@ -818,6 +875,29 @@ min_playtime = {written}
         );
         let unknown = Settings::parse("[decks]\nwave_colour = \"neon\"\n");
         assert_eq!(unknown.wave_colour, WaveColour::Deck);
+    }
+
+    /// `docs/behavior/recording.md`, *Preferences*, and its edge cases.
+    #[test]
+    fn the_preferences_of_the_recorder_are_kept_and_cleaned() {
+        let chosen = Settings {
+            recording_folder: Some(PathBuf::from("Sets/Recordings ñ")),
+            recording_prefix: "friday".to_owned(),
+            recording_split: 512,
+            ..Settings::default()
+        };
+        let read = Settings::parse(&chosen.to_toml());
+        assert_eq!(read.recording_folder, chosen.recording_folder);
+        assert_eq!(read.recording_prefix, "friday");
+        assert_eq!(read.recording_split, 512);
+        let defaults = Settings::parse("[recorder]\nfolder = \"\"\nsplit_mb = 700\n");
+        assert_eq!(defaults.recording_folder, None);
+        assert_eq!(defaults.recording_prefix, "mix");
+        assert_eq!(defaults.recording_split, 2048);
+        assert_eq!(super::recording_prefix("  live: <set>  "), "live set");
+        assert_eq!(super::recording_prefix("a/b\\c?"), "abc");
+        assert_eq!(super::recording_prefix(" \t* "), "mix");
+        assert_eq!(super::recording_prefix(&"x".repeat(40)).len(), 32);
         // A range the analysis cannot use, or half a range, is the default.
         for written in [
             "[decks]\nbpm_min = 100\nbpm_max = 120\n",

@@ -142,6 +142,14 @@ shortcuts of the decks and the mixer rest.
 Restore defaults (`app.settings.restore_defaults`) returns every setting of the pages to its
 default.
 
+### Recording
+
+The section *Mix recorder*: the folder of the recordings, the prefix of their names and the size
+their files split at (`recorder.folder.set`, `recorder.folder.reset`, `recorder.prefix.set`,
+`recorder.split.set`), kept under `[recorder]`. What each one does, and when it applies:
+`docs/behavior/recording.md`, *Preferences*. *Restore defaults* gives back the default folder,
+`mix` and 2048 MiB.
+
 ### Library
 
 | Setting | Command | Notes |
@@ -174,7 +182,7 @@ Platter keeps its files in a folder of its own inside the configuration folder o
 
 | File | Content |
 | --- | --- |
-| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Decks, Mixer and Library pages, the folder the file selector showed last and its extra roots |
+| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Decks, Mixer, Recording and Library pages, the folder the file selector showed last and its extra roots |
 | `library.sqlite` | The collection, playlists, history, preparation list and favourites (`docs/behavior/library.md`) |
 | `Backup/library-*.sqlite` | The 20 newest copies of the library, one made each time it opens changed since the last copy (`docs/behavior/library.md`, *Backups*) |
 | `keymap.toml` | The keyboard shortcuts (`docs/behavior/keyboard.md`) |

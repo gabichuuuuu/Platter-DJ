@@ -266,6 +266,10 @@ fn states() -> Vec<State> {
     recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
     recorder_failed.engine.recorder.dropped_frames = 4_800;
     let recorder_failed = state("recorder-failed", recorder_failed, None);
+    // The Recording page with a folder the user chose, which Default takes back.
+    let mut chosen = sample::playing();
+    chosen.settings.recording_folder = "Music/Sets/Recorded".to_owned();
+    chosen.settings.recording_folder_chosen = true;
     // The waveforms of the four decks in the colour mode of the bands.
     let mut bands = sample::four_decks();
     bands.settings.wave_colour = WaveColour::Bands;
@@ -342,6 +346,16 @@ fn states() -> Vec<State> {
             "preferences-mixer",
             sample::playing(),
             Some(SettingsPage::Mixer),
+        ),
+        state(
+            "preferences-recording",
+            sample::playing(),
+            Some(SettingsPage::Recording),
+        ),
+        state(
+            "preferences-recording-chosen",
+            chosen,
+            Some(SettingsPage::Recording),
         ),
         State {
             page_scroll: f32::MAX,
@@ -1318,6 +1332,9 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     data.extend(scene.browser.crumbs.iter().cloned());
     data.extend(scene.audio.devices.iter().map(|device| device.name.clone()));
+    // The folder and the prefix of the recordings, as the Recording page shows them.
+    data.insert(scene.settings.recording_folder.clone());
+    data.insert(scene.settings.recording_prefix.clone());
     data
 }
 
