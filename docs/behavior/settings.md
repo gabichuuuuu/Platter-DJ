@@ -123,6 +123,7 @@ shortcuts of the decks and the mixer rest.
 | Automatic fade | `mixer.crossfader.fade_beats.set` | 1, 2, 4, 8, 16, 32 or 64 beats of the master clock (`docs/behavior/mixer.md`) |
 | Crossfader curve | `mixer.crossfader.curve.set` | Smooth, linear or sharp |
 | Effect units, routing of each unit | `app.effect_units.set`, `fx.unit.routing.set` | Two or four; insert or post fader (`docs/behavior/effects.md`) |
+| Fade cues | `global.fade_markers.toggle` | A key, lit while a deck crossing a fade-out cue starts its partner (`docs/behavior/auto-mix.md`) |
 | Keep values | `fx.keep_values.toggle` | A key, lit while a newly chosen effect keeps the values of the controls (`docs/behavior/effects.md`) |
 
 - The two keys of the external mode can be set in either mode; the page says they act only

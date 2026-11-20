@@ -969,6 +969,11 @@ impl PlatterApp {
                 Command::GlobalLoadMarkerToggle,
             ),
             (
+                self.engine.snapshot().fade_markers,
+                settings.fade_markers,
+                Command::GlobalFadeMarkersToggle,
+            ),
+            (
                 mixer.maximiser.on,
                 settings.maximiser.on,
                 Command::MasterLimiterToggle,
@@ -1000,6 +1005,7 @@ impl PlatterApp {
             fade_beats: mixer.fade_beats.round() as u32,
             maximiser: mixer.maximiser,
             load_marker: snapshot.load_marker,
+            fade_markers: snapshot.fade_markers,
             ..self.settings.clone()
         };
         if kept != self.settings {
@@ -1045,6 +1051,7 @@ impl PlatterApp {
                 | Command::MixerFilterModelSet { .. }
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
+                | Command::GlobalFadeMarkersToggle
                 | Command::MasterLimiterToggle
                 | Command::MasterMaximiserDriveSet { .. }
                 | Command::MasterMaximiserCeilingSet { .. }

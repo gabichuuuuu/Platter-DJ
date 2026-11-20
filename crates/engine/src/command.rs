@@ -471,6 +471,8 @@ pub enum Command {
     GlobalSnapToggle,
     /// Whether a track with a cue of the type load starts at it.
     GlobalLoadMarkerToggle,
+    /// Switches whether a deck crossing a fade-out cue starts its partner from its fade-in cue.
+    GlobalFadeMarkersToggle,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     GlobalQuantizeToggle,
     /// Starts recording the master into a file, or stops the recording:
@@ -1410,6 +1412,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "global.fade_markers.toggle",
+        label: "Mix with the fade cues",
+        params: &[],
+    },
+    CommandSpec {
         id: "global.quantize.toggle",
         label: "Quantize",
         params: &[],
@@ -1837,6 +1844,7 @@ impl Command {
             {
                 return Self::sync_from_args(sync, &read);
             }
+            "global.fade_markers.toggle" => Self::GlobalFadeMarkersToggle,
             "recorder.toggle" => Self::RecorderToggle,
             "recorder.cut" => Self::RecorderCut,
             mixer => return Self::mixer_from_args(mixer, &read),
@@ -2188,6 +2196,7 @@ impl Command {
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
+            Self::GlobalFadeMarkersToggle => "global.fade_markers.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
             Self::RecorderToggle => "recorder.toggle",
             Self::RecorderCut => "recorder.cut",

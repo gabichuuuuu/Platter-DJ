@@ -116,7 +116,8 @@ is selected: the commands of the CUE page act on it.
 
 - The documented application keeps a list of cues and maps some of them to the eight hotcue
   buttons. In Platter the eight slots are the list: a stored cue always has a slot.
-- The types `fade_in` and `fade_out` are a label and a colour: automatic mixing is M4. The
+- The types `fade_in` and `fade_out` start the partner deck when the *Fade cues* key of the
+  Mixer page is on (`docs/behavior/auto-mix.md`). The
   type `load` acts through the loading rules of the Decks page of the preferences
   (`docs/behavior/settings.md`).
 - The cues are kept in the collection with their track and come back when it is loaded again

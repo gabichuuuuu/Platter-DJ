@@ -111,9 +111,8 @@ pre-listened channel after its filter and before its fader.
   the master clock, so a fade ends on the beat count the DJ chose at any tempo; the manual
   says neither. Outside each badge of the crossfader, a key steps it towards that side and an
   *Auto* key fades it there by itself.
-- The Fade In and Fade Out markers that start an automatic crossfade in the documented application
-  are not part of this: the fade and load cue types are labels only
-  (`docs/behavior/cues.md`).
+- The fade-in and fade-out cues start a deck and an automatic fade of the crossfader when the
+  *Fade cues* key of the Mixer page is on (`docs/behavior/auto-mix.md`).
 
 ## Edge cases
 

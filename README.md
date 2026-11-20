@@ -107,8 +107,10 @@ Everything known to be missing, unfinished or not yet listened to.
   (`docs/decisions/0020-own-analysis.md`). The key found cannot be edited. The grid and the
   stored cues of a track are kept in the collection and come back when it is loaded again.
 - Nobody has listened to loops or jumps yet.
-- The fade-in and fade-out types of a cue are labels only: automatic mixing comes in M4.
-  Nobody has listened to the hotcues yet.
+- A deck crossing a fade-out cue starts the other deck of its pair from its fade-in cue and
+  fades the crossfader to it, when the *Fade cues* key of the Mixer page is on. There is no
+  automatic playback of a playlist, and nobody has listened to a transition
+  (`docs/behavior/auto-mix.md`). Nobody has listened to the hotcues yet.
 - Nobody has listened to sync yet. A deck syncs once its grid has a tempo, found by the
   analysis or tapped, typed or stepped in by hand.
 - The metronome of the master clock clicks on the headphones only, so a device with two

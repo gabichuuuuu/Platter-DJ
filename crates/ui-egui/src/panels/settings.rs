@@ -215,7 +215,7 @@ pub fn settings(
 }
 
 /// The height of the content of the Mixer page, which scrolls.
-const MIXER_PAGE_HEIGHT: f32 = 910.0;
+const MIXER_PAGE_HEIGHT: f32 = 960.0;
 
 /// Draws a page taller than its room, scrolled by `scroll`: the wheel over it scrolls it, and
 /// a control of the page the keyboard focus reaches out of view is brought into view.
@@ -1822,6 +1822,17 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         cx,
         Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
         texts.get("settings.curve_help"),
+    );
+    switch(
+        cx,
+        page,
+        top + 100.0,
+        Switch {
+            name: "settings.fade_markers",
+            help: "settings.fade_markers_help",
+            on: view.engine.fade_markers,
+            action: Command::GlobalFadeMarkersToggle.into(),
+        },
     );
 }
 
