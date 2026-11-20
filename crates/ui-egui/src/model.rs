@@ -436,6 +436,8 @@ pub struct BrowserView {
     pub closed_folders: Vec<NodeId>,
     /// The earlier sessions show under *History*.
     pub history_open: bool,
+    /// The folder of the mix recorder, which *Recordings* shows; `None` without one.
+    pub recordings: Option<PathBuf>,
     /// The covers read of the tracks of the list, by path.
     pub covers: std::collections::HashMap<PathBuf, CoverImage>,
     /// Names of the folders from a root of the tree down to the current one.

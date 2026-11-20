@@ -138,7 +138,8 @@ Everything known to be missing, unfinished or not yet listened to.
   (`docs/behavior/master.md`).
 - The mix recorder, over the mixer, writes the master into WAV files of 32-bit float samples
   in the folder `Platter DJ Recordings` of the music folder, named by the time they start in
-  UTC, and Cut starts a new file. It has no gain or level meter of its own, no preferences
+  UTC, and Cut starts a new file. *Recordings*, last in the tree of the browser, shows that
+  folder. It has no gain or level meter of its own, no preferences
   page and no external input, and nobody has listened to a recorded set
   (`docs/behavior/recording.md`).
 - The browser shows the collection and imports a folder into it, with the tags of each file

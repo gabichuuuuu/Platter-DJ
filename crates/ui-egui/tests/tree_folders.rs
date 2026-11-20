@@ -1,5 +1,5 @@
-//! Folders of playlists and *History* close and open in the tree. Behaviour note:
-//! `docs/behavior/browser.md`, *Playlists* and *History*.
+//! Folders of playlists and *History* close and open in the tree, and *Recordings* comes last.
+//! Behaviour note: `docs/behavior/browser.md`, *Playlists*, *History* and *Recordings*.
 
 #![allow(clippy::unwrap_used)]
 
@@ -131,6 +131,40 @@ fn history_hides_and_shows_the_earlier_sessions() {
     let (texts, _, _) = frame(&scene, TO_HISTORY, None);
     assert!(texts.iter().any(|text| text == "History"));
     assert!(!texts.iter().any(|text| text == "2026-11-14 21:30"));
+}
+
+/// `docs/behavior/browser.md`, *Recordings*.
+#[test]
+fn recordings_comes_last_and_shows_the_folder_of_the_recorder() {
+    let scene = sample::playing();
+    let folder = scene.browser.recordings.clone().unwrap();
+    // Scrolled to the bottom of the tree.
+    let (texts, _, shell) = frame(&scene, f32::MAX, None);
+    let place = |name: &str| texts.iter().position(|text| text == name).unwrap();
+    assert!(place("Recordings") > place("External drive"));
+    let row = shell
+        .controls()
+        .iter()
+        .filter(|control| control.command == "browser.navigate")
+        .max_by(|a, b| a.rect.top().total_cmp(&b.rect.top()))
+        .map(|control| control.rect.center())
+        .unwrap();
+    let (_, sent, _) = frame(&scene, f32::MAX, Some(row));
+    assert_eq!(sent, [AppCommand::BrowserNavigate { path: folder }]);
+
+    let mut scene = sample::playing();
+    scene.browser.recordings = None;
+    let (texts, _, _) = frame(&scene, f32::MAX, None);
+    assert!(!texts.iter().any(|text| text == "Recordings"));
+}
+
+#[test]
+fn the_browser_gives_the_tree_the_folder_of_the_recordings() {
+    let mut browser = FileBrowser::new(Vec::new());
+    assert_eq!(browser.view().recordings, None);
+    let folder = std::path::PathBuf::from("Recordings");
+    browser.set_recordings(Some(folder.clone()));
+    assert_eq!(browser.view().recordings, Some(folder));
 }
 
 #[test]

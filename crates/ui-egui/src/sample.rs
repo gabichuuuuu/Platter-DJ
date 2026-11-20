@@ -513,6 +513,7 @@ fn browser() -> BrowserView {
         ],
         closed_folders: Vec::new(),
         history_open: true,
+        recordings: Some(PathBuf::from("Home/Music/Platter DJ Recordings")),
         // The sample files are invented: the cells show the icon of a file without a cover.
         covers: std::collections::HashMap::new(),
         crumbs: vec!["Home".to_owned(), "Music".to_owned(), "Sets".to_owned()],

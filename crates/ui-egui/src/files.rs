@@ -274,6 +274,8 @@ pub struct FileBrowser {
     /// sessions.
     closed_folders: BTreeSet<NodeId>,
     history_closed: bool,
+    /// The folder of the mix recorder, for *Recordings*.
+    recordings: Option<PathBuf>,
     analysis: Option<AnalysisStatus>,
     problem: Option<String>,
     /// The tracks the decks hold, whose covers the deck headers show.
@@ -306,10 +308,17 @@ impl FileBrowser {
             columns: ListColumn::SHOWN_AT_FIRST.to_vec(),
             closed_folders: BTreeSet::new(),
             history_closed: false,
+            recordings: None,
             analysis: None,
             problem: None,
             deck_tracks: Default::default(),
         }
+    }
+
+    /// Gives the tree *Recordings*, after the folders, which shows `folder`: where the mix
+    /// recorder writes (`docs/behavior/browser.md`, *Recordings*).
+    pub fn set_recordings(&mut self, folder: Option<PathBuf>) {
+        self.recordings = folder;
     }
 
     /// Gives the tree the collection and the playlists, above the folders.
@@ -1143,6 +1152,7 @@ impl FileBrowser {
             pictures: self.pictures.clone(),
             closed_folders: self.closed_folders.iter().copied().collect(),
             history_open: !self.history_closed,
+            recordings: self.recordings.clone(),
             // The collection and the playlists name themselves; the panel draws their names.
             crumbs: if self.showing_library {
                 Vec::new()

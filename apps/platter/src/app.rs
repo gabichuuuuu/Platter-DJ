@@ -273,7 +273,9 @@ impl PlatterApp {
             engine.set_recall(recall);
         }
         let home = config::home_dir();
-        if let Some(recordings) = config::recordings_folder(home.as_deref(), folder.as_deref()) {
+        let recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
+        browser.set_recordings(recordings.clone());
+        if let Some(recordings) = recordings {
             engine.set_recording_names(recording_names(recordings));
         }
         let settings_min_playtime = settings.min_playtime;
