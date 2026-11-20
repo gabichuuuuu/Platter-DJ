@@ -635,6 +635,24 @@ fn a_smart_playlist_follows_its_rules_and_is_saved_duplicated_and_deleted() {
     change(&mut browser, AppCommand::BrowserSmartDuplicate { smart });
     assert_eq!(smart_rows(&browser).len(), 2);
 
+    // Exported with the tracks its rules give now.
+    let exports = root.join("exports");
+    std::fs::create_dir_all(&exports).unwrap();
+    change(
+        &mut browser,
+        AppCommand::BrowserPlaylistExport {
+            playlist: smart,
+            path: exports,
+        },
+    );
+    assert_eq!(
+        collection(&browser).exchanged,
+        Some(PlaylistFileOutcome::Exported {
+            file: "Long.m3u8".to_owned(),
+            entries: 2,
+        })
+    );
+
     // A drop or an entry command changes nothing; deleting it goes back to the collection.
     change(
         &mut browser,

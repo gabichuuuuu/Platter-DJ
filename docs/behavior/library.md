@@ -41,8 +41,8 @@ played, and its played state and play count can be reset. A previewed track does
 The search field filters the list shown, or the whole collection, by the tags of the tracks as
 the user types.
 
-*Working with Playlists*, sections *Smartlists*, *Creating Smartlists*, *Using Smartlists* and
-*Editing Smartlists*, read on 20 November 2026: a smart playlist is made from the menu of the
+*Working with Playlists*, the sections on smart playlists: how one is created, used and
+edited, read on 20 November 2026: a smart playlist is made from the menu of the
 playlists folder and holds the tracks of the collection that pass the filters chosen for it; it
 follows the collection as tracks come in. Its filters cover the tags, the tempo, the key, the
 colour, the rating, the length, the dates of import and of last play, the play count, the
@@ -306,8 +306,8 @@ closes, in a folder of backups, from which an earlier collection can be taken ba
 - Smart playlists combine their rules with "and" only, and compare each field one way: words
   for the tags, ranges for numbers and dates, one value for the colour and the key. The comment,
   the bitrate, the file path and the tags Platter does not read (label, remixer, release and
-  others) are not rules. Dates are absolute, not "the last 30 days". Commands and the field of
-  the tree write the rules as text (`parse_rules`): each rule is its field and its value,
+  others) are not rules. Dates are absolute, not "the last 30 days". Commands write the rules as
+  text (`parse_rules`): each rule is its field and its value,
   separated by `;`: `title`, `artist`, `album` and `genre` take words; `tempo`, `length`,
   `rating`, `plays`, `imported` and `played` take `low..high`, `low..` or `..high`; `colour` and
   `key` a number; `missing` and `analysed` `yes` or `no`. How the browser shows them is in

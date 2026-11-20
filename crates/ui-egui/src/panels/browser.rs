@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use egui::{Align2, CornerRadius, EventFilter, Key, Pos2, Rect, Role, Sense, WidgetInfo};
 use platter_core::DeckId;
 use platter_engine::Command;
-use platter_library::{NodeId, SessionId, parse_rules};
+use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
 use crate::command::{
@@ -209,8 +209,6 @@ pub enum Naming {
     },
     /// Another name for a playlist or a folder.
     Rename(NodeId),
-    /// The rules of a smart playlist, as text.
-    Rules(NodeId),
 }
 
 /// An open context menu: what it acts on and where it was asked for.
@@ -728,7 +726,10 @@ fn context_menu(
         }
         MenuTarget::Playlist(smart) if item_of(smart).is_some_and(|row| row.smart) => {
             let mut entries = vec![
-                opens("browser.menu_edit_rules", Naming::Rules(smart)),
+                sends(
+                    "browser.menu_edit_rules",
+                    AppCommand::BrowserSmartRulesOpen { smart },
+                ),
                 opens("browser.menu_rename", Naming::Rename(smart)),
                 move_to(smart),
                 sends(
@@ -1530,16 +1531,6 @@ fn library_rows<'a>(
             }
             None => memory.naming = None,
         },
-        Some(naming @ Naming::Rules(item)) => match place(item) {
-            Some((at, row)) if row.smart => {
-                rows[at] = LibraryRow::Field {
-                    depth: row.depth + 1,
-                    naming,
-                    initial: &row.rules,
-                };
-            }
-            _ => memory.naming = None,
-        },
         None => {}
     }
     rows.push(LibraryRow::Node(Box::new(preparation_node(cx, collection))));
@@ -1641,7 +1632,6 @@ fn name_row(
         } => ("browser.playlist.create", "browser.name_smart"),
         Naming::New { .. } => ("browser.playlist.create", "browser.name_playlist"),
         Naming::Rename(_) => ("browser.playlist.rename", "browser.name_playlist"),
-        Naming::Rules(_) => ("browser.smart.rules.set", "browser.rules_smart"),
     };
     let placeholder = cx.texts.get(placeholder);
     let Some(finish) = field::name(
@@ -1656,18 +1646,12 @@ fn name_row(
     };
     memory.naming = None;
     if let Finish::Confirm(name) = finish {
-        let command = match naming {
+        cx.out.emit(match naming {
             Naming::New { folder, item } => {
                 AppCommand::BrowserPlaylistCreate { folder, item, name }
             }
             Naming::Rename(item) => AppCommand::BrowserPlaylistRename { item, name },
-            // Text that is no rule sends nothing, as an empty name does.
-            Naming::Rules(smart) => match parse_rules(&name) {
-                Ok(rules) => AppCommand::BrowserSmartRulesSet { smart, rules },
-                Err(_) => return,
-            },
-        };
-        cx.out.emit(command);
+        });
     }
 }
 

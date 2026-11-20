@@ -227,7 +227,7 @@ features = [
   { id = "history", name = "History", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; cargo test -p platter-library --test store; saved as a playlist, exported and deleted, not renamed; dates in UTC, see docs/behavior/browser.md" },
   { id = "favourites", name = "Favourites", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection --test playlist_menu; cargo test -p platter-library --test store" },
   { id = "played-state", name = "Played state of a track", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; cargo test -p platter-ui-egui --test settings_mixer" },
-  { id = "smart-playlists", name = "Smart playlists", milestone = "M4", status = "in_progress" },
+  { id = "smart-playlists", name = "Smart playlists", milestone = "M4", status = "done", evidence = "cargo test -p platter-library --test smart; cargo test -p platter-ui-egui --test smart_rules --test collection smart; rules combine with and only, dates are absolute, no glyph of its own, exported as M3U only, see docs/behavior/library.md" },
 ]
 
 [[area]]

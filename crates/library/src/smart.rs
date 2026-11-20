@@ -72,7 +72,8 @@ pub enum Rule {
 }
 
 impl Rule {
-    pub(crate) fn validate(&self) -> Result<(), LibraryError> {
+    /// Whether the rule means something: [`LibraryError::InvalidRule`] when it does not.
+    pub fn validate(&self) -> Result<(), LibraryError> {
         let valid = match self {
             Self::Words { words, .. } => {
                 !words.trim().is_empty() && words.chars().count() <= MAX_TAG_CHARS

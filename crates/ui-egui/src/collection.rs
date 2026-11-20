@@ -861,11 +861,16 @@ fn export_playlist(
     name: &str,
     folder: &Path,
 ) -> Result<PlaylistFileOutcome, LibraryError> {
-    let tracks: Vec<TrackId> = library
-        .entries(playlist)?
-        .into_iter()
-        .map(|entry| entry.track)
-        .collect();
+    // A smart playlist has no entries: its tracks are those its rules give now.
+    let tracks: Vec<TrackId> = match library.entries(playlist) {
+        Ok(entries) => entries.into_iter().map(|entry| entry.track).collect(),
+        Err(LibraryError::WrongKind) => smart_tracks(library, playlist, MAX_PAGE)?
+            .hits
+            .into_iter()
+            .map(|hit| hit.track.id)
+            .collect(),
+        Err(error) => return Err(error),
+    };
     export_tracks(library, &tracks, name, folder)
 }
 
