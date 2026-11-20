@@ -688,15 +688,14 @@ impl Zones {
         };
         let shown = view.settings.shown;
         let effects = shown.effects.then(|| {
-            let row = [
+            [
                 effects_band(screen.left(), screen.left() + column),
                 effects_band(
                     screen.left() + column + seam,
                     screen.right() - column - seam,
                 ),
                 effects_band(screen.right() - column, screen.right()),
-            ];
-            row
+            ]
         });
         if effects.is_some() {
             top += effects::ROW_HEIGHT + seam;
