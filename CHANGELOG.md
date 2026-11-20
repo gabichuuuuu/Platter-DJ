@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.4.0...v0.5.0) - 2026-11-19
+
+### Added
+
+- M4 effect units, mixer effects, maximiser and mix recorder ([#46](https://github.com/gabichuuuuu/Platter-DJ/pull/46))
+
 ## [0.4.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.3.1...v0.4.0) - 2026-11-18
 
 ### Added

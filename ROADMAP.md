@@ -16,10 +16,10 @@ has the count of `main`. Do not edit the table by hand.
 | M1 | 9 | 9 | 0 | 0 |
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
-| M4 | 31 | 2 | 0 | 29 |
+| M4 | 31 | 14 | 0 | 17 |
 | M5 | 15 | 0 | 0 | 15 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 114 | 3 | 45 |
+| Total | 162 | 126 | 3 | 33 |
 
 First complete version (M0 to M3): 112 of 115 features done.
 
