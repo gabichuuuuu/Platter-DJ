@@ -282,6 +282,97 @@ rows, opened by *Edit rules* in the menu of a smart playlist of `BrowserTree`.
 - Foot: *Cancel* and *Save*, as in `Track-details.html`. *Save* is disabled until every row holds a rule.
 - A smart playlist has the `playlist` glyph in the tree; no icon of its own.
 
+### Waveform colour modes (M4)
+
+This section and the three after it were approved by the maintainer on 20 November 2026, with the
+layout chosen in the preferences, not in the status header.
+
+A preference of the Decks page, `Waveform colour`, a `Select` of four modes. It applies to every
+waveform, lane and stripe at once. Each mode swaps the three colours of the bands (low, mid,
+high), not the drawing code, as *Waveform* says.
+
+| Mode | Low | Mid | High | What for |
+| --- | --- | --- | --- | --- |
+| 1 `Deck` (default) | `deck-x-low` | `deck-x` | `deck-x-high` | Each deck in its own hue, bands by lightness |
+| 2 `Bands` | `wave-low` | `wave-mid` | `wave-high` | The same hue for each band on every deck: bass, mids and highs told apart at a glance |
+| 3 `Mono` | `line-control` | `text-secondary` | `text-primary` | Greyscale; bands by lightness only; for bright rooms and for colour blindness |
+| 4 `Bass` | `deck-x` | `line-control` | `text-secondary` | The low band in the deck hue, the rest grey: kicks and bass lines stand out for beatmatching |
+
+New tokens for mode 2, at least 4.4:1 on `bg-app` and apart in greyscale (relative luminance 0.20, 0.30 and 0.72, darkest the low band):
+
+- `wave-low = "#d9483b"`: bass, the outermost layer.
+- `wave-mid = "#c08a1c"`: mids.
+- `wave-high = "#a8e6fa"`: highs, the innermost layer.
+
+The deck badge, the playhead and the markers keep their colours in every mode, so the deck of a
+waveform is still told by its badge in modes 2 to 4.
+
+### Loop recorder (M4)
+
+In the middle panel of the effect row, to the left of the mix recorder, in both layouts. The
+panel is 396px; the mix recorder keeps its 143px at the right and the loop recorder takes the
+left part from 12px in, 16px apart from it (213px at 1440).
+
+- Top line: the label `Loop recorder` (500 11/14, `text-secondary`) and, after it, the source as
+  a text `Select` (`Master`, `Deck A` … `Deck D`), 600 11/14 with the chevron.
+- A 28px row: the size, a `Select` 52px wide (`1 bar`, `2 bars`, `4 bars`, `8 bars`); `Rec`
+  (40 × 28, its strip `status-error` while recording or overdubbing); `play` (36 × 28, the `play`
+  and `pause` icons, its strip `text-primary` while playing); `Undo` (32 × 28); and a `Knob` for
+  dry / wet at the 28px size of the gain knob of the four-deck mixer, with no label (its tooltip
+  names it).
+- A 2px progress bar under the row, the width of the loop recorder: `line-key` empty, the
+  part played in `text-primary`; while recording the first pass, in `status-error`.
+- `Redo` and `Delete` are in the context menu of `Undo`, and have shortcuts.
+- Disabled states: `play`, `Undo` and the knob while nothing is recorded; `Redo` while nothing was
+  undone; the size while something is recorded (`Delete` first).
+- Commands: `loop_recorder.record`, `loop_recorder.play`, `loop_recorder.undo`,
+  `loop_recorder.redo`, `loop_recorder.delete`, `loop_recorder.size.set`,
+  `loop_recorder.source.set`, `loop_recorder.dry_wet.set`.
+
+### Layouts (M4)
+
+A layout is a named set of view settings: the number of decks, the deck size, and which zones
+are shown (effect row, mixer, parallel lanes) with the share of the height of the browser. Four
+are built in and cannot be changed or removed; any number of personal layouts can be added.
+
+Built-in layouts, at 1440 × 900:
+
+- `Mixing` (default): the current layouts, two or four decks with the effect row, the mixer and
+  the browser, as *Layout of the main window* and *Four-deck layout (M4)* draw them.
+- `Preparation`: status header, deck A alone across the window in the full size with its
+  advanced panel, its waveform as a lane above it; no effect row and no mixer; the browser takes
+  the rest. Loading goes to deck A.
+- `Browser`: status header, the decks in the compact size side by side in one row (two or four),
+  no effect row, mixer or lanes; the browser takes the rest.
+- `Parallel`: the two-deck layout with the parallel lanes, the decks compact; with four decks,
+  four lanes of equal height above the decks.
+
+Personal layouts start as a duplicate of the active one. While one is active, changing the
+deck count, the deck size or the zones in the preferences saves into it. While a built-in one is
+active those settings are greyed in the preferences with the tooltip "Built-in layout: duplicate
+it to change it."
+
+The active layout is chosen on the Layouts page of the preferences, and with `Ctrl+1` to
+`Ctrl+9` in the order of the list. The status header has no selector: at 1440 it has no room
+left (*Decided on 18 November 2026*, above). The `Decks` choice and the deck size of the General
+page are settings of the active layout.
+
+Commands: `layout.select`, `layout.duplicate`, `layout.rename`, `layout.delete`,
+`layout.move_up`, `layout.move_down`.
+
+### Preferences: Recording and Layouts pages (M4)
+
+Same form pattern as `Preferences-audio.html`, two new pages after Mixer.
+
+- **Recording.** Section `Mix recorder`: `Folder`, the path in `readout` style and `Choose…`,
+  which opens the in-app file selector; `Prefix`, a text field, empty by default; `Split at`, a
+  `ValueField` in MB, 1 to 2048, 2048 by default. Section `Loop recorder`: `Overdub decay`, a
+  `ValueField` in percent, 0 to 100, 0 by default (nothing fades).
+- **Layouts.** A table in the pattern of `ControllerMapping`: rows of 28px with the name (`body`)
+  and, at the right, `Built-in` or `Active` in `caption` style. Above it: `Duplicate`, `Rename`,
+  `Delete`, `Move up`, `Move down`. `Rename` and `Delete` are disabled on a built-in layout;
+  `Delete` asks with a `Notice`. Clicking a row makes it active.
+
 ### Four-deck layout (M4)
 
 Measured on `M4-effects.html` at 1440 × 900. Zones top to bottom, separated by 2px seams of `bg-app`:
