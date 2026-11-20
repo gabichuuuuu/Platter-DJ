@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.6.0...v0.7.0) - 2026-11-20
+
+### Added
+
+- smart playlists with a dialog of rules ([#50](https://github.com/gabichuuuuu/Platter-DJ/pull/50))
+
 ## [0.6.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.5.0...v0.6.0) - 2026-11-20
 
 ### Added
