@@ -105,6 +105,7 @@ shortcuts of the decks and the mixer rest.
 | Load only into a stopped deck | `app.load_stopped_only.toggle` | A load sent to a playing deck is refused and written in the log; off by default |
 | Key notation | `app.key_notation.set` | Musical with flats, the default, musical with sharps, or Open Key (`docs/behavior/browser.md`, *Analysis in the background and keys*); kept under `[decks]` |
 | Range of tempos | `app.analysis_range.set` | The tempos the analysis looks in, 70 to 180 BPM by default (`docs/behavior/analysis.md`, *Range of tempos*); kept under `[decks]` as `bpm_min` and `bpm_max` |
+| Waveform colour | `app.wave_colour.set` | Deck, the default, Bands, Mono or Bass, for every waveform at once (`docs/behavior/waveform.md`, *Colour modes*); at the end of the page, which scrolls; kept under `[decks]` as `wave_colour` |
 
 - The setting follows the engine whatever changes it, a shortcut or a controller too, and is
   applied when Platter starts and on Restore defaults. `settings.toml` keeps it under

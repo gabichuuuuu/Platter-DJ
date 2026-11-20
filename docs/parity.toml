@@ -71,7 +71,7 @@ features = [
   { id = "zoom", name = "Waveform zoom", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels every_control_emits_its_command" },
   { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-ui-egui --test flux_marker" },
   { id = "colour-mode-first", name = "First waveform colour mode", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels no_panel_paints_a_colour_outside_the_design_tokens" },
-  { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "planned" },
+  { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --lib waveform --test settings_mixer --test panels; the four modes are Platter's own, see docs/behavior/waveform.md" },
 ]
 
 [[area]]

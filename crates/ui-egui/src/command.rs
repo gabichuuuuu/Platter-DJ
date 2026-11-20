@@ -309,6 +309,10 @@ pub enum AppCommand {
     DeckLayoutSet {
         layout: DeckLayout,
     },
+    /// Chooses the colours of every waveform: `docs/behavior/waveform.md`, *Colour modes*.
+    WaveColourSet {
+        mode: WaveColour,
+    },
     /// Shows two effect units or four: `docs/behavior/effects.md`, *Units and modes*.
     EffectUnitsSet {
         units: EffectUnits,
@@ -831,6 +835,35 @@ impl DeckLayout {
 
 pub const DECK_SIZES: &[&str] = &["full", "compact"];
 pub const DECK_LAYOUTS: &[&str] = &["two", "four"];
+pub const WAVE_COLOURS: &[&str] = &["deck", "bands", "mono", "bass"];
+
+/// The colours of the three bands of every waveform: `docs/behavior/waveform.md`, *Colour
+/// modes*.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WaveColour {
+    /// Each deck in its own hue, the bands by lightness.
+    #[default]
+    Deck,
+    /// One colour per band, the same on every deck.
+    Bands,
+    /// Three greys.
+    Mono,
+    /// The low band in the hue of the deck, the others in grey.
+    Bass,
+}
+
+impl WaveColour {
+    pub const ALL: [Self; 4] = [Self::Deck, Self::Bands, Self::Mono, Self::Bass];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Deck => "deck",
+            Self::Bands => "bands",
+            Self::Mono => "mono",
+            Self::Bass => "bass",
+        }
+    }
+}
 pub const EFFECT_UNITS: &[&str] = &["two", "four"];
 
 /// How many effect units the effect row shows: `docs/behavior/effects.md`, *Units and modes*.
@@ -1169,6 +1202,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.deck_layout.set",
         label: "Two or four decks",
         params: &[choice("layout", DECK_LAYOUTS)],
+    },
+    CommandSpec {
+        id: "app.wave_colour.set",
+        label: "Waveform colour",
+        params: &[choice("mode", WAVE_COLOURS)],
     },
     CommandSpec {
         id: "app.effect_units.set",
@@ -1873,6 +1911,14 @@ impl AppCommand {
             "app.deck_layout.set" => Self::DeckLayoutSet {
                 layout: read.choice("layout", &DeckLayout::ALL, DeckLayout::name, "two, four")?,
             },
+            "app.wave_colour.set" => Self::WaveColourSet {
+                mode: read.choice(
+                    "mode",
+                    &WaveColour::ALL,
+                    WaveColour::name,
+                    "deck, bands, mono, bass",
+                )?,
+            },
             "app.effect_units.set" => Self::EffectUnitsSet {
                 units: read.choice("units", &EffectUnits::ALL, EffectUnits::name, "two, four")?,
             },
@@ -2230,6 +2276,7 @@ impl AppCommand {
             Self::FullscreenAtStartToggle => "app.fullscreen_at_start.toggle",
             Self::DeckSizeSet { .. } => "app.deck_size.set",
             Self::DeckLayoutSet { .. } => "app.deck_layout.set",
+            Self::WaveColourSet { .. } => "app.wave_colour.set",
             Self::EffectUnitsSet { .. } => "app.effect_units.set",
             Self::FxPanelShow { .. } => "app.fx_panel.show",
             Self::TempoRangeSet { .. } => "app.tempo_range.set",
@@ -2397,7 +2444,7 @@ mod tests {
     use super::{
         APP_SPECS, Action, AppCommand, BrowserNode, DECK_LAYOUTS, DETAIL_FIELDS, DeckLayout,
         DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, RULE_FIELDS, RuleField,
-        SORT_COLUMNS, SettingsPage, SortColumn,
+        SORT_COLUMNS, SettingsPage, SortColumn, WAVE_COLOURS, WaveColour,
     };
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
@@ -2512,6 +2559,8 @@ mod tests {
         assert_eq!(fields, RULE_FIELDS);
         let layouts: Vec<_> = DeckLayout::ALL.into_iter().map(DeckLayout::name).collect();
         assert_eq!(layouts, DECK_LAYOUTS);
+        let modes: Vec<_> = WaveColour::ALL.into_iter().map(WaveColour::name).collect();
+        assert_eq!(modes, WAVE_COLOURS);
     }
 
     /// `docs/behavior/interface.md`, *Deck layout*, edge cases.

@@ -14,7 +14,7 @@ use platter_engine::{
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize, EffectUnits};
+use crate::command::{DeckLayout, DeckSize, EffectUnits, WaveColour};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -462,6 +462,7 @@ fn settings() -> SettingsView {
         tempo_range: 8,
         deck_size: DeckSize::Full,
         deck_layout: DeckLayout::Two,
+        wave_colour: WaveColour::Deck,
         effect_units: EffectUnits::Two,
         fx_panels: [
             platter_engine::FxUnit::ALL[0],

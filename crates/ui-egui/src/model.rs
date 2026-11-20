@@ -12,7 +12,7 @@ use platter_engine::Snapshot;
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, SortColumn};
+use crate::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, SortColumn, WaveColour};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -126,6 +126,8 @@ pub struct SettingsView {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// The colours of the waveforms, from the Decks page.
+    pub wave_colour: WaveColour,
     /// Two effect units or four, and the unit each panel of the effect row shows.
     pub effect_units: EffectUnits,
     pub fx_panels: [platter_engine::FxUnit; 2],

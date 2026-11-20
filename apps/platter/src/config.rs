@@ -15,7 +15,9 @@ use platter_engine::{
     MaximiserControls, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS};
+use platter_ui_egui::command::{
+    DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS, WaveColour,
+};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
 use platter_ui_egui::played::{DEFAULT_PLAYTIME, MAX_PLAYTIME, MIN_PLAYTIME};
@@ -117,6 +119,8 @@ pub struct Settings {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// The colours of the waveforms, from the Decks page.
+    pub wave_colour: WaveColour,
     /// Two effect units or four: `docs/behavior/effects.md`.
     pub effect_units: EffectUnits,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
@@ -182,6 +186,7 @@ impl Default for Settings {
             tempo_range: 8,
             deck_size: DeckSize::Full,
             deck_layout: DeckLayout::Four,
+            wave_colour: WaveColour::Deck,
             effect_units: EffectUnits::Two,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
@@ -321,6 +326,9 @@ impl Settings {
             sync_mode: text(table("decks"), "sync_mode")
                 .and_then(|name| SyncMode::ALL.into_iter().find(|mode| mode.name() == name))
                 .unwrap_or(defaults.sync_mode),
+            wave_colour: text(table("decks"), "wave_colour")
+                .and_then(|name| WaveColour::ALL.into_iter().find(|mode| mode.name() == name))
+                .unwrap_or(defaults.wave_colour),
             key_notation: text(table("decks"), "key_notation")
                 .and_then(|name| {
                     KeyNotation::ALL
@@ -485,6 +493,10 @@ impl Settings {
             toml::Value::String(self.sync_mode.name().to_owned()),
         );
         decks.insert(
+            "wave_colour".to_owned(),
+            toml::Value::String(self.wave_colour.name().to_owned()),
+        );
+        decks.insert(
             "key_notation".to_owned(),
             toml::Value::String(self.key_notation.name().to_owned()),
         );
@@ -630,7 +642,7 @@ mod tests {
     use platter_audio_io::Routing;
     use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
-    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn};
+    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, WaveColour};
     use platter_ui_egui::i18n::Language;
     use platter_ui_egui::keys::KeyNotation;
 
@@ -655,6 +667,7 @@ mod tests {
             tempo_range: 16,
             deck_size: DeckSize::Compact,
             deck_layout: DeckLayout::Four,
+            wave_colour: WaveColour::Bass,
             effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
@@ -794,6 +807,17 @@ min_playtime = {written}
         );
         let unknown = Settings::parse("[decks]\nkey_notation = \"camelot\"\n");
         assert_eq!(unknown.key_notation, KeyNotation::Flats);
+        // `docs/behavior/waveform.md`, *Colour modes*: kept, and an unknown one is the default.
+        let mono = Settings {
+            wave_colour: WaveColour::Mono,
+            ..Settings::default()
+        };
+        assert_eq!(
+            Settings::parse(&mono.to_toml()).wave_colour,
+            WaveColour::Mono
+        );
+        let unknown = Settings::parse("[decks]\nwave_colour = \"neon\"\n");
+        assert_eq!(unknown.wave_colour, WaveColour::Deck);
         // A range the analysis cannot use, or half a range, is the default.
         for written in [
             "[decks]\nbpm_min = 100\nbpm_max = 120\n",

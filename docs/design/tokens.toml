@@ -57,6 +57,12 @@ deck-d = "#e85a9c"
 deck-d-low = "#b8336f"
 # High band (treble) of deck D's waveform: the lightest, innermost layer.
 deck-d-high = "#f8c2da"
+# Low band (bass) of every waveform in colour mode Bands: the darkest, outermost layer.
+wave-low = "#d9483b"
+# Mid band of every waveform in colour mode Bands.
+wave-mid = "#c08a1c"
+# High band (treble) of every waveform in colour mode Bands: the lightest, innermost layer.
+wave-high = "#a8e6fa"
 # Healthy state: audio running, file loaded. Always with an icon or label.
 status-ok = "#4cc38a"
 # Attention needed: audio dropouts counted, high CPU load. Always with an icon or label.

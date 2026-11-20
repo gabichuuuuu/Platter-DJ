@@ -15,6 +15,10 @@ zoomed in; the stripe shows the entire track. The waveform is colour-coded: ligh
 stand for high frequencies and darker colours for low frequencies. Two buttons zoom the
 waveform in and out. Both views share one colour mode out of four.
 
+Read again on 20 November 2026: *Preferences*, the page of the layout of the decks, section
+*Miscellaneous*. The colour mode is an option of that page with four named modes; the manual
+names them and does not say how each one looks or how its colours map to frequency.
+
 ## What Platter does
 
 - When a track loads, the worker thread that decoded it also computes its peaks in three
@@ -25,8 +29,19 @@ waveform in and out. Both views share one colour mode out of four.
   looks at the audio.
 - Each column is drawn as three nested layers in the hue of its deck, mirrored around the
   centre line: the low band outermost and darkest, the mid band over it, the high band
-  innermost and lightest. This is colour mode 1 of `docs/design/DESIGN.md`, the only one in
-  M2.
+  innermost and lightest. This is colour mode 1 of `docs/design/DESIGN.md`.
+- **Colour modes.** The Decks page of the preferences chooses one of four modes for every
+  waveform, lane and overview at once (`app.wave_colour.set`, kept in the settings file):
+  - `Deck`, the default: each deck in its own hue, the bands by lightness, as above;
+  - `Bands`: the same three colours on every deck, one per band, so bass, mids and highs are
+    told apart at a glance;
+  - `Mono`: three greys, the bands by lightness only, for bright rooms and colour blindness;
+  - `Bass`: the low band in the hue of the deck and the other two in grey, so kicks and bass
+    lines stand out.
+
+  A mode only swaps the three colours (`docs/design/DESIGN.md`, *Waveform colour modes*). The
+  letter badge, the play position and the markers keep their colours in every mode, so the
+  deck of a waveform is still told by its badge.
 - The scrolling waveform keeps the play position at its centre. Two keys per deck zoom it
   (`waveform.zoom.in`, `waveform.zoom.out`) in five steps, from 4 to 64 seconds across the
   lane.
@@ -39,7 +54,7 @@ waveform in and out. Both views share one colour mode out of four.
 
 ## Differences
 
-- One colour mode; the other three are M4.
+- The four modes are Platter's own: the manual gives their names, not their look.
 - No key resets the zoom; five steps make it two presses away at most.
 - Each lane keeps its own zoom: the time scales are the same only while both lanes are at the
   same step. The design system's parallel layout gives them one scale.
@@ -54,6 +69,7 @@ waveform in and out. Both views share one colour mode out of four.
 | A click on the overview of an empty deck | Nothing happens |
 | A track shorter than the zoomed window | The lane is empty outside the track |
 | Audio above full scale, or samples that are not numbers | Columns stay inside the lane |
+| A colour mode in the settings file that this version does not know | `Deck` |
 
 ## Tests
 

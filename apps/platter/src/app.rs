@@ -1163,6 +1163,10 @@ impl PlatterApp {
                 self.settings.deck_layout = layout;
                 self.save_settings();
             }
+            AppCommand::WaveColourSet { mode } => {
+                self.settings.wave_colour = mode;
+                self.save_settings();
+            }
             AppCommand::EffectUnitsSet { units } => {
                 self.settings.effect_units = units;
                 self.fx_panels = [FxUnit::ALL[0], FxUnit::ALL[1]];
@@ -1511,6 +1515,7 @@ impl PlatterApp {
             tempo_range: self.settings.tempo_range,
             deck_size: self.settings.deck_size,
             deck_layout: self.settings.deck_layout,
+            wave_colour: self.settings.wave_colour,
             effect_units: self.settings.effect_units,
             fx_panels: match self.settings.effect_units {
                 EffectUnits::Two => [FxUnit::ALL[0], FxUnit::ALL[1]],

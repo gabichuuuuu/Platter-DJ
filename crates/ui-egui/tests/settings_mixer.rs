@@ -9,7 +9,7 @@
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_engine::{Command, MixerMode, SyncMode};
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{Action, AppCommand, DeckSize, SettingsPage};
+use platter_ui_egui::command::{Action, AppCommand, DeckSize, SettingsPage, WaveColour};
 use platter_ui_egui::cx::Control;
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
@@ -508,4 +508,23 @@ fn the_controls_of_the_general_decks_and_library_pages_fit_the_dialog_in_both_la
             }
         }
     }
+}
+
+/// `docs/behavior/waveform.md`, *Colour modes*: at the end of the Decks page, which scrolls.
+#[test]
+fn the_decks_page_chooses_the_colour_mode_of_the_waveforms() {
+    let mut stage = Stage::on_page(sample::playing(), Language::English, SettingsPage::Decks);
+    stage.shell.state.settings.decks_scroll = f32::MAX;
+    stage.frame(Vec::new());
+    stage.frame(Vec::new());
+    let colours = control(&stage, "app.wave_colour.set").unwrap();
+    assert!(stage.click(colours.rect.center()).is_empty());
+    // The third row of the list.
+    let row = colours.rect.center_bottom() + egui::vec2(0.0, 2.0 + 14.0 + 2.0 * 28.0);
+    assert_eq!(
+        app(&stage.click(row)),
+        [AppCommand::WaveColourSet {
+            mode: WaveColour::Mono
+        }]
+    );
 }

@@ -331,6 +331,7 @@ impl Shell {
     /// Draws a frame of the whole window and returns what the user asked for in it.
     pub fn show(&mut self, ui: &mut egui::Ui, view: &View<'_>) -> Vec<Action> {
         let now = ui.input(|input| input.time);
+        self.theme.wave_colour = view.settings.wave_colour;
         let engine = view.engine;
         let levels = MeterId::ALL.map(|meter| match meter {
             MeterId::Deck(deck) => engine.decks[deck.index()].levels,

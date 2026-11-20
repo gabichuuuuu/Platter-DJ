@@ -16,7 +16,9 @@ use platter_core::{CueKind, DeckId, HotcueSlot};
 use platter_engine::{ClockMode, Command, EffectKind, MixerMode, UnitMode};
 use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
+use platter_ui_egui::command::{
+    APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage, WaveColour,
+};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
 use platter_ui_egui::model::{DeckNotice, PlaylistRow};
@@ -264,6 +266,10 @@ fn states() -> Vec<State> {
     recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
     recorder_failed.engine.recorder.dropped_frames = 4_800;
     let recorder_failed = state("recorder-failed", recorder_failed, None);
+    // The waveforms of the four decks in the colour mode of the bands.
+    let mut bands = sample::four_decks();
+    bands.settings.wave_colour = WaveColour::Bands;
+    let bands = state("wave-bands", bands, None);
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -306,6 +312,7 @@ fn states() -> Vec<State> {
         details,
         details_several,
         state("four-decks", sample::four_decks(), None),
+        bands,
         state("effects-single", single_unit(), None),
         state("four-units", sample::four_units(), None),
         state(

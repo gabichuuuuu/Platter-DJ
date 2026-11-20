@@ -14,7 +14,7 @@ use platter_engine::{
 
 use crate::collection::TagWriting;
 use crate::command::{
-    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RouteSlot, SettingsPage,
+    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RouteSlot, SettingsPage, WaveColour,
 };
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
@@ -91,6 +91,8 @@ pub struct SettingsMemory {
     pub shortcuts_scroll: f32,
     /// How far the Mixer page is scrolled.
     pub page_scroll: f32,
+    /// How far the Decks page is scrolled.
+    pub decks_scroll: f32,
 }
 
 pub fn settings(
@@ -197,7 +199,12 @@ pub fn settings(
         SettingsPage::Audio => audio_page(cx, page_rect, view),
         SettingsPage::General => general_page(cx, page_rect, view),
         SettingsPage::Keyboard => keyboard_page(cx, page_rect, view, memory),
-        SettingsPage::Decks => decks_page(cx, page_rect, view),
+        SettingsPage::Decks => scrolled(
+            cx,
+            page_rect,
+            (DECKS_PAGE_HEIGHT, &mut memory.decks_scroll),
+            |cx, page| decks_page(cx, page, view),
+        ),
         SettingsPage::Mixer => scrolled(
             cx,
             page_rect,
@@ -216,6 +223,8 @@ pub fn settings(
 
 /// The height of the content of the Mixer page, which scrolls.
 const MIXER_PAGE_HEIGHT: f32 = 960.0;
+/// The height of the content of the Decks page, which scrolls.
+const DECKS_PAGE_HEIGHT: f32 = 600.0;
 
 /// Draws a page taller than its room, scrolled by `scroll`: the wheel over it scrolls it, and
 /// a control of the page the keyboard focus reaches out of view is brought into view.
@@ -1082,6 +1091,49 @@ fn decks_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         cx,
         Rect::from_min_max(select.min, egui::pos2(control.right(), select.bottom())),
         texts.get("settings.bpm_range_help"),
+    );
+
+    // `docs/behavior/waveform.md`, *Colour modes*.
+    let top = section(cx, page, 500.0, "settings.waveform_section");
+    let control = setting(cx, page, top, "settings.wave_colour");
+    let labels = WaveColour::ALL.map(|mode| {
+        texts.get(match mode {
+            WaveColour::Deck => "settings.wave_deck",
+            WaveColour::Bands => "settings.wave_bands",
+            WaveColour::Mono => "settings.wave_mono",
+            WaveColour::Bass => "settings.wave_bass",
+        })
+    });
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let select = Rect::from_min_size(control.min, egui::vec2(120.0, control.height()));
+    let current = view.settings.wave_colour;
+    choice::select(
+        cx,
+        select,
+        id("settings-wave-colour"),
+        SelectSpec {
+            name: texts.get("settings.wave_colour"),
+            choices: &choices,
+            current: WaveColour::ALL.iter().position(|mode| *mode == current),
+            enabled: true,
+        },
+        |index| {
+            AppCommand::WaveColourSet {
+                mode: WaveColour::ALL[index],
+            }
+            .into()
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(select.min, egui::pos2(control.right(), select.bottom())),
+        texts.get("settings.wave_colour_help"),
     );
 }
 
