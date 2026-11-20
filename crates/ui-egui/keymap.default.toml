@@ -232,3 +232,50 @@ command = "browser.select.all"
 [[binding]]
 keys = "Delete"
 command = "browser.playlist.remove"
+
+# Layouts: the first nine of the list of the Layouts page.
+
+[[binding]]
+keys = "Ctrl + 1"
+command = "layout.select"
+index = 0
+
+[[binding]]
+keys = "Ctrl + 2"
+command = "layout.select"
+index = 1
+
+[[binding]]
+keys = "Ctrl + 3"
+command = "layout.select"
+index = 2
+
+[[binding]]
+keys = "Ctrl + 4"
+command = "layout.select"
+index = 3
+
+[[binding]]
+keys = "Ctrl + 5"
+command = "layout.select"
+index = 4
+
+[[binding]]
+keys = "Ctrl + 6"
+command = "layout.select"
+index = 5
+
+[[binding]]
+keys = "Ctrl + 7"
+command = "layout.select"
+index = 6
+
+[[binding]]
+keys = "Ctrl + 8"
+command = "layout.select"
+index = 7
+
+[[binding]]
+keys = "Ctrl + 9"
+command = "layout.select"
+index = 8

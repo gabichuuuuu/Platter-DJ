@@ -13,7 +13,7 @@ use egui::{
 use platter_core::{DeckId, LoopSize};
 use platter_engine::{Command, DeckSnapshot, WaveformPeaks};
 
-use crate::command::{AppCommand, DeckLayout, WaveColour};
+use crate::command::{AppCommand, WaveColour};
 use crate::cx::{ControlKind, Cx, id};
 use crate::i18n::Texts;
 use crate::icons::Glyph;
@@ -385,6 +385,7 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
 pub fn lanes(
     cx: &mut Cx<'_>,
     rect: Rect,
+    shown: &[DeckId],
     decks: &[DeckSnapshot; DeckId::COUNT],
     zoom: [usize; DeckId::COUNT],
 ) {
@@ -393,8 +394,9 @@ pub fn lanes(
     let tokens = &theme.tokens;
     let color = &tokens.color;
     let seam = tokens.space.s1;
-    let lane_height = (rect.height() - seam) / 2.0;
-    for (row, &deck) in DeckLayout::Two.decks().iter().enumerate() {
+    let rows = shown.len().max(1) as f32;
+    let lane_height = (rect.height() - seam * (rows - 1.0)) / rows;
+    for (row, &deck) in shown.iter().enumerate() {
         let top = rect.top() + row as f32 * (lane_height + seam);
         let row = Rect::from_min_size(
             egui::pos2(rect.left(), top),

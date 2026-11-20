@@ -462,6 +462,21 @@ fn settings() -> SettingsView {
         tempo_range: 8,
         deck_size: DeckSize::Full,
         deck_layout: DeckLayout::Two,
+        layouts: crate::layout::Layouts {
+            personal: vec![crate::layout::Personal {
+                name: "Two decks".to_owned(),
+                arrangement: crate::layout::Arrangement {
+                    decks: DeckLayout::Two,
+                    size: DeckSize::Full,
+                    effects: true,
+                    mixer: true,
+                    lanes: true,
+                    single: false,
+                },
+            }],
+            active: 4,
+        },
+        shown: crate::model::Shown::default(),
         wave_colour: WaveColour::Deck,
         effect_units: EffectUnits::Two,
         fx_panels: [
@@ -816,4 +831,24 @@ pub fn startup() -> Scene {
             active: false,
         },
     }
+}
+
+/// The playing window in built-in layout `built_in`, as the application gives it:
+/// `docs/behavior/interface.md`, *Layouts*.
+pub fn in_layout(built_in: crate::layout::BuiltIn) -> Scene {
+    let mut scene = playing();
+    let arrangement = built_in.arrangement();
+    scene.settings.layouts.active = crate::layout::BuiltIn::ALL
+        .iter()
+        .position(|other| *other == built_in)
+        .unwrap_or(0);
+    scene.settings.deck_layout = arrangement.decks;
+    scene.settings.deck_size = arrangement.size;
+    scene.settings.shown = crate::model::Shown {
+        effects: arrangement.effects,
+        mixer: arrangement.mixer,
+        lanes: arrangement.has_lanes(),
+        single: arrangement.single,
+    };
+    scene
 }

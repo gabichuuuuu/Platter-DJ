@@ -21,6 +21,7 @@ use platter_ui_egui::command::{
 };
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
+use platter_ui_egui::layout::{BuiltIn, Personal};
 use platter_ui_egui::model::{DeckNotice, PlaylistRow};
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
@@ -266,6 +267,19 @@ fn states() -> Vec<State> {
     recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
     recorder_failed.engine.recorder.dropped_frames = 4_800;
     let recorder_failed = state("recorder-failed", recorder_failed, None);
+    // The built-in layouts that leave zones out: deck A alone, and the decks over the browser.
+    let preparation = sample::in_layout(BuiltIn::Preparation);
+    let browser_layout = sample::in_layout(BuiltIn::Browser);
+    // The second of three personal layouts, active, which can move up and down.
+    let mut second = sample::playing();
+    let first = second.settings.layouts.personal[0].clone();
+    for name in ["Late set", "Closing"] {
+        second.settings.layouts.personal.push(Personal {
+            name: name.to_owned(),
+            ..first.clone()
+        });
+    }
+    second.settings.layouts.active = 5;
     // The Recording page with a folder the user chose, which Default takes back.
     let mut chosen = sample::playing();
     chosen.settings.recording_folder = "Music/Sets/Recorded".to_owned();
@@ -357,6 +371,18 @@ fn states() -> Vec<State> {
             chosen,
             Some(SettingsPage::Recording),
         ),
+        state(
+            "preferences-layouts",
+            sample::playing(),
+            Some(SettingsPage::Layouts),
+        ),
+        state(
+            "preferences-layouts-second",
+            second,
+            Some(SettingsPage::Layouts),
+        ),
+        state("layout-preparation", preparation, None),
+        state("layout-browser", browser_layout, None),
         State {
             page_scroll: f32::MAX,
             ..state(
@@ -689,10 +715,12 @@ fn the_controls_of_the_header_do_not_overlap_in_either_language() {
 #[test]
 fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
     for language in Language::ALL {
-        for state in states()
-            .into_iter()
-            .filter(|state| state.page.is_none() && !state.details && state.rules.is_none())
-        {
+        for state in states().into_iter().filter(|state| {
+            state.page.is_none()
+                && !state.details
+                && state.rules.is_none()
+                && state.scene.settings.shown.mixer
+        }) {
             let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
             stage.frame(Vec::new());
             let controls: Vec<Control> = stage
@@ -1332,6 +1360,15 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     data.extend(scene.browser.crumbs.iter().cloned());
     data.extend(scene.audio.devices.iter().map(|device| device.name.clone()));
+    // The names the user gave the personal layouts.
+    data.extend(
+        scene
+            .settings
+            .layouts
+            .personal
+            .iter()
+            .map(|layout| layout.name.clone()),
+    );
     // The folder and the prefix of the recordings, as the Recording page shows them.
     data.insert(scene.settings.recording_folder.clone());
     data.insert(scene.settings.recording_prefix.clone());

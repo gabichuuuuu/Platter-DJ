@@ -24,9 +24,10 @@ use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
+use platter_ui_egui::layout::{Layouts, Row as LayoutRow, Zone};
 use platter_ui_egui::model::{
     AnalysisStatus, AudioProblem, AudioState, AudioView, ControllerManager, ControllerRow,
-    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, StreamView, View,
+    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, Shown, StreamView, View,
 };
 use platter_ui_egui::played::{MAX_PLAYTIME, MIN_PLAYTIME, PlayClock};
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
@@ -372,6 +373,29 @@ impl PlatterApp {
                 self.log(Level::Warning, &format!("recording: {message}"));
             }
             _ => {}
+        }
+    }
+
+    /// Applies `change` to the layouts and, when it changed them, gives the window the
+    /// arrangement of the active one and keeps it: `docs/behavior/interface.md`, *Layouts*.
+    fn change_layout(&mut self, change: impl FnOnce(&mut Layouts) -> bool) {
+        if change(&mut self.settings.layouts) {
+            let arrangement = self.settings.layouts.arrangement();
+            self.settings.deck_layout = arrangement.decks;
+            self.settings.deck_size = arrangement.size;
+            self.save_settings();
+        }
+    }
+
+    /// The name the active layout shows, in the language of the interface.
+    fn layout_name(&self) -> String {
+        let layouts = &self.settings.layouts;
+        match layouts.rows().get(layouts.active) {
+            Some(LayoutRow::BuiltIn(built_in)) => {
+                self.shell.texts().get(built_in.text()).to_owned()
+            }
+            Some(LayoutRow::Personal(name)) => name.clone(),
+            None => String::new(),
         }
     }
 
@@ -1196,12 +1220,34 @@ impl PlatterApp {
                 self.save_settings();
             }
             AppCommand::DeckSizeSet { size } => {
-                self.settings.deck_size = size;
-                self.save_settings();
+                self.change_layout(|layouts| layouts.change(|arrangement| arrangement.size = size));
             }
             AppCommand::DeckLayoutSet { layout } => {
-                self.settings.deck_layout = layout;
-                self.save_settings();
+                self.change_layout(|layouts| {
+                    layouts.change(|arrangement| arrangement.decks = layout)
+                });
+            }
+            AppCommand::LayoutSelect { index } => {
+                self.change_layout(|layouts| layouts.select(index));
+            }
+            AppCommand::LayoutDuplicate => {
+                let base = self.layout_name();
+                self.change_layout(|layouts| layouts.duplicate(&base));
+            }
+            AppCommand::LayoutRename { name } => {
+                self.change_layout(|layouts| layouts.rename(&name));
+            }
+            AppCommand::LayoutDelete => self.change_layout(Layouts::delete),
+            AppCommand::LayoutMoveUp => self.change_layout(|layouts| layouts.shift(true)),
+            AppCommand::LayoutMoveDown => self.change_layout(|layouts| layouts.shift(false)),
+            AppCommand::LayoutZoneToggle { zone } => {
+                self.change_layout(|layouts| {
+                    layouts.change(|arrangement| match zone {
+                        Zone::Effects => arrangement.effects = !arrangement.effects,
+                        Zone::Mixer => arrangement.mixer = !arrangement.mixer,
+                        Zone::Lanes => arrangement.lanes = !arrangement.lanes,
+                    })
+                });
             }
             AppCommand::WaveColourSet { mode } => {
                 self.settings.wave_colour = mode;
@@ -1355,6 +1401,12 @@ impl PlatterApp {
             folder: self.settings.folder.clone(),
             roots: self.settings.roots.clone(),
             midi: self.settings.midi.clone(),
+            // The personal layouts are the user's work, not settings: they stay, and Mixing
+            // becomes active.
+            layouts: Layouts {
+                personal: self.settings.layouts.personal.clone(),
+                active: 0,
+            },
             ..Settings::default()
         };
         self.save_settings();
@@ -1557,6 +1609,7 @@ impl PlatterApp {
 
     fn settings_view(&self) -> SettingsView {
         let routing = self.settings.routing;
+        let arrangement = self.settings.layouts.arrangement();
         SettingsView {
             device: self.settings.device.clone(),
             sample_rate: self.settings.sample_rate,
@@ -1572,8 +1625,15 @@ impl PlatterApp {
             tooltips: self.settings.tooltips,
             fullscreen_at_start: self.settings.fullscreen_at_start,
             tempo_range: self.settings.tempo_range,
-            deck_size: self.settings.deck_size,
-            deck_layout: self.settings.deck_layout,
+            deck_size: arrangement.size,
+            deck_layout: arrangement.decks,
+            layouts: self.settings.layouts.clone(),
+            shown: Shown {
+                effects: arrangement.effects,
+                mixer: arrangement.mixer,
+                lanes: arrangement.has_lanes(),
+                single: arrangement.single,
+            },
             wave_colour: self.settings.wave_colour,
             effect_units: self.settings.effect_units,
             fx_panels: match self.settings.effect_units {

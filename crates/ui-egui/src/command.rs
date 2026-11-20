@@ -6,6 +6,7 @@
 //! typed parameters. Controls, keyboard shortcuts and anything that comes later build an
 //! [`Action`] and hand it to the application; nothing changes state by another path.
 
+use crate::layout::{ZONES, Zone};
 use std::path::PathBuf;
 
 use platter_core::{DeckId, ValueError};
@@ -147,18 +148,20 @@ pub enum SettingsPage {
     Decks,
     Mixer,
     Recording,
+    Layouts,
     Library,
     Controllers,
     Keyboard,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Audio,
         Self::General,
         Self::Decks,
         Self::Mixer,
         Self::Recording,
+        Self::Layouts,
         Self::Library,
         Self::Controllers,
         Self::Keyboard,
@@ -171,6 +174,7 @@ impl SettingsPage {
             Self::Decks => "decks",
             Self::Mixer => "mixer",
             Self::Recording => "recording",
+            Self::Layouts => "layouts",
             Self::Library => "library",
             Self::Controllers => "controllers",
             Self::Keyboard => "keyboard",
@@ -368,6 +372,20 @@ pub enum AppCommand {
     },
     /// Turns on or off the rule that a playing deck takes no track.
     LoadStoppedOnlyToggle,
+    /// The layouts of the window: `docs/behavior/interface.md`, *Layouts*.
+    LayoutSelect {
+        index: usize,
+    },
+    LayoutDuplicate,
+    LayoutRename {
+        name: String,
+    },
+    LayoutDelete,
+    LayoutMoveUp,
+    LayoutMoveDown,
+    LayoutZoneToggle {
+        zone: Zone,
+    },
     /// The preferences of the mix recorder: `docs/behavior/recording.md`, *Preferences*.
     RecorderFolderSet {
         path: PathBuf,
@@ -704,6 +722,7 @@ const PAGES: &[&str] = &[
     "decks",
     "mixer",
     "recording",
+    "layouts",
     "library",
     "controllers",
     "keyboard",
@@ -1248,6 +1267,41 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.tempo_range.set",
         label: "Tempo range of every deck",
         params: &[number("percent", 8.0, 50.0)],
+    },
+    CommandSpec {
+        id: "layout.select",
+        label: "Choose a layout",
+        params: &[number("index", 0.0, 63.0)],
+    },
+    CommandSpec {
+        id: "layout.duplicate",
+        label: "Duplicate the layout",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.rename",
+        label: "Rename the layout",
+        params: &[text("name")],
+    },
+    CommandSpec {
+        id: "layout.delete",
+        label: "Delete the layout",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.move_up",
+        label: "Move the layout up",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.move_down",
+        label: "Move the layout down",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.zone.toggle",
+        label: "Show or hide a zone of the layout",
+        params: &[choice("zone", ZONES)],
     },
     CommandSpec {
         id: "recorder.folder.set",
@@ -2016,6 +2070,19 @@ impl AppCommand {
             "midi.learn.toggle" => Self::MidiLearnToggle,
             "midi.target.set" => Self::MidiTargetSet { deck: read.deck()? },
             "app.load_stopped_only.toggle" => Self::LoadStoppedOnlyToggle,
+            "layout.select" => Self::LayoutSelect {
+                index: read.index("index")?,
+            },
+            "layout.duplicate" => Self::LayoutDuplicate,
+            "layout.rename" => Self::LayoutRename {
+                name: read.text("name")?.to_owned(),
+            },
+            "layout.delete" => Self::LayoutDelete,
+            "layout.move_up" => Self::LayoutMoveUp,
+            "layout.move_down" => Self::LayoutMoveDown,
+            "layout.zone.toggle" => Self::LayoutZoneToggle {
+                zone: read.choice("zone", &Zone::ALL, Zone::name, "effects, mixer, lanes")?,
+            },
             "recorder.folder.set" => Self::RecorderFolderSet {
                 path: PathBuf::from(read.text("path")?),
             },
@@ -2348,6 +2415,13 @@ impl AppCommand {
             Self::KeyNotationSet { .. } => "app.key_notation.set",
             Self::AnalysisRangeSet { .. } => "app.analysis_range.set",
             Self::LoadStoppedOnlyToggle => "app.load_stopped_only.toggle",
+            Self::LayoutSelect { .. } => "layout.select",
+            Self::LayoutDuplicate => "layout.duplicate",
+            Self::LayoutRename { .. } => "layout.rename",
+            Self::LayoutDelete => "layout.delete",
+            Self::LayoutMoveUp => "layout.move_up",
+            Self::LayoutMoveDown => "layout.move_down",
+            Self::LayoutZoneToggle { .. } => "layout.zone.toggle",
             Self::RecorderFolderSet { .. } => "recorder.folder.set",
             Self::RecorderFolderReset => "recorder.folder.reset",
             Self::RecorderPrefixSet { .. } => "recorder.prefix.set",

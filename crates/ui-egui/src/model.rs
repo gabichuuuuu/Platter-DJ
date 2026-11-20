@@ -5,6 +5,7 @@
 //! commands. The capture mode builds the same values from invented data, without an engine
 //! or a device.
 
+use crate::layout::Layouts;
 use std::path::PathBuf;
 
 use platter_core::DeckId;
@@ -126,6 +127,9 @@ pub struct SettingsView {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// The layouts of the Layouts page, and what the active one shows besides the decks.
+    pub layouts: Layouts,
+    pub shown: Shown,
     /// The colours of the waveforms, from the Decks page.
     pub wave_colour: WaveColour,
     /// Two effect units or four, and the unit each panel of the effect row shows.
@@ -517,4 +521,37 @@ pub struct View<'a> {
     pub clock: Option<Clock>,
     pub notices: [Option<DeckNotice>; DeckId::COUNT],
     pub midi: MidiView,
+}
+
+/// What the active layout shows besides the decks: `docs/behavior/interface.md`, *Layouts*.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shown {
+    pub effects: bool,
+    pub mixer: bool,
+    /// The parallel lanes, with two decks.
+    pub lanes: bool,
+    /// Deck A alone across the window.
+    pub single: bool,
+}
+
+impl Default for Shown {
+    fn default() -> Self {
+        Self {
+            effects: true,
+            mixer: true,
+            lanes: true,
+            single: false,
+        }
+    }
+}
+
+impl SettingsView {
+    /// The decks the window shows, left column first in each row.
+    pub fn shown_decks(&self) -> &'static [platter_core::DeckId] {
+        if self.shown.single {
+            &[platter_core::DeckId::A]
+        } else {
+            self.deck_layout.decks()
+        }
+    }
 }

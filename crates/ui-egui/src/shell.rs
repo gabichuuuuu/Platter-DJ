@@ -410,7 +410,8 @@ impl Shell {
                 header::audio_notice(&mut cx, rect, *problem);
             }
             if let Some(lanes) = zones.lanes {
-                waveform::lanes(&mut cx, lanes, &engine.decks, state.zoom);
+                let shown = view.settings.shown_decks();
+                waveform::lanes(&mut cx, lanes, shown, &engine.decks, state.zoom);
             }
             for (deck_id, rect) in zones.decks.iter().copied() {
                 match view.settings.deck_layout {
@@ -418,8 +419,12 @@ impl Shell {
                     DeckLayout::Four => deck::four_deck(&mut cx, rect, deck_id, view, &state),
                 }
             }
-            effects::row(&mut cx, zones.effects, view);
-            mixer::mixer(&mut cx, zones.mixer, view, &state);
+            if let Some(row) = zones.effects {
+                effects::row(&mut cx, row, view);
+            }
+            if let Some(rect) = zones.mixer {
+                mixer::mixer(&mut cx, rect, view, &state);
+            }
             browser::browser(&mut cx, zones.browser, view, &mut state.browser);
             if cx.interactive {
                 dropped_files(&mut cx, &zones, view);
@@ -649,11 +654,11 @@ struct Zones {
     notice: Option<Rect>,
     /// The waveform lanes, which only the two-deck layout has.
     lanes: Option<Rect>,
-    /// The effect row: unit 1, the panel over the mixer, unit 2.
-    effects: [Rect; 3],
+    /// The effect row: unit 1, the panel over the mixer, unit 2; not in every layout.
+    effects: Option<[Rect; 3]>,
     /// The decks the window shows and where.
     decks: Vec<(DeckId, Rect)>,
-    mixer: Rect,
+    mixer: Option<Rect>,
     browser: Rect,
 }
 
@@ -681,20 +686,40 @@ impl Zones {
                 egui::pos2(right, top + effects::ROW_HEIGHT),
             )
         };
-        let effects = [
-            effects_band(screen.left(), screen.left() + column),
-            effects_band(
-                screen.left() + column + seam,
-                screen.right() - column - seam,
-            ),
-            effects_band(screen.right() - column, screen.right()),
-        ];
-        top += effects::ROW_HEIGHT + seam;
-        if view.settings.deck_layout == DeckLayout::Four {
-            return Self::four(screen, (header, notice, effects), top, seam);
+        let shown = view.settings.shown;
+        let effects = shown.effects.then(|| {
+            let row = [
+                effects_band(screen.left(), screen.left() + column),
+                effects_band(
+                    screen.left() + column + seam,
+                    screen.right() - column - seam,
+                ),
+                effects_band(screen.right() - column, screen.right()),
+            ];
+            row
+        });
+        if effects.is_some() {
+            top += effects::ROW_HEIGHT + seam;
         }
-        let lanes = band(top, LANES_HEIGHT);
-        top = lanes.bottom() + seam;
+        // Without the mixer the decks share the whole width.
+        let column = if shown.mixer {
+            column
+        } else {
+            ((screen.width() - seam) / 2.0).floor()
+        };
+        if view.settings.deck_layout == DeckLayout::Four && !shown.single {
+            return Self::four(
+                screen,
+                (header, notice, effects),
+                (top, column),
+                (seam, shown.mixer),
+            );
+        }
+        let lanes = shown.lanes.then(|| {
+            let rect = band(top, LANES_HEIGHT);
+            top = rect.bottom() + seam;
+            rect
+        });
         let decks_height = match view.settings.deck_size {
             DeckSize::Full => DECKS_HEIGHT,
             DeckSize::Compact => COMPACT_DECKS_HEIGHT,
@@ -707,10 +732,23 @@ impl Zones {
             egui::pos2(screen.right() - column, top),
             egui::vec2(column, decks_height),
         );
-        let mixer = Rect::from_min_max(
-            egui::pos2(deck_a.right() + seam, top),
-            egui::pos2(deck_b.left() - seam, top + decks_height),
-        );
+        let decks = if shown.single {
+            vec![(
+                DeckId::A,
+                Rect::from_min_size(
+                    egui::pos2(screen.left(), top),
+                    egui::vec2(screen.width(), decks_height),
+                ),
+            )]
+        } else {
+            vec![(DeckId::A, deck_a), (DeckId::B, deck_b)]
+        };
+        let mixer = (shown.mixer && !shown.single).then(|| {
+            Rect::from_min_max(
+                egui::pos2(deck_a.right() + seam, top),
+                egui::pos2(deck_b.left() - seam, top + decks_height),
+            )
+        });
         top += decks_height + seam;
         let browser = Rect::from_min_max(
             egui::pos2(screen.left(), top),
@@ -719,9 +757,9 @@ impl Zones {
         Self {
             header,
             notice,
-            lanes: Some(lanes),
+            lanes,
             effects,
-            decks: vec![(DeckId::A, deck_a), (DeckId::B, deck_b)],
+            decks,
             mixer,
             browser,
         }
@@ -732,11 +770,10 @@ impl Zones {
     /// of the window, and the browser takes the rest of its height.
     fn four(
         screen: Rect,
-        (header, notice, effects): (Rect, Option<Rect>, [Rect; 3]),
-        top: f32,
-        seam: f32,
+        (header, notice, effects): (Rect, Option<Rect>, Option<[Rect; 3]>),
+        (top, column): (f32, f32),
+        (seam, with_mixer): (f32, bool),
     ) -> Self {
-        let column = deck_column(screen, seam);
         let deck_height = ((FOUR_DECKS_HEIGHT - seam) / 2.0).floor();
         let left = screen.left();
         let right = screen.right() - column;
@@ -746,10 +783,12 @@ impl Zones {
                 egui::vec2(column, deck_height),
             )
         };
-        let mixer = Rect::from_min_max(
-            egui::pos2(left + column + seam, top),
-            egui::pos2(right - seam, top + FOUR_DECKS_HEIGHT),
-        );
+        let mixer = with_mixer.then(|| {
+            Rect::from_min_max(
+                egui::pos2(left + column + seam, top),
+                egui::pos2(right - seam, top + FOUR_DECKS_HEIGHT),
+            )
+        });
         let browser_top = top + FOUR_DECKS_HEIGHT + seam;
         Self {
             header,
@@ -805,8 +844,7 @@ fn dropped_files(cx: &mut Cx<'_>, zones: &Zones, view: &View<'_>) {
     });
     let deck = under_pointer.unwrap_or_else(|| {
         view.settings
-            .deck_layout
-            .decks()
+            .shown_decks()
             .iter()
             .copied()
             .find(|deck| {
@@ -825,6 +863,8 @@ mod tests {
 
     use super::{DECK_WIDTH, DESIGN_WIDTH, Zones};
     use crate::command::DeckLayout;
+    use crate::layout::BuiltIn;
+    use crate::model::Shown;
     use crate::sample;
 
     const SEAM: f32 = 2.0;
@@ -851,13 +891,14 @@ mod tests {
             assert_eq!(a.left(), 0.0, "{layout:?}");
             assert_eq!(b.right(), 1920.0, "{layout:?}");
             assert_eq!(a.width(), b.width(), "{layout:?}");
-            assert_eq!(zones.mixer.width(), MIXER_WIDTH, "{layout:?}");
-            assert_eq!(zones.mixer.left(), a.right() + SEAM, "{layout:?}");
+            let mixer = zones.mixer.unwrap();
+            assert_eq!(mixer.width(), MIXER_WIDTH, "{layout:?}");
+            assert_eq!(mixer.left(), a.right() + SEAM, "{layout:?}");
             assert_eq!(zones.browser.bottom(), 1080.0, "{layout:?}");
             // The effect row follows the columns: a unit over each, the mixer width between.
-            let [left, middle, right] = zones.effects;
+            let [left, middle, right] = zones.effects.unwrap();
             assert_eq!((left.left(), left.width()), (0.0, a.width()), "{layout:?}");
-            assert_eq!(middle.x_range(), zones.mixer.x_range(), "{layout:?}");
+            assert_eq!(middle.x_range(), mixer.x_range(), "{layout:?}");
             assert_eq!(
                 (right.right(), right.width()),
                 (1920.0, b.width()),
@@ -881,7 +922,47 @@ mod tests {
             for (_, rect) in &zones.decks {
                 assert_eq!(rect.width(), DECK_WIDTH, "{layout:?}");
             }
-            assert_eq!(zones.mixer.width(), MIXER_WIDTH, "{layout:?}");
+            assert_eq!(zones.mixer.unwrap().width(), MIXER_WIDTH, "{layout:?}");
         }
+    }
+
+    /// `docs/behavior/interface.md`, *Layouts*: each built-in layout shows its zones.
+    #[test]
+    fn each_built_in_layout_shows_its_zones() {
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(DESIGN_WIDTH, 900.0));
+        let zones_of = |built_in: BuiltIn| {
+            let arrangement = built_in.arrangement();
+            let mut scene = sample::playing();
+            scene.settings.deck_layout = arrangement.decks;
+            scene.settings.deck_size = arrangement.size;
+            scene.settings.shown = Shown {
+                effects: arrangement.effects,
+                mixer: arrangement.mixer,
+                lanes: arrangement.has_lanes(),
+                single: arrangement.single,
+            };
+            Zones::of(screen, &scene.view(), SEAM)
+        };
+        let mixing = zones_of(BuiltIn::Mixing);
+        assert_eq!(mixing.decks.len(), 4);
+        assert!(mixing.mixer.is_some() && mixing.effects.is_some() && mixing.lanes.is_none());
+
+        let preparation = zones_of(BuiltIn::Preparation);
+        assert_eq!(preparation.decks.len(), 1);
+        assert_eq!(preparation.decks[0].1.width(), DESIGN_WIDTH);
+        assert!(preparation.mixer.is_none() && preparation.effects.is_none());
+        let lane = preparation.lanes.unwrap();
+        assert!(lane.bottom() < preparation.decks[0].1.top());
+
+        let browser = zones_of(BuiltIn::Browser);
+        let (a, b) = (browser.decks[0].1, browser.decks[1].1);
+        assert_eq!((a.left(), b.right()), (0.0, DESIGN_WIDTH));
+        assert_eq!(a.width(), b.width());
+        assert!(browser.mixer.is_none() && browser.effects.is_none() && browser.lanes.is_none());
+        // The browser takes the room the other zones leave.
+        assert!(browser.browser.height() > mixing.browser.height());
+
+        let parallel = zones_of(BuiltIn::Parallel);
+        assert!(parallel.lanes.is_some() && parallel.mixer.is_some());
     }
 }

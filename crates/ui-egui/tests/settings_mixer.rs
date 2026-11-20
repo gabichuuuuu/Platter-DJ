@@ -586,3 +586,39 @@ fn the_recording_page_sets_the_folder_the_prefix_and_the_split_of_the_recorder()
         }]
     );
 }
+
+/// `docs/behavior/interface.md`, *Layouts*: a row chooses its layout, and a built-in layout
+/// leaves its arrangement alone.
+#[test]
+fn the_layouts_page_chooses_a_layout_and_a_built_in_one_cannot_be_changed() {
+    let mut stage = Stage::on_page(sample::playing(), Language::English, SettingsPage::Layouts);
+    let mut rows: Vec<Control> = stage
+        .shell
+        .controls()
+        .iter()
+        .filter(|control| control.command == "layout.select")
+        .cloned()
+        .collect();
+    rows.sort_by(|first, second| first.rect.top().total_cmp(&second.rect.top()));
+    assert_eq!(rows.len(), 5);
+    assert_eq!(
+        app(&stage.click(rows[2].rect.center())),
+        [AppCommand::LayoutSelect { index: 2 }]
+    );
+    // The sample shows its personal layout: its zones can change.
+    let zone = control(&stage, "layout.zone.toggle").unwrap();
+    assert!(zone.enabled);
+    assert!(control(&stage, "layout.delete").unwrap().enabled);
+
+    let mut builtin = sample::playing();
+    builtin.settings.layouts.active = 0;
+    let stage = Stage::on_page(builtin, Language::English, SettingsPage::Layouts);
+    for command in ["layout.zone.toggle", "layout.delete", "layout.move_up"] {
+        assert!(!control(&stage, command).unwrap().enabled, "{command}");
+    }
+    assert!(control(&stage, "layout.duplicate").unwrap().enabled);
+    let mut builtin = sample::playing();
+    builtin.settings.layouts.active = 0;
+    let stage = Stage::on_page(builtin, Language::English, SettingsPage::General);
+    assert!(!control(&stage, "app.deck_layout.set").unwrap().enabled);
+}

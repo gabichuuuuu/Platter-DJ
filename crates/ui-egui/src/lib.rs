@@ -16,6 +16,7 @@ pub mod i18n;
 pub mod icons;
 pub mod keymap;
 pub mod keys;
+pub mod layout;
 pub mod model;
 mod paint;
 mod panels;
