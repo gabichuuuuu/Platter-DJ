@@ -11,14 +11,14 @@ use rusqlite::{
 use crate::text::{contains, fold, positive, tag};
 use crate::{
     CheckReport, Column, Entry, EntryId, Hit, Library, LibraryError, MAX_COLOUR, MAX_KEY,
-    MAX_NAME_CHARS, MAX_PAGE, MAX_RATING, Node, NodeId, NodeKind, Page, Played, Query, Session,
-    SessionId, Source, Timestamp, Track, TrackId, TrackTags,
+    MAX_NAME_CHARS, MAX_PAGE, MAX_RATING, MAX_RULES, Node, NodeId, NodeKind, Page, Played, Query,
+    Rule, Session, SessionId, Source, Timestamp, Track, TrackId, TrackTags,
 };
 
 /// Marks the file as a library of Platter: "PLTR".
 const APPLICATION_ID: i64 = 0x504C_5452;
 /// The version of the tables this code writes. A file at a higher one is refused.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 /// How long a call waits for a file another program is writing.
 const BUSY_WAIT: Duration = Duration::from_secs(2);
 
@@ -66,8 +66,9 @@ CREATE INDEX played_session ON played(session);
 ";
 
 /// What each version adds to the one before, from version 2 on: the preparation list, the
-/// favourites, the colour, rating and comment of a track, then what a deck learned of it.
-const UPGRADES: [&str; 4] = [
+/// favourites, the colour, rating and comment of a track, what a deck learned of it, then the
+/// rules of the smart playlists.
+const UPGRADES: [&str; 5] = [
     "
 CREATE TABLE preparation (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -90,6 +91,16 @@ ALTER TABLE track ADD COLUMN memory TEXT;
 ALTER TABLE track ADD COLUMN key INTEGER;
 ALTER TABLE track ADD COLUMN loudness REAL;
 ALTER TABLE track ADD COLUMN analysed INTEGER NOT NULL DEFAULT 0;
+",
+    "
+CREATE TABLE rule (
+    id INTEGER PRIMARY KEY,
+    smart INTEGER NOT NULL REFERENCES node(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    field INTEGER NOT NULL,
+    low REAL, high REAL, words TEXT
+);
+CREATE INDEX rule_smart ON rule(smart, position);
 ",
 ];
 
@@ -148,7 +159,14 @@ impl SqliteLibrary {
     fn playlist(&self, id: NodeId) -> Result<(), LibraryError> {
         match self.node(id)?.kind {
             NodeKind::Playlist => Ok(()),
-            NodeKind::Folder => Err(LibraryError::WrongKind),
+            NodeKind::Folder | NodeKind::Smart => Err(LibraryError::WrongKind),
+        }
+    }
+
+    fn smart(&self, id: NodeId) -> Result<(), LibraryError> {
+        match self.node(id)?.kind {
+            NodeKind::Smart => Ok(()),
+            NodeKind::Folder | NodeKind::Playlist => Err(LibraryError::WrongKind),
         }
     }
 
@@ -235,6 +253,7 @@ fn kind_code(kind: NodeKind) -> i64 {
     match kind {
         NodeKind::Folder => 0,
         NodeKind::Playlist => 1,
+        NodeKind::Smart => 2,
     }
 }
 
@@ -243,10 +262,10 @@ fn node_from(row: &Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
         id: NodeId(row.get(0)?),
         parent: row.get::<_, Option<i64>>(1)?.map(NodeId),
-        kind: if kind == 0 {
-            NodeKind::Folder
-        } else {
-            NodeKind::Playlist
+        kind: match kind {
+            0 => NodeKind::Folder,
+            2 => NodeKind::Smart,
+            _ => NodeKind::Playlist,
         },
         name: row.get(3)?,
     })
@@ -678,6 +697,47 @@ impl Library for SqliteLibrary {
         Ok(nodes)
     }
 
+    fn rules(&self, smart: NodeId) -> Result<Vec<Rule>, LibraryError> {
+        self.smart(smart)?;
+        let mut select = self.connection.prepare(
+            "SELECT field, low, high, words FROM rule WHERE smart = ?1 ORDER BY position, id",
+        )?;
+        let rows = select
+            .query_map([smart.0], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(field, low, high, words)| Rule::from_row(field, low, high, words))
+            .take(MAX_RULES)
+            .collect())
+    }
+
+    fn set_rules(&mut self, smart: NodeId, rules: &[Rule]) -> Result<(), LibraryError> {
+        self.smart(smart)?;
+        if rules.len() > MAX_RULES {
+            return Err(LibraryError::InvalidRule);
+        }
+        for rule in rules {
+            rule.validate()?;
+        }
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM rule WHERE smart = ?1", [smart.0])?;
+        {
+            let mut insert = transaction.prepare(
+                "INSERT INTO rule (smart, position, field, low, high, words) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            for (position, rule) in rules.iter().enumerate() {
+                let (field, low, high, words) = rule.to_row();
+                insert.execute(params![smart.0, position as i64, field, low, high, words])?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     fn add(
         &mut self,
         playlist: NodeId,
@@ -947,19 +1007,29 @@ impl Library for SqliteLibrary {
     fn search(&self, query: &Query) -> Result<Page, LibraryError> {
         let mut values: Vec<rusqlite::types::Value> = Vec::new();
         let mut from = String::from("FROM track t");
+        let mut filter = String::from(" WHERE 1");
+        // A smart playlist is searched as the collection, through its rules.
+        let mut order = query.source;
         match query.source {
             Source::Collection => {}
-            Source::Playlist(playlist) => {
-                self.playlist(playlist)?;
-                from.push_str(" JOIN entry e ON e.track = t.id AND e.playlist = ?1");
-                values.push(playlist.0.into());
-            }
+            Source::Playlist(playlist) => match self.node(playlist)?.kind {
+                NodeKind::Playlist => {
+                    from.push_str(" JOIN entry e ON e.track = t.id AND e.playlist = ?1");
+                    values.push(playlist.0.into());
+                }
+                NodeKind::Smart => {
+                    order = Source::Collection;
+                    for rule in self.rules(playlist)? {
+                        rule.push_sql(&mut filter, &mut values);
+                    }
+                }
+                NodeKind::Folder => return Err(LibraryError::WrongKind),
+            },
             Source::History(session) => {
                 from.push_str(" JOIN played h ON h.track = t.id AND h.session = ?1");
                 values.push(session.0.into());
             }
         }
-        let mut filter = String::from(" WHERE 1");
         for word in query.text.split_whitespace() {
             values.push(contains(word).into());
             let n = values.len();
@@ -973,15 +1043,15 @@ impl Library for SqliteLibrary {
             params_from_iter(values.iter()),
             |row| row.get(0),
         )?;
-        let sort = sort_expression(query.column, query.source);
+        let sort = sort_expression(query.column, order);
         let direction = if query.descending { "DESC" } else { "ASC" };
-        let entry = match query.source {
+        let entry = match order {
             Source::Playlist(_) => "e.id",
             Source::Collection | Source::History(_) => "NULL",
         };
         // In a history, ties keep the order the tracks were recorded in: two tracks can start
         // in the same second, and one track can be there twice.
-        let tie = match query.source {
+        let tie = match order {
             Source::History(_) => format!("h.id {direction}, "),
             Source::Collection | Source::Playlist(_) => String::new(),
         };

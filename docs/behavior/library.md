@@ -41,6 +41,16 @@ played, and its played state and play count can be reset. A previewed track does
 The search field filters the list shown, or the whole collection, by the tags of the tracks as
 the user types.
 
+*Working with Playlists*, sections *Smartlists*, *Creating Smartlists*, *Using Smartlists* and
+*Editing Smartlists*, read on 20 November 2026: a smart playlist is made from the menu of the
+playlists folder and holds the tracks of the collection that pass the filters chosen for it; it
+follows the collection as tracks come in. Its filters cover the tags, the tempo, the key, the
+colour, the rating, the length, the dates of import and of last play, the play count, the
+analysis and whether the file is there. It is used as a playlist, but its tracks cannot be put
+in an order of their own: saving it as a playlist gives one that can. Its menu edits,
+duplicates, saves as a playlist, exports and deletes it. The section does not say how several
+filters combine or which comparisons each one offers.
+
 ## What Platter does
 
 ### Tracks
@@ -164,6 +174,30 @@ cue 5 loop 30 4.8 Drop
   (`docs/behavior/browser.md`, *Favourites*). Deleting a playlist takes it out of the
   favourites.
 
+### Smart playlists
+
+- A smart playlist is an item of the tree, beside the playlists and the folders, with a name
+  and up to 16 rules. It holds no entries: its tracks are those of the collection that pass
+  every rule, worked out at each search, so a track imported, tagged or played later comes in
+  or goes out at once. A smart playlist without rules holds the whole collection.
+- A rule is one of:
+  - words that must all be found in the title, the artist, the album or the genre, compared as
+    the search compares them;
+  - a range of the tempo, the length in seconds, the rating, the play count, the moment of
+    import or the moment of last play, with a lower bound, an upper bound or both, each one
+    included; a track with no value is out;
+  - one colour tag, or one key;
+  - whether the file was missing at the last consistency check, or whether the track has been
+    analysed.
+- Rules combine with "and": a track must pass all of them. Platter has no "or": a second smart
+  playlist covers the other case.
+- Searching a smart playlist searches the collection through its rules; the search field and the
+  sorting work as in a playlist. Its own order is that of the collection, the path. It gives no
+  entries: tracks cannot be added, removed, moved or deduplicated in it, and it is neither the
+  preparation list nor a favourite. Each of those answers an error and changes nothing.
+- It is renamed, moved and deleted as a playlist is. Its rules are read and replaced together.
+- A rule the file holds that this version cannot read is left out when the rules are read.
+
 ### History
 
 - A session is opened by the application when it starts and holds the tracks played in it, in
@@ -268,7 +302,12 @@ closes, in a folder of backups, from which an earlier collection can be taken ba
   the genre was read keeps none until it is imported again as one file or its details are
   saved: an import leaves known files as they are.
 - The public manual also imports and exports playlists in a format of its own. Platter does
-  not read or write it: M3U is the format other software shares. Smart playlists are M4.
+  not read or write it: M3U is the format other software shares.
+- Smart playlists combine their rules with "and" only, and compare each field one way: words
+  for the tags, ranges for numbers and dates, one value for the colour and the key. The comment,
+  the bitrate, the file path and the tags Platter does not read (label, remixer, release and
+  others) are not rules. Dates are absolute, not "the last 30 days". The rules are kept and
+  searched by `platter-library`; no window edits them yet.
 - An exported M3U holds absolute paths and no copy of the tracks; another computer finds them
   only at the same paths. A track with an artist and no title is written as its artist and
   reads back as a title.
@@ -296,6 +335,9 @@ closes, in a folder of backups, from which an earlier collection can be taken ba
 | An M3U file of more than 4 MiB | Refused |
 | An M3U entry that is a web address | Skipped and counted |
 | An `#EXTINF` line followed by no entry | Ignored |
+| A smart playlist with more than 16 rules, a range with no bound or with its bounds reversed, empty words, a colour or key out of range | An error; nothing changes |
+| A track added to a smart playlist | An error; nothing changes |
+| A smart playlist inside a folder that is deleted | Deleted with it |
 
 ## Tests
 
@@ -303,6 +345,9 @@ closes, in a folder of backups, from which an earlier collection can be taken ba
 the records, the consistency check and relocation, playlists and folders, history, search and
 sorting, and damaged, foreign and newer files. `crates/library/tests/playlist_model.rs` checks
 the operations on a playlist against a list in memory with random sequences.
+`crates/library/tests/smart.rs` checks the rules of smart playlists: how they combine, the
+bounds of a range, each kind of rule, the search and sorting inside one, the errors, and rules
+kept in the file, deleted with their folder or unknown to this version.
 `crates/library/tests/folders.rs` imports folders made in a temporary directory, with empty
 files and a reader that takes the extension for the format: the order, hidden entries, a second
 pass, another spelling of the path, a missing folder, the depth limit, a folder of 1 234 files

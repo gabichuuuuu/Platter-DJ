@@ -510,12 +510,12 @@ fn a_library_from_a_newer_version_is_refused_unchanged() {
     drop(SqliteLibrary::open(&file).unwrap());
     {
         let connection = rusqlite::Connection::open(&file).unwrap();
-        connection.pragma_update(None, "user_version", 6).unwrap();
+        connection.pragma_update(None, "user_version", 7).unwrap();
     }
     let before = std::fs::read(&file).unwrap();
     assert!(matches!(
         SqliteLibrary::open(&file),
-        Err(LibraryError::Newer { version: 6 })
+        Err(LibraryError::Newer { version: 7 })
     ));
     assert_eq!(std::fs::read(&file).unwrap(), before);
 }
@@ -537,7 +537,7 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE preparation; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 1;",
+                "DROP TABLE rule; DROP TABLE preparation; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 1;",
             )
             .unwrap();
     }
@@ -557,21 +557,21 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap()
     };
-    assert_eq!(version(&file), 5);
+    assert_eq!(version(&file), 6);
 
     // A file of the second version keeps its preparation list and gains the favourites.
     {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 2;",
+                "DROP TABLE rule; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 2;",
             )
             .unwrap();
     }
     let library = SqliteLibrary::open(&file).unwrap();
     assert_eq!(library.preparation().unwrap(), Some(list));
     assert!(library.favourites().unwrap().is_empty());
-    assert_eq!(version(&file), 5);
+    assert_eq!(version(&file), 6);
 
     // A file of the fourth version keeps its colours and gains what a deck learns.
     let track = library.track_at(Path::new("/a")).unwrap().unwrap().id;
@@ -580,12 +580,12 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "UPDATE track SET colour = 3; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 4;",
+                "DROP TABLE rule; UPDATE track SET colour = 3; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 4;",
             )
             .unwrap();
     }
     let mut library = SqliteLibrary::open(&file).unwrap();
-    assert_eq!(version(&file), 5);
+    assert_eq!(version(&file), 6);
     let kept = library.track_at(Path::new("/a")).unwrap().unwrap();
     assert_eq!((kept.colour, kept.key, kept.loudness), (3, None, None));
     library.set_analysis(track, Some(21), Some(-8.5)).unwrap();

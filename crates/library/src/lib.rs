@@ -11,6 +11,7 @@ mod backup;
 mod error;
 mod folder;
 mod m3u;
+mod smart;
 mod store;
 mod text;
 
@@ -27,6 +28,7 @@ pub use folder::{
 pub use m3u::{
     M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u,
 };
+pub use smart::{MAX_RULES, RangeField, Rule, TagField};
 pub use store::SqliteLibrary;
 
 /// Longest tag kept, in characters; longer tags are cut.
@@ -152,6 +154,8 @@ pub const MAX_RATING: u8 = 5;
 pub enum NodeKind {
     Folder,
     Playlist,
+    /// The tracks of the collection that pass its rules: [`Library::rules`].
+    Smart,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,6 +230,7 @@ pub enum Source {
     /// The whole collection.
     #[default]
     Collection,
+    /// A playlist, or a smart playlist.
     Playlist(NodeId),
     /// The tracks played in a session that are still in the collection, once per time they
     /// were played.
@@ -337,6 +342,10 @@ pub trait Library: Send {
     fn delete_node(&mut self, id: NodeId) -> Result<(), LibraryError>;
     /// The folders and playlists in `parent`, by name.
     fn children(&self, parent: Option<NodeId>) -> Result<Vec<Node>, LibraryError>;
+    /// The rules of a smart playlist, in the order they were given.
+    fn rules(&self, smart: NodeId) -> Result<Vec<Rule>, LibraryError>;
+    /// Replaces the rules of a smart playlist, up to [`MAX_RULES`]; on an error none change.
+    fn set_rules(&mut self, smart: NodeId, rules: &[Rule]) -> Result<(), LibraryError>;
 
     /// Adds tracks to a playlist at `at`, or at its end.
     fn add(
