@@ -32,8 +32,9 @@ pre-listening.
 
 A grid has a tempo, from 20 to 400 BPM or none yet, up to 128 markers and a lock. Each marker is
 a position in seconds of the track and stands on a beat; the beats follow from the last marker on
-or before them, and before the first marker from the first one, at the one tempo of the grid.
-Several tempos along one track are M4.
+or before them, and before the first marker from the first one. A marker can hold a tempo of its
+own, which sets the beats up to the next marker; a marker without one has the tempo of the grid.
+A track can so hold several tempo zones, one per marker.
 
 | Command | Effect |
 | --- | --- |
@@ -43,6 +44,8 @@ Several tempos along one track are M4.
 | `deck.grid.tap` | One tap; see below |
 | `deck.grid.marker.set` | Sets a marker at the play position |
 | `deck.grid.marker.move` | Moves the marker on or before the play position by `seconds`, -1 to 1 |
+| `deck.grid.marker.bpm.set` | Gives the marker on or before the play position a tempo of its own, 20 to 400 BPM |
+| `deck.grid.marker.bpm.clear` | Gives that marker the tempo of the grid again |
 | `deck.grid.marker.delete` | Deletes the marker on or before the play position |
 | `deck.grid.marker.previous` | Jumps to the marker before the play position |
 | `deck.grid.marker.next` | Jumps to the marker after the play position |
@@ -61,6 +64,21 @@ Several tempos along one track are M4.
   keep their order.
 - While the grid is locked every grid command except the lock itself and the jumps to markers
   changes nothing.
+- A grid without a tempo gives no marker a tempo of its own. The tempo of a marker is kept to
+  the nearest hundredth of a beat per minute, the step of the tempo field; that of the grid
+  is kept as it is given.
+- A marker set inside a zone takes the tempo of that zone, so the beats do not move; one set
+  before the first marker takes the tempo of the first. A deleted marker takes its tempo with
+  it, and its zone joins the one before.
+- `deck.grid.bpm.set` sets the tempo of the grid, which the markers without a tempo of their own
+  follow. Halving, doubling and stepping the tempo act on the tempo of the grid and on each
+  tempo of a marker together; if one would leave 20 to 400 BPM, none changes. A reset to the
+  analysis leaves one tempo and one marker.
+- Everything that reads the beat reads the zone of the play position: sync, the phase meter,
+  the beat tick, quantized jumps, snapped cues, the loops in beats and the beatjumps. A synced
+  deck that plays into a zone of another tempo changes its speed at the marker to stay at the
+  tempo of the clock. A loop keeps the length in seconds it was given; its length in beats is
+  read in the zone of the play position.
 
 ### In the interface
 
@@ -80,8 +98,10 @@ Several tempos along one track are M4.
   sets the tempo, 0.05 BPM per pixel, a tenth of that with Shift; with the focus the arrows
   step it by 0.01 BPM and Page Up and Page Down by 1 BPM. Without a tempo in the grid the
   field starts from the tempo of the tag, or 120 BPM.
-- The tempo in the deck header is the tempo of the grid; until the grid has one, the tempo of
-  the tag.
+- The tempo in the deck header is the tempo of the zone of the play position; until the grid
+  has one, the tempo of the tag. The tempo field of the GRID page is the tempo of the grid.
+- The tempo of a marker is set by command only: the GRID page has no control for it yet, since
+  `docs/design/` draws none. A shortcut or a controller can carry the two commands.
 - Controls that would change nothing are disabled: the edits while the grid is locked, the
   tempo keys without a tempo, the marker keys without markers.
 
@@ -116,10 +136,11 @@ its own beats.
 
 ## Differences
 
-- One tempo per track in M3: the markers re-anchor the beats, they do not start a new tempo.
-  The tempo buttons act on the whole track, not on the zone of the play position.
-- The step buttons of the documented application add or remove one beat in a closed zone; with a
-  single tempo Platter steps the tempo by the amount the command carries.
+- The tempo buttons act on the whole track, every zone together, not on the zone of the play
+  position; the tempo of one zone is set by `deck.grid.marker.bpm.set`.
+- The step buttons of the documented application add or remove one beat in a closed zone;
+  Platter steps the tempo by the amount the command carries, and gives a zone its tempo
+  directly.
 - The tempo field is dragged or stepped, and typed after a double click or Enter: a tempo
   with a full stop or a comma, within the range of a grid; Escape leaves it as it was.
 - The sound of the tick, its level and its length are Platter's: the manual describes none of
@@ -148,10 +169,12 @@ its own beats.
 
 ## Tests
 
-`crates/core/src/grid.rs` for the grid itself and its beats; `crates/engine/tests/beatgrid.rs`
-for the commands; the tap in `crates/engine/src/tap.rs`; the GRID page in
-`crates/ui-egui/tests/panels.rs`, which operates each of its controls and checks that every
-grid command has one. `crates/engine/tests/beat_tick.rs` for the beat tick: the onsets of the
+`crates/core/src/grid.rs` for the grid itself and its beats, the tempo zones of the markers
+among them; `crates/core/tests/track_text.rs` for the tempo of a marker in the text of a track;
+`crates/engine/tests/beatgrid.rs` for the commands; `crates/engine/tests/sync.rs` for a synced
+deck that plays into a zone of another tempo; the tap in `crates/engine/src/tap.rs`; the GRID
+page in `crates/ui-egui/tests/panels.rs`, which operates each of its controls and checks that
+every grid command but the two of the tempo of a marker has one. `crates/engine/tests/beat_tick.rs` for the beat tick: the onsets of the
 ticks against the beats of the grid at tempos 1 and 1.08 and with key lock, a marker off the
 beats, a loop, a seek, reverse, pause, a grid without tempo, two channels, the master unchanged,
 the next track and a new device rate.

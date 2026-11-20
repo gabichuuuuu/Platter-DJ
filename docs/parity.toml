@@ -100,7 +100,7 @@ features = [
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test panels" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; the lock keeps the grid, not the key, which cannot be edited, see docs/behavior/analysis.md" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beat_tick; cargo test -p platter-ui-egui --test panels; not heard on a device with four outputs, see ROADMAP.md" },
-  { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
+  { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "done", evidence = "cargo test -p platter-core grid; cargo test -p platter-core --test track_text; cargo test -p platter-engine --test sync marker; the tempo of a marker is set by command, with no control on the GRID page, and the analysis finds one tempo, see docs/behavior/beatgrid.md" },
 ]
 
 [[area]]

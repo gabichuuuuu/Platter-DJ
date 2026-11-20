@@ -17,6 +17,7 @@ fn sample() -> TrackMemory {
     grid.add_marker(0.512);
     grid.add_marker(64.25);
     grid.set_bpm(Bpm::new(125.5).unwrap());
+    grid.set_marker_bpm(64.25, Some(Bpm::new(98.0).unwrap()));
     grid.set_locked(true);
     let mut slots = [None; HotcueSlot::COUNT];
     slots[0] = Some(Cue::of_kind(12.25, CueKind::Cue, 0.0, CueName::new("Intro")).unwrap());
@@ -39,6 +40,7 @@ fn a_memory_reads_back_as_it_was_written() {
     assert!(text.starts_with("platter-track 1\n"), "{text}");
     assert!(text.contains("\nbpm 125.5\n"), "{text}");
     assert!(text.contains("\nlock\n"), "{text}");
+    assert!(text.contains("\nmarker 0.512\nmarker 64.25 98\n"), "{text}");
     assert!(text.contains("\ncue 1 cue 12.25 0 Intro\n"), "{text}");
     assert_eq!(TrackMemory::parse(&text).unwrap(), memory);
     // An empty memory is the header alone.
@@ -95,6 +97,12 @@ fn a_text_that_is_not_one_platter_reads_is_refused_whole() {
             TrackTextError::Line(3),
         ),
         ("platter-track 1\nbpm 12\n", TrackTextError::Line(2)),
+        // A marker with a tempo out of range, or with a tempo on a grid without one.
+        (
+            "platter-track 1\nbpm 120\nmarker 1 500\n",
+            TrackTextError::Line(3),
+        ),
+        ("platter-track 1\nmarker 1 98\n", TrackTextError::Line(2)),
         ("platter-track 1\nbpm NaN\n", TrackTextError::Line(2)),
         ("platter-track 1\nbpm inf\n", TrackTextError::Line(2)),
         ("platter-track 1\nbpm 120,5\n", TrackTextError::Line(2)),

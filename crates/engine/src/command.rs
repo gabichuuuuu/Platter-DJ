@@ -120,6 +120,16 @@ pub enum Command {
         deck: DeckId,
         seconds: f64,
     },
+    /// Gives the marker on or before the play position a tempo of its own up to the next
+    /// marker, `20.0..=400.0` beats per minute.
+    DeckGridMarkerBpmSet {
+        deck: DeckId,
+        bpm: f64,
+    },
+    /// Gives the marker on or before the play position the tempo of the grid again.
+    DeckGridMarkerBpmClear {
+        deck: DeckId,
+    },
     /// Deletes the marker on or before the play position.
     DeckGridMarkerDelete {
         deck: DeckId,
@@ -901,6 +911,16 @@ pub const SPECS: &[CommandSpec] = &[
             DECK,
             number("seconds", -MAX_MARKER_MOVE_SECONDS, MAX_MARKER_MOVE_SECONDS),
         ],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.bpm.set",
+        label: "Set the tempo of a grid marker",
+        params: &[DECK, number("bpm", Bpm::MIN, Bpm::MAX)],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.bpm.clear",
+        label: "Give a grid marker the tempo of the grid",
+        params: &[DECK],
     },
     CommandSpec {
         id: "deck.grid.marker.delete",
@@ -1934,6 +1954,11 @@ impl Command {
                 deck,
                 seconds: read.number("seconds")?,
             },
+            "deck.grid.marker.bpm.set" => Self::DeckGridMarkerBpmSet {
+                deck,
+                bpm: read.number("bpm")?,
+            },
+            "deck.grid.marker.bpm.clear" => Self::DeckGridMarkerBpmClear { deck },
             "deck.grid.marker.delete" => Self::DeckGridMarkerDelete { deck },
             "deck.grid.marker.previous" => Self::DeckGridMarkerPrevious { deck },
             "deck.grid.marker.next" => Self::DeckGridMarkerNext { deck },
@@ -2111,6 +2136,8 @@ impl Command {
             Self::DeckGridTap { .. } => "deck.grid.tap",
             Self::DeckGridMarkerSet { .. } => "deck.grid.marker.set",
             Self::DeckGridMarkerMove { .. } => "deck.grid.marker.move",
+            Self::DeckGridMarkerBpmSet { .. } => "deck.grid.marker.bpm.set",
+            Self::DeckGridMarkerBpmClear { .. } => "deck.grid.marker.bpm.clear",
             Self::DeckGridMarkerDelete { .. } => "deck.grid.marker.delete",
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",

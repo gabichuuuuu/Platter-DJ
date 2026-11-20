@@ -141,7 +141,7 @@ fn memory_of(deck: &DeckSnapshot) -> TrackMemory {
         }
     }
     TrackMemory {
-        grid: deck.grid,
+        grid: *deck.grid,
         cues: Cues::from_slots(slots),
     }
 }
@@ -159,7 +159,7 @@ mod tests {
         for deck in &mut decks {
             deck.analysis = None;
             deck.cues = Cues::default();
-            deck.grid = platter_core::BeatGrid::default();
+            *deck.grid = platter_core::BeatGrid::default();
         }
         decks
     }
@@ -207,7 +207,7 @@ mod tests {
         let later = start + SETTLE * 2;
         let kept = keeping.observe(&decks, later);
         assert_eq!(kept.len(), 1, "{kept:?}");
-        assert_eq!(kept[0].1.memory.unwrap().grid, decks[0].grid);
+        assert_eq!(kept[0].1.memory.unwrap().grid, *decks[0].grid);
         assert_eq!(kept[0].1.analysis, None);
         assert!(!keeping.waiting());
         assert!(keeping.observe(&decks, later + SETTLE * 2).is_empty());

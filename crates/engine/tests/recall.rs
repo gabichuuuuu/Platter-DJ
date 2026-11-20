@@ -65,7 +65,7 @@ fn deck_a(rig: &mut Rig) -> TrackMemory {
     rig.engine.poll();
     let deck = &rig.engine.snapshot().decks[0];
     TrackMemory {
-        grid: deck.grid,
+        grid: *deck.grid,
         cues: deck.cues,
     }
 }

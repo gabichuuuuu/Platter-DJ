@@ -16,7 +16,7 @@ fn rig(name: &str) -> Rig {
 fn grid(rig: &mut Rig) -> BeatGrid {
     rig.run(0.01);
     rig.engine.poll();
-    rig.engine.snapshot().decks[0].grid
+    *rig.engine.snapshot().decks[0].grid
 }
 
 fn position(rig: &mut Rig) -> f64 {

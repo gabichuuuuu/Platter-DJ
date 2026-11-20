@@ -103,7 +103,7 @@ cue 5 loop 30 4.8 Drop
 
 - The first line names the format and its version. Each other line starts with a word:
   `bpm` and the tempo; `lock` when the grid is locked; `marker` and a place in seconds, one
-  line per marker; `cue`, the slot from 1 to 8, the type (`cue`, `fade_in`, `fade_out`,
+  line per marker, followed by the tempo of the marker when it has one of its own; `cue`, the slot from 1 to 8, the type (`cue`, `fade_in`, `fade_out`,
   `load` or `loop`), the position and the length in seconds, and the name to the end of the
   line, which may be empty.
 - Numbers are written with a full stop and as many digits as they need to read back the same.

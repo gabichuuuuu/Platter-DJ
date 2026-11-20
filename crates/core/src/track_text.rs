@@ -64,8 +64,16 @@ impl TrackMemory {
         if self.grid.is_locked() {
             text.push_str("lock\n");
         }
-        for marker in self.grid.markers() {
-            let _ = writeln!(text, "marker {marker}");
+        // A marker with a tempo of its own carries it after its place.
+        for (marker, tempo) in self.grid.markers().iter().zip(self.grid.marker_tempos()) {
+            match tempo {
+                Some(bpm) => {
+                    let _ = writeln!(text, "marker {marker} {}", bpm.value());
+                }
+                None => {
+                    let _ = writeln!(text, "marker {marker}");
+                }
+            }
         }
         for (slot, cue) in self.cues.iter() {
             let _ = writeln!(
@@ -92,8 +100,8 @@ impl TrackMemory {
         }
         let mut bpm = None;
         let mut locked = false;
-        // Each marker with the line it came from.
-        let mut markers: Vec<(f64, usize)> = Vec::new();
+        // Each marker with its own tempo, if it has one, and the line it came from.
+        let mut markers: Vec<(f64, Option<Bpm>, usize)> = Vec::new();
         let mut slots: [Option<Cue>; HotcueSlot::COUNT] = [None; HotcueSlot::COUNT];
         for (index, line) in lines.enumerate() {
             // The header is line 1.
@@ -108,7 +116,14 @@ impl TrackMemory {
                 }
                 "lock" if !locked && rest.is_empty() => locked = true,
                 "marker" if markers.len() < MAX_MARKERS => {
-                    markers.push((place(rest).ok_or(bad)?, index + 2));
+                    let (at, tempo) = match rest.split_once(' ') {
+                        Some((at, tempo)) => {
+                            let tempo = number(tempo).and_then(|value| Bpm::new(value).ok());
+                            (at, Some(tempo.ok_or(bad.clone())?))
+                        }
+                        None => (rest, None),
+                    };
+                    markers.push((place(at).ok_or(bad)?, tempo, index + 2));
                 }
                 "cue" => {
                     let (slot, cue) = cue_line(rest).ok_or(bad.clone())?;
@@ -122,14 +137,20 @@ impl TrackMemory {
             }
         }
         let mut grid = BeatGrid::default();
-        for (marker, line) in markers {
+        for (marker, _, line) in &markers {
             // A marker on the place of another is refused by the grid.
-            if !grid.add_marker(marker) {
-                return Err(TrackTextError::Line(line));
+            if !grid.add_marker(*marker) {
+                return Err(TrackTextError::Line(*line));
             }
         }
         if let Some(bpm) = bpm {
             grid.set_bpm(bpm);
+        }
+        for (marker, tempo, line) in markers {
+            // A tempo of a marker needs the tempo of the grid.
+            if tempo.is_some() && !grid.set_marker_bpm(marker, tempo) {
+                return Err(TrackTextError::Line(line));
+            }
         }
         grid.set_locked(locked);
         Ok(Self {

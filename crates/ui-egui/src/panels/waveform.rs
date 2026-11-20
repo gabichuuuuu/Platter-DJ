@@ -53,7 +53,7 @@ pub fn size_text(texts: &Texts, size: LoopSize) -> String {
 
 /// The length of the loop of a deck: in beats with a tempo, in seconds without.
 fn loop_length_text(texts: &Texts, snapshot: &DeckSnapshot, seconds: f64) -> String {
-    let Some(bpm) = snapshot.grid.bpm() else {
+    let Some(bpm) = snapshot.grid.bpm_at(snapshot.position_seconds) else {
         return texts.format(
             "deck.loop_seconds",
             &[("seconds", &format!("{seconds:.2}"))],

@@ -47,6 +47,25 @@ pub struct Beat {
     pub marker: bool,
 }
 
+/// The tempo of a marker that has none of its own.
+const NO_TEMPO: u16 = 0;
+
+/// The tempo of a marker is kept in hundredths of a beat per minute: 400 BPM is 40,000.
+const TEMPO_STEPS_PER_BPM: f64 = 100.0;
+
+/// The tempo of a marker as it is kept, to the nearest hundredth of a beat per minute.
+fn kept_tempo(bpm: Bpm) -> u16 {
+    // Within 20 to 400 BPM the result fits: at most 40,000.
+    (bpm.value() * TEMPO_STEPS_PER_BPM).round() as u16
+}
+
+/// The tempo a marker holds of its own, if it holds one.
+fn own_tempo(tempo: u16) -> Option<Bpm> {
+    (tempo != NO_TEMPO)
+        .then(|| Bpm::new(f64::from(tempo) / TEMPO_STEPS_PER_BPM).ok())
+        .flatten()
+}
+
 /// Positions closer than this, in seconds, are the same place.
 const SAME_PLACE: f64 = 0.001;
 
@@ -57,6 +76,10 @@ const SAME_PLACE: f64 = 0.001;
 pub struct BeatGrid {
     bpm: Option<Bpm>,
     markers: [f64; MAX_MARKERS],
+    /// The tempo of each marker up to the next one, in hundredths of a beat per minute, or
+    /// [`NO_TEMPO`] for a marker with the tempo of the grid. Small numbers keep the grid
+    /// small: it is copied often, on the stack too.
+    tempos: [u16; MAX_MARKERS],
     len: usize,
     locked: bool,
 }
@@ -66,6 +89,7 @@ impl Default for BeatGrid {
         Self {
             bpm: None,
             markers: [0.0; MAX_MARKERS],
+            tempos: [NO_TEMPO; MAX_MARKERS],
             len: 0,
             locked: false,
         }
@@ -79,6 +103,50 @@ impl BeatGrid {
 
     pub fn markers(&self) -> &[f64] {
         self.markers.get(..self.len).unwrap_or(&[])
+    }
+
+    /// The tempo each marker holds of its own, in the order of [`Self::markers`].
+    pub fn marker_tempos(&self) -> impl Iterator<Item = Option<Bpm>> + '_ {
+        self.tempos
+            .get(..self.len)
+            .unwrap_or(&[])
+            .iter()
+            .map(|tempo| own_tempo(*tempo))
+    }
+
+    /// The tempo of the run of beats that holds a position of `at` seconds: that of its
+    /// marker, or of the grid. Before the first marker, that of the first marker.
+    pub fn bpm_at(&self, at: f64) -> Option<Bpm> {
+        let bpm = self.bpm?;
+        if !at.is_finite() || self.len == 0 {
+            return Some(bpm);
+        }
+        let run = self.markers().partition_point(|marker| *marker <= at);
+        Some(self.tempo_of(run.saturating_sub(1)).unwrap_or(bpm))
+    }
+
+    /// The tempo of the run of the marker at `index`.
+    fn tempo_of(&self, index: usize) -> Option<Bpm> {
+        self.tempos
+            .get(index)
+            .and_then(|tempo| own_tempo(*tempo))
+            .or(self.bpm)
+    }
+
+    /// Gives the marker on or before `at` seconds a tempo of its own up to the next marker,
+    /// or with `None` the tempo of the grid again, to the nearest hundredth of a beat per
+    /// minute. A grid without a tempo takes none.
+    pub fn set_marker_bpm(&mut self, at: f64, bpm: Option<Bpm>) -> bool {
+        let Some(index) = self.on_or_before(at) else {
+            return false;
+        };
+        if self.locked || self.bpm.is_none() {
+            return false;
+        }
+        let tempo = bpm.map_or(NO_TEMPO, kept_tempo);
+        let changed = self.tempos[index] != tempo;
+        self.tempos[index] = tempo;
+        changed
     }
 
     pub fn is_locked(&self) -> bool {
@@ -100,8 +168,8 @@ impl BeatGrid {
         added || changed
     }
 
-    /// Multiplies the tempo by `factor`. Nothing changes without a tempo or when the result
-    /// leaves the accepted range.
+    /// Multiplies the tempo by `factor`, with the tempos of the markers that have their own.
+    /// Nothing changes without a tempo or when a result leaves the accepted range.
     pub fn scale_bpm(&mut self, factor: f64) -> bool {
         self.replace_bpm(|bpm| bpm.value() * factor)
     }
@@ -111,11 +179,25 @@ impl BeatGrid {
         self.replace_bpm(|bpm| bpm.value() + amount)
     }
 
-    fn replace_bpm(&mut self, change: impl FnOnce(Bpm) -> f64) -> bool {
-        match self.bpm.map(change).map(Bpm::new) {
-            Some(Ok(bpm)) => self.set_bpm(bpm),
-            _ => false,
+    fn replace_bpm(&mut self, change: impl Fn(Bpm) -> f64) -> bool {
+        let Some(Ok(bpm)) = self.bpm.map(&change).map(Bpm::new) else {
+            return false;
+        };
+        let mut tempos = self.tempos;
+        for tempo in tempos.iter_mut().take(self.len) {
+            if let Some(own) = own_tempo(*tempo) {
+                let Ok(changed) = Bpm::new(change(own)) else {
+                    return false;
+                };
+                *tempo = kept_tempo(changed);
+            }
         }
+        if self.locked {
+            return false;
+        }
+        let changed = tempos != self.tempos;
+        self.tempos = tempos;
+        self.set_bpm(bpm) || changed
     }
 
     /// No tempo and no markers.
@@ -132,6 +214,7 @@ impl BeatGrid {
         let before = *self;
         self.bpm = None;
         self.len = 0;
+        self.tempos = [NO_TEMPO; MAX_MARKERS];
         if let Some((bpm, marker)) = found {
             self.add_marker(marker);
             self.bpm = Some(bpm);
@@ -164,6 +247,14 @@ impl BeatGrid {
         let index = markers.partition_point(|marker| *marker < at);
         self.markers.copy_within(index..self.len, index + 1);
         self.markers[index] = at;
+        self.tempos.copy_within(index..self.len, index + 1);
+        // A marker set inside a run keeps the tempo of that run; one set before the first
+        // marker, that of the first, which its beats followed.
+        self.tempos[index] = match index.checked_sub(1) {
+            Some(before) => self.tempos[before],
+            None if self.len > 0 => self.tempos[1],
+            None => NO_TEMPO,
+        };
         self.len += 1;
         true
     }
@@ -177,7 +268,9 @@ impl BeatGrid {
             return false;
         }
         self.markers.copy_within(index + 1..self.len, index);
+        self.tempos.copy_within(index + 1..self.len, index);
         self.len -= 1;
+        self.tempos[self.len] = NO_TEMPO;
         true
     }
 
@@ -226,19 +319,21 @@ impl BeatGrid {
     }
 
     /// Calls `visit` for each beat from `from` to `to` seconds, in order. Each marker starts
-    /// a run of beats at the tempo of the grid up to the next marker; the beats before the
+    /// a run of beats at its tempo, or that of the grid, up to the next marker; the beats before the
     /// first marker count back from it. A grid without tempo or markers has no beats.
     pub fn for_each_beat(&self, from: f64, to: f64, mut visit: impl FnMut(Beat)) {
-        let (Some(bpm), Some(first)) = (self.bpm, self.markers().first()) else {
+        let (Some(_), Some(first)) = (self.bpm, self.markers().first()) else {
             return;
         };
         if !from.is_finite() || !to.is_finite() || from > to {
             return;
         }
-        let beat = bpm.beat_seconds();
         let mut visited = 0;
         let markers = self.markers();
         for (index, marker) in markers.iter().enumerate() {
+            let Some(beat) = self.tempo_of(index).map(Bpm::beat_seconds) else {
+                return;
+            };
             // The run of the first marker reaches back to the start of the span.
             let start = if index == 0 {
                 from.min(*first)
@@ -273,12 +368,15 @@ impl BeatGrid {
     /// are those of [`Self::for_each_beat`]: counted from the last marker on or before the
     /// position, or back from the first one. A grid without tempo or markers has no beats.
     pub fn phase_at(&self, at: f64) -> Option<f64> {
-        let (bpm, markers) = (self.bpm?, self.markers());
+        let markers = self.markers();
         if !at.is_finite() {
             return None;
         }
-        let run = markers.partition_point(|marker| *marker <= at);
-        let marker = markers.get(run.saturating_sub(1))?;
+        let run = markers
+            .partition_point(|marker| *marker <= at)
+            .saturating_sub(1);
+        let marker = markers.get(run)?;
+        let bpm = self.tempo_of(run)?;
         let phase = ((at - marker) / bpm.beat_seconds()).rem_euclid(1.0);
         // The remainder of a tiny negative number rounds up to one.
         Some(if phase < 1.0 { phase } else { 0.0 })
@@ -288,7 +386,7 @@ impl BeatGrid {
     /// in, between zero and `end` seconds. Between two beats exactly, the later one. A grid
     /// without tempo or markers has no beats.
     pub fn nearest_beat(&self, at: f64, end: f64) -> Option<f64> {
-        let beat = self.bpm?.beat_seconds();
+        let beat = self.bpm_at(at)?.beat_seconds();
         let phase = self.phase_at(at)?;
         let (_, run_end) = self.run_at(at)?;
         if !end.is_finite() {
@@ -613,5 +711,75 @@ mod tests {
         assert_eq!(grid.bpm(), Some(bpm(125.0)));
         assert!(!grid.set_bpm_from(bpm(125.0), 0.7));
         assert!(!grid.is_empty());
+    }
+
+    /// A grid at 120 BPM with markers at 0 and 10 seconds, the second at 100 BPM.
+    fn two_tempos() -> BeatGrid {
+        let mut grid = BeatGrid::default();
+        assert!(grid.set_bpm(bpm(120.0)));
+        assert!(grid.add_marker(10.0));
+        assert!(grid.set_marker_bpm(10.0, Some(bpm(100.0))));
+        grid
+    }
+
+    #[test]
+    fn each_marker_sets_its_tempo_up_to_the_next_one() {
+        let grid = two_tempos();
+        assert_eq!(grid.bpm(), Some(bpm(120.0)));
+        assert_eq!(grid.bpm_at(-1.0), Some(bpm(120.0)));
+        assert_eq!(grid.bpm_at(9.99), Some(bpm(120.0)));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(100.0)));
+        assert_eq!(grid.bpm_at(30.0), Some(bpm(100.0)));
+        assert_eq!(
+            grid.marker_tempos().collect::<Vec<_>>(),
+            [None, Some(bpm(100.0))]
+        );
+
+        // Beats every half second up to 10 s, then every 0.6 s from the marker.
+        let mut beats = Vec::new();
+        grid.for_each_beat(9.0, 11.5, |beat| beats.push(beat.seconds));
+        assert_eq!(beats, [9.0, 9.5, 10.0, 10.6, 11.2]);
+        assert!((grid.phase_at(10.3).unwrap() - 0.5).abs() < 1e-9);
+        assert!((grid.nearest_beat(10.5, 60.0).unwrap() - 10.6).abs() < 1e-9);
+        assert_eq!(grid.run_at(10.3), Some((10.0, f64::INFINITY)));
+    }
+
+    #[test]
+    fn markers_set_deleted_and_scaled_carry_their_tempos() {
+        let mut grid = two_tempos();
+        // A marker inside the second run keeps its tempo; deleting it gives the run back.
+        assert!(grid.add_marker(20.0));
+        assert_eq!(grid.bpm_at(25.0), Some(bpm(100.0)));
+        assert!(grid.set_marker_bpm(20.0, Some(bpm(90.0))));
+        assert!(grid.delete_marker(20.0));
+        assert_eq!(grid.bpm_at(25.0), Some(bpm(100.0)));
+        assert_eq!(
+            grid.marker_tempos().collect::<Vec<_>>(),
+            [None, Some(bpm(100.0))]
+        );
+
+        // Doubling and stepping act on every tempo, or on none when one leaves the range.
+        assert!(grid.scale_bpm(2.0));
+        assert_eq!(grid.bpm_at(0.0), Some(bpm(240.0)));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(200.0)));
+        assert!(!grid.scale_bpm(2.0));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(200.0)));
+        assert!(grid.step_bpm(-10.0));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(190.0)));
+
+        // Back to the tempo of the grid, and nothing on a locked grid or one without tempo.
+        assert!(grid.set_marker_bpm(10.0, None));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(230.0)));
+        grid.set_locked(true);
+        assert!(!grid.set_marker_bpm(10.0, Some(bpm(100.0))));
+        let mut bare = BeatGrid::default();
+        assert!(bare.add_marker(1.0));
+        assert!(!bare.set_marker_bpm(1.0, Some(bpm(100.0))));
+
+        // A reset forgets the tempos of the markers.
+        let mut grid = two_tempos();
+        assert!(grid.replace(Some((bpm(128.0), 0.0))));
+        assert!(grid.add_marker(10.0));
+        assert_eq!(grid.bpm_at(10.0), Some(bpm(128.0)));
     }
 }

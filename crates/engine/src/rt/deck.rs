@@ -496,6 +496,7 @@ impl DeckPlayer {
             GridEdit::StepBpm(amount) => grid.step_bpm(amount),
             GridEdit::MarkerSet => grid.add_marker(at),
             GridEdit::MarkerMove(by) => grid.move_marker(at, by, end),
+            GridEdit::MarkerBpm(bpm) => grid.set_marker_bpm(at, bpm),
             GridEdit::MarkerDelete => grid.delete_marker(at),
             GridEdit::ToggleLock => {
                 grid.set_locked(!grid.is_locked());
@@ -533,8 +534,9 @@ impl DeckPlayer {
         Some(Track {
             rate,
             frames: audio.frames() as f64,
+            // The beat of the run of the grid the deck is in.
             beat: grid
-                .and_then(BeatGrid::bpm)
+                .and_then(|grid| grid.bpm_at(self.position / rate))
                 .map(|bpm| bpm.beat_seconds() * rate),
         })
     }
@@ -808,7 +810,7 @@ impl DeckPlayer {
     /// jump: it passes a beat only when it lands on one, within one step.
     fn passes_a_beat(&self, at: f64, before: Option<f64>, step: f64, rate: f64) -> bool {
         let (Some(bpm), Some(phase), Some((_, run_end))) = (
-            self.grid.bpm(),
+            self.grid.bpm_at(at / rate),
             self.grid.phase_at(at / rate),
             self.grid.run_at(at / rate),
         ) else {
@@ -918,9 +920,10 @@ impl DeckPlayer {
         let speed = f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()));
         // A deck on a detour of flux keeps the beat of the track as it would have played on.
         let at = self.timeline.unwrap_or(self.position);
+        let at = at / audio.rate().as_f64();
         Some(Pulse {
-            bpm: self.grid.bpm()?.value() * speed,
-            phase: self.grid.phase_at(at / audio.rate().as_f64())?,
+            bpm: self.grid.bpm_at(at)?.value() * speed,
+            phase: self.grid.phase_at(at)?,
         })
     }
 
@@ -961,7 +964,13 @@ impl DeckPlayer {
         let (Some(clock), true, None) = (clock, self.sync, &self.pending_swap) else {
             return;
         };
-        let Some(bpm) = self.grid.bpm() else {
+        // The tempo of the run of the grid the deck is in, which a marker can change.
+        let at = self.timeline.unwrap_or(self.position);
+        let Some(bpm) = self
+            .audio
+            .as_ref()
+            .and_then(|audio| self.grid.bpm_at(at / audio.rate().as_f64()))
+        else {
             return;
         };
         let ratio = clock.bpm / bpm.value();

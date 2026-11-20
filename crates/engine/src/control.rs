@@ -301,7 +301,8 @@ pub struct DeckSnapshot {
     pub position_seconds: f64,
     pub cue_seconds: f64,
     /// Beatgrid of the loaded track, as of the last [`Engine::poll`].
-    pub grid: BeatGrid,
+    /// On the heap: the snapshot is copied often, on the stack of the interface too.
+    pub grid: Box<BeatGrid>,
     /// Loop of the loaded track, as of the last [`Engine::poll`].
     pub looping: LoopState,
     /// Stored cues of the loaded track, as of the last [`Engine::poll`].
@@ -346,7 +347,7 @@ impl Default for DeckSnapshot {
             playing: false,
             position_seconds: 0.0,
             cue_seconds: 0.0,
-            grid: BeatGrid::default(),
+            grid: Box::default(),
             looping: LoopState::default(),
             cues: Cues::default(),
             controls: DeckControls::default(),
@@ -850,6 +851,10 @@ impl Engine {
                 )?;
                 (deck, GridEdit::MarkerMove(by))
             }
+            Command::DeckGridMarkerBpmSet { deck, bpm } => {
+                (deck, GridEdit::MarkerBpm(Some(Bpm::new(bpm)?)))
+            }
+            Command::DeckGridMarkerBpmClear { deck } => (deck, GridEdit::MarkerBpm(None)),
             Command::DeckGridMarkerDelete { deck } => (deck, GridEdit::MarkerDelete),
             Command::DeckGridMarkerPrevious { deck } => (deck, GridEdit::MarkerPrevious),
             Command::DeckGridMarkerNext { deck } => (deck, GridEdit::MarkerNext),
@@ -1856,7 +1861,7 @@ impl Engine {
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
-                grid: control.grid,
+                grid: Box::new(control.grid),
                 looping: control.looping,
                 cues: control.cues,
                 controls: control.controls.clone(),
