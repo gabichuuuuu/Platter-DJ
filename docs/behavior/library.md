@@ -306,8 +306,12 @@ closes, in a folder of backups, from which an earlier collection can be taken ba
 - Smart playlists combine their rules with "and" only, and compare each field one way: words
   for the tags, ranges for numbers and dates, one value for the colour and the key. The comment,
   the bitrate, the file path and the tags Platter does not read (label, remixer, release and
-  others) are not rules. Dates are absolute, not "the last 30 days". The rules are kept and
-  searched by `platter-library`; no window edits them yet.
+  others) are not rules. Dates are absolute, not "the last 30 days". Commands and the field of
+  the tree write the rules as text (`parse_rules`): each rule is its field and its value,
+  separated by `;`: `title`, `artist`, `album` and `genre` take words; `tempo`, `length`,
+  `rating`, `plays`, `imported` and `played` take `low..high`, `low..` or `..high`; `colour` and
+  `key` a number; `missing` and `analysed` `yes` or `no`. How the browser shows them is in
+  `docs/behavior/browser.md`, *Playlists*.
 - An exported M3U holds absolute paths and no copy of the tracks; another computer finds them
   only at the same paths. A track with an artist and no title is written as its artist and
   reads back as a title.

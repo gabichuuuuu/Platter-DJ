@@ -19,7 +19,7 @@ use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
-use platter_ui_egui::model::DeckNotice;
+use platter_ui_egui::model::{DeckNotice, PlaylistRow};
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 use platter_ui_egui::{BrowserMenu, MenuTarget, Naming};
@@ -216,6 +216,34 @@ fn states() -> Vec<State> {
     other_preview.scene.engine.preview.track = other_preview.scene.engine.decks[0].track.clone();
     let mut rename = state("rename-playlist", sample::playing(), None);
     rename.naming = Some(Naming::Rename(NodeId::new(1)));
+    // The menu of the smart playlist *Peak time*, and the field of its rules.
+    let with_smart = || {
+        let mut scene = sample::playing();
+        if let Some(collection) = &mut scene.browser.collection {
+            collection.playlists.push(PlaylistRow {
+                id: NodeId::new(5),
+                name: "Peak time".to_owned(),
+                depth: 0,
+                folder: false,
+                smart: true,
+                rules: "genre techno; tempo 128..134".to_owned(),
+                entries: Some(37),
+                current: false,
+                preparation: false,
+                favourite: None,
+            });
+        }
+        scene
+    };
+    let mut smart_menu = state("smart-menu", with_smart(), None);
+    smart_menu.menu = Some(BrowserMenu {
+        target: MenuTarget::Playlist(NodeId::new(5)),
+        at: egui::pos2(120.0, 760.0),
+    });
+    let mut smart_rules = state("smart-rules", with_smart(), None);
+    smart_rules.naming = Some(Naming::Rules(NodeId::new(5)));
+    // The smart playlist is the last one: the tree scrolls it into view.
+    smart_rules.tree_scroll = 4.0 * 27.0;
     // The mix recorder runs in the two-deck layout, so Cut can be operated and the indicator
     // of the header shows beside the MIDI one.
     let mut recording = sample::playing();
@@ -247,6 +275,8 @@ fn states() -> Vec<State> {
         entry_menu,
         new_playlist,
         rename,
+        smart_menu,
+        smart_rules,
         move_menu,
         state("history", sample::history(), None),
         explorer,
@@ -1251,6 +1281,7 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     if let Some(collection) = &scene.browser.collection {
         data.extend(collection.playlists.iter().map(|row| row.name.clone()));
+        data.extend(collection.playlists.iter().map(|row| row.rules.clone()));
         data.extend(
             collection
                 .session

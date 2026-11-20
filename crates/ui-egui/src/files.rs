@@ -541,6 +541,21 @@ impl FileBrowser {
         }
     }
 
+    /// The commands of a smart playlist.
+    fn smart(&mut self, command: &AppCommand) {
+        let Some(collection) = &mut self.collection else {
+            return;
+        };
+        match command {
+            AppCommand::BrowserSmartRulesSet { smart, rules } => {
+                collection.set_rules(*smart, rules.clone());
+            }
+            AppCommand::BrowserSmartToPlaylist { smart } => collection.smart_to_playlist(*smart),
+            AppCommand::BrowserSmartDuplicate { smart } => collection.duplicate_smart(*smart),
+            _ => {}
+        }
+    }
+
     /// The commands of the maintenance of the collection, which run on the worker of the library.
     fn maintain(&mut self, command: &AppCommand) {
         let Some(collection) = &mut self.collection else {
@@ -962,6 +977,7 @@ impl FileBrowser {
                     let kind = match item {
                         NewItem::Playlist => NodeKind::Playlist,
                         NewItem::Folder => NodeKind::Folder,
+                        NewItem::Smart => NodeKind::Smart,
                     };
                     collection.create(*folder, kind, name.clone());
                 }
@@ -1021,6 +1037,9 @@ impl FileBrowser {
                     collection.export(*playlist, path.clone());
                 }
             }
+            AppCommand::BrowserSmartRulesSet { .. }
+            | AppCommand::BrowserSmartToPlaylist { .. }
+            | AppCommand::BrowserSmartDuplicate { .. } => self.smart(command),
             AppCommand::BrowserHistoryToPlaylist { .. }
             | AppCommand::BrowserHistoryExport { .. }
             | AppCommand::BrowserHistoryDelete { .. } => self.history(command),

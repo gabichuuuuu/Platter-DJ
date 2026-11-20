@@ -28,7 +28,7 @@ pub use folder::{
 pub use m3u::{
     M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u,
 };
-pub use smart::{MAX_RULES, RangeField, Rule, TagField};
+pub use smart::{MAX_RULES, RangeField, Rule, TagField, parse_rules, rules_text};
 pub use store::SqliteLibrary;
 
 /// Longest tag kept, in characters; longer tags are cut.

@@ -14,7 +14,7 @@ use platter_engine::command::{
 };
 use platter_engine::{Command, FxUnit};
 
-use platter_library::{MAX_NAME_CHARS, NodeId, SessionId};
+use platter_library::{MAX_NAME_CHARS, NodeId, Rule, SessionId, parse_rules};
 
 use crate::collection::{TAG_WRITINGS, TagWriting};
 use crate::keys::{KEY_NOTATIONS, KeyNotation};
@@ -485,6 +485,19 @@ pub enum AppCommand {
     },
     /// Takes the selected entry out of the playlist the list shows.
     BrowserPlaylistRemove,
+    /// Replaces the rules of a smart playlist: `docs/behavior/library.md`, *Smart playlists*.
+    BrowserSmartRulesSet {
+        smart: NodeId,
+        rules: Vec<Rule>,
+    },
+    /// Makes a playlist, named after the smart playlist, of the tracks it holds now.
+    BrowserSmartToPlaylist {
+        smart: NodeId,
+    },
+    /// Makes a copy of a smart playlist, with its rules, beside it.
+    BrowserSmartDuplicate {
+        smart: NodeId,
+    },
     /// Sets the play count of the selected track to zero, so it is no longer marked played.
     BrowserPlayedReset,
     /// Deletes the selected track from the collection and from every playlist.
@@ -668,10 +681,11 @@ const NODES: &[&str] = &["collection", "preparation", "history"];
 /// The largest identifier of a playlist or a session: the largest whole number a parameter carries exactly.
 const MAX_NODE_ID: f64 = 9_007_199_254_740_991.0;
 const PLAYLIST: ParamSpec = number("playlist", 1.0, MAX_NODE_ID);
+const SMART: ParamSpec = number("smart", 1.0, MAX_NODE_ID);
 /// The places of the favourites a playlist can take; the first three are fixed.
 pub const FAVOURITE_PLACES: std::ops::RangeInclusive<usize> = 4..=8;
 const FAVOURITE_PLACE: ParamSpec = number("place", 4.0, 8.0);
-const NEW_ITEMS: &[&str] = &["playlist", "folder"];
+const NEW_ITEMS: &[&str] = &["playlist", "folder", "smart"];
 const NAME: ParamSpec = ParamSpec {
     name: "name",
     kind: ParamKind::Text,
@@ -907,15 +921,18 @@ impl ListColumn {
 pub enum NewItem {
     Playlist,
     Folder,
+    /// A smart playlist without rules, which holds the whole collection until it has some.
+    Smart,
 }
 
 impl NewItem {
-    pub const ALL: [Self; 2] = [Self::Playlist, Self::Folder];
+    pub const ALL: [Self; 3] = [Self::Playlist, Self::Folder, Self::Smart];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Playlist => "playlist",
             Self::Folder => "folder",
+            Self::Smart => "smart",
         }
     }
 }
@@ -1315,6 +1332,21 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "browser.playlist.remove",
         label: "Remove selected track from playlist",
         params: &[],
+    },
+    CommandSpec {
+        id: "browser.smart.rules.set",
+        label: "Set the rules of a smart playlist",
+        params: &[SMART, text("rules")],
+    },
+    CommandSpec {
+        id: "browser.smart.to_playlist",
+        label: "Save a smart playlist as a playlist",
+        params: &[SMART],
+    },
+    CommandSpec {
+        id: "browser.smart.duplicate",
+        label: "Duplicate a smart playlist",
+        params: &[SMART],
     },
     CommandSpec {
         id: "browser.playlist.export",
@@ -1804,7 +1836,12 @@ impl AppCommand {
                 let folder = read.integer("folder")?;
                 Self::BrowserPlaylistCreate {
                     folder: (folder > 0).then(|| NodeId::new(folder)),
-                    item: read.choice("item", &NewItem::ALL, NewItem::name, "playlist, folder")?,
+                    item: read.choice(
+                        "item",
+                        &NewItem::ALL,
+                        NewItem::name,
+                        "playlist, folder, smart",
+                    )?,
                     name: read.name()?,
                 }
             }
@@ -1833,6 +1870,22 @@ impl AppCommand {
                 playlist: read.playlist()?,
             },
             "browser.playlist.remove" => Self::BrowserPlaylistRemove,
+            "browser.smart.rules.set" => Self::BrowserSmartRulesSet {
+                smart: NodeId::new(read.integer("smart")?),
+                rules: parse_rules(read.text("rules")?).map_err(|_| {
+                    CommandError::Value(ValueError::UnknownChoice {
+                        name: "rules",
+                        expected: "rules as `field value`, separated by `;`: \
+                                   docs/behavior/library.md, Smart playlists",
+                    })
+                })?,
+            },
+            "browser.smart.to_playlist" => Self::BrowserSmartToPlaylist {
+                smart: NodeId::new(read.integer("smart")?),
+            },
+            "browser.smart.duplicate" => Self::BrowserSmartDuplicate {
+                smart: NodeId::new(read.integer("smart")?),
+            },
             "browser.played.reset" => Self::BrowserPlayedReset,
             "browser.track.delete" => Self::BrowserTrackDelete,
             "browser.track.details.open" => Self::BrowserTrackDetailsOpen,
@@ -2023,6 +2076,9 @@ impl AppCommand {
             Self::BrowserPlaylistClear { .. } => "browser.playlist.clear",
             Self::BrowserPlaylistRemoveRepeats { .. } => "browser.playlist.remove_repeats",
             Self::BrowserPlaylistRemove => "browser.playlist.remove",
+            Self::BrowserSmartRulesSet { .. } => "browser.smart.rules.set",
+            Self::BrowserSmartToPlaylist { .. } => "browser.smart.to_playlist",
+            Self::BrowserSmartDuplicate { .. } => "browser.smart.duplicate",
             Self::BrowserPlayedReset => "browser.played.reset",
             Self::BrowserTrackDelete => "browser.track.delete",
             Self::BrowserTrackDetailsOpen => "browser.track.details.open",
@@ -2139,11 +2195,43 @@ mod tests {
                     ParamKind::Path => Value::Text("music".to_owned()),
                     // The fields of the details are a text of known names.
                     ParamKind::Text if param.name == "fields" => Value::Text("title".to_owned()),
+                    // The rules of a smart playlist are a text of known fields.
+                    ParamKind::Text if param.name == "rules" => {
+                        Value::Text("genre house; tempo 120..".to_owned())
+                    }
                     ParamKind::Text => Value::Text("device".to_owned()),
                 };
                 (param.name.to_owned(), value)
             })
             .collect()
+    }
+
+    /// `docs/behavior/library.md`, *Smart playlists*.
+    #[test]
+    fn the_rules_of_a_smart_playlist_are_read_from_text_and_a_mistake_is_refused() {
+        let args = |rules: &str| {
+            Args::from([
+                ("smart".to_owned(), Value::Number(7.0)),
+                ("rules".to_owned(), Value::Text(rules.to_owned())),
+            ])
+        };
+        assert_eq!(
+            Action::from_args("browser.smart.rules.set", &args("colour 2; missing no")),
+            Ok(Action::App(AppCommand::BrowserSmartRulesSet {
+                smart: NodeId::new(7),
+                rules: vec![
+                    platter_library::Rule::Colour(2),
+                    platter_library::Rule::Missing(false)
+                ],
+            }))
+        );
+        assert!(matches!(
+            Action::from_args("browser.smart.rules.set", &args("colour pink")),
+            Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "rules",
+                ..
+            }))
+        ));
     }
 
     /// Behaviour note: `docs/behavior/browser.md`, *Track details*, edge cases.

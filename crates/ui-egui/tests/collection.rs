@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use platter_core::{DeckId, TrackMemory};
 use platter_engine::Command;
-use platter_library::{Library, NodeId, NodeKind, Query, SqliteLibrary, Timestamp, TrackTags};
+use platter_library::{
+    Library, NodeId, NodeKind, Query, SqliteLibrary, Timestamp, TrackTags, parse_rules,
+};
 use platter_ui_egui::collection::{Collection, Kept, TagWriting};
 use platter_ui_egui::command::{
     Action, AppCommand, BrowserNode, DetailFields, DetailsThen, NewItem, SortColumn, TrackDetails,
@@ -579,6 +581,73 @@ fn a_deleted_playlist_leaves_the_tree_and_the_list_shows_the_collection_instead(
     assert_eq!(tree(&browser).len(), 2);
     assert!(collection(&browser).current);
     assert_eq!(names(&browser).len(), 3);
+}
+
+/// `docs/behavior/library.md`, *Smart playlists*.
+#[test]
+fn a_smart_playlist_follows_its_rules_and_is_saved_duplicated_and_deleted() {
+    let root = place("playlists-smart");
+    seed(&root, false);
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    change(
+        &mut browser,
+        AppCommand::BrowserPlaylistCreate {
+            folder: None,
+            item: NewItem::Smart,
+            name: "Long".into(),
+        },
+    );
+    let smart_rows = |browser: &FileBrowser| -> Vec<(NodeId, Option<usize>)> {
+        collection(browser)
+            .playlists
+            .iter()
+            .filter(|row| row.smart)
+            .map(|row| (row.id, row.entries))
+            .collect()
+    };
+    // Without rules it holds the whole collection.
+    let [(smart, Some(3))] = smart_rows(&browser)[..] else {
+        panic!("{:?}", tree(&browser));
+    };
+    change(
+        &mut browser,
+        AppCommand::BrowserSmartRulesSet {
+            smart,
+            rules: parse_rules("length 150..").unwrap(),
+        },
+    );
+    assert_eq!(smart_rows(&browser), [(smart, Some(2))]);
+    show_playlist(&mut browser, smart);
+    assert_eq!(names(&browser), ["a-side.wav", "opener.wav"]);
+
+    // Saved as a playlist beside it, with its name and its tracks of now.
+    change(&mut browser, AppCommand::BrowserSmartToPlaylist { smart });
+    assert!(tree(&browser).contains(&("Long".to_owned(), Some(2))));
+    assert_eq!(
+        collection(&browser)
+            .playlists
+            .iter()
+            .filter(|row| row.name == "Long")
+            .count(),
+        2
+    );
+    change(&mut browser, AppCommand::BrowserSmartDuplicate { smart });
+    assert_eq!(smart_rows(&browser).len(), 2);
+
+    // A drop or an entry command changes nothing; deleting it goes back to the collection.
+    change(
+        &mut browser,
+        AppCommand::BrowserPlaylistClear { playlist: smart },
+    );
+    assert_eq!(names(&browser).len(), 2);
+    change(
+        &mut browser,
+        AppCommand::BrowserPlaylistDelete { playlist: smart },
+    );
+    assert_eq!(smart_rows(&browser).len(), 1);
+    assert!(collection(&browser).current);
+    assert_eq!(collection(&browser).available, Some(true));
 }
 
 #[test]

@@ -17,9 +17,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use platter_core::TrackMemory;
 use platter_decode::{CoverPicture, MAX_COVER_IMPORT_BYTES, TagEdit, probe_file, write_tags};
 use platter_library::{
-    Column, EntryId, Library, LibraryError, M3uEntry, MAX_M3U_BYTES, MAX_NAME_CHARS, NodeId,
-    NodeKind, Page, Query, Reading, Session, SessionId, Source, TagReader, Timestamp, Track,
-    TrackId, TrackTags, import_file, import_folder, read_m3u, relocate_missing, write_m3u,
+    Column, EntryId, Library, LibraryError, M3uEntry, MAX_M3U_BYTES, MAX_NAME_CHARS, MAX_PAGE,
+    NodeId, NodeKind, Page, Query, Reading, Rule, Session, SessionId, Source, TagReader, Timestamp,
+    Track, TrackId, TrackTags, import_file, import_folder, read_m3u, relocate_missing, rules_text,
+    write_m3u,
 };
 
 use crate::command::{DetailField, DetailFields, SortColumn, TrackDetails};
@@ -153,6 +154,11 @@ enum Change {
     HistoryToPlaylist(SessionId, String),
     /// A session of an earlier run is forgotten.
     HistoryDelete(SessionId),
+    SetRules(NodeId, Vec<Rule>),
+    /// A playlist, named as the smart playlist, of the tracks it holds.
+    SmartToPlaylist(NodeId),
+    /// A copy of a smart playlist, with its rules, in the same folder.
+    DuplicateSmart(NodeId),
 }
 
 /// What Platter writes into the files: `docs/behavior/tag-writing.md`, *When Platter writes*.
@@ -348,20 +354,28 @@ fn tree(library: &dyn Library) -> Result<Vec<PlaylistRow>, LibraryError> {
             break;
         }
         let folder = node.kind == NodeKind::Folder;
-        let entries = if folder {
-            if depth + 1 < MAX_TREE_DEPTH {
-                let children = library.children(Some(node.id))?;
-                stack.extend(children.into_iter().rev().map(|child| (child, depth + 1)));
+        let entries = match node.kind {
+            NodeKind::Folder => {
+                if depth + 1 < MAX_TREE_DEPTH {
+                    let children = library.children(Some(node.id))?;
+                    stack.extend(children.into_iter().rev().map(|child| (child, depth + 1)));
+                }
+                None
             }
-            None
-        } else {
-            Some(library.entries(node.id)?.len())
+            NodeKind::Playlist => Some(library.entries(node.id)?.len()),
+            NodeKind::Smart => Some(smart_tracks(library, node.id, 0)?.total),
         };
         rows.push(PlaylistRow {
             id: node.id,
             name: node.name,
             depth,
             folder,
+            smart: node.kind == NodeKind::Smart,
+            rules: if node.kind == NodeKind::Smart {
+                rules_text(&library.rules(node.id)?)
+            } else {
+                String::new()
+            },
             entries,
             current: false,
             preparation: preparation == Some(node.id),
@@ -372,6 +386,15 @@ fn tree(library: &dyn Library) -> Result<Vec<PlaylistRow>, LibraryError> {
         });
     }
     Ok(rows)
+}
+
+/// A page of the tracks a smart playlist holds now, by path, with how many it holds in all.
+fn smart_tracks(library: &dyn Library, smart: NodeId, limit: usize) -> Result<Page, LibraryError> {
+    library.search(&Query {
+        source: Source::Playlist(smart),
+        limit,
+        ..Query::default()
+    })
 }
 
 /// The tree as the browser shows it, or [`Reply::Unavailable`] when the library cannot be read.
@@ -574,8 +597,11 @@ fn apply(
         }
         Change::Delete(playlist) => {
             // The library deletes a folder with everything in it, without a way back; this
-            // change deletes playlists only, and their entries answer `WrongKind` for a folder.
-            library.entries(playlist)?;
+            // change deletes playlists and smart playlists only: a folder has neither entries
+            // nor rules, and both answer `WrongKind` for it.
+            if library.entries(playlist).is_err() {
+                library.rules(playlist)?;
+            }
             library.delete_node(playlist)?;
             Ok(Some(Reply::Deleted(playlist)))
         }
@@ -589,6 +615,23 @@ fn apply(
             let playlist = library.create(None, NodeKind::Playlist, &name)?;
             library.add(playlist, &tracks, None).map(|()| None)
         }
+        Change::SetRules(smart, rules) => library.set_rules(smart, &rules).map(|()| None),
+        Change::SmartToPlaylist(smart) => {
+            let (parent, name) = place_of(library, smart)?;
+            let tracks: Vec<TrackId> = smart_tracks(library, smart, MAX_PAGE)?
+                .hits
+                .into_iter()
+                .map(|hit| hit.track.id)
+                .collect();
+            let playlist = library.create(parent, NodeKind::Playlist, &name)?;
+            library.add(playlist, &tracks, None).map(|()| None)
+        }
+        Change::DuplicateSmart(smart) => {
+            let rules = library.rules(smart)?;
+            let (parent, name) = place_of(library, smart)?;
+            let copy = library.create(parent, NodeKind::Smart, &name)?;
+            library.set_rules(copy, &rules).map(|()| None)
+        }
         // The history of this run is still being written.
         Change::HistoryDelete(gone) if Some(gone) == session => Ok(None),
         Change::HistoryDelete(gone) => library
@@ -599,6 +642,22 @@ fn apply(
             library.remove_entries(playlist, &[entry]).map(|()| None)
         }
     }
+}
+
+/// The folder a node is in and its name, found by walking the tree from its top.
+fn place_of(library: &dyn Library, node: NodeId) -> Result<(Option<NodeId>, String), LibraryError> {
+    let mut folders = vec![(None, 0)];
+    while let Some((parent, depth)) = folders.pop() {
+        for child in library.children(parent)? {
+            if child.id == node {
+                return Ok((parent, child.name));
+            }
+            if child.kind == NodeKind::Folder && depth + 1 < MAX_TREE_DEPTH {
+                folders.push((Some(child.id), depth + 1));
+            }
+        }
+    }
+    Err(LibraryError::NoSuchNode)
 }
 
 /// Serves the requests of the browser until it goes away.
@@ -735,6 +794,7 @@ fn serve(
                             | LibraryError::NoSuchTrack
                             | LibraryError::PathTaken
                             | LibraryError::OutOfRange
+                            | LibraryError::InvalidRule
                             | LibraryError::Cycle,
                         ) => continue,
                         Err(_) => Reply::Unavailable,
@@ -1256,6 +1316,21 @@ impl Collection {
     /// Takes one entry out of a playlist.
     pub fn remove(&mut self, playlist: NodeId, entry: EntryId) {
         self.change(Change::Remove(playlist, entry));
+    }
+
+    /// Replaces the rules of a smart playlist.
+    pub fn set_rules(&mut self, smart: NodeId, rules: Vec<Rule>) {
+        self.change(Change::SetRules(smart, rules));
+    }
+
+    /// Makes a playlist of the tracks a smart playlist holds now, beside it and with its name.
+    pub fn smart_to_playlist(&mut self, smart: NodeId) {
+        self.change(Change::SmartToPlaylist(smart));
+    }
+
+    /// Makes a copy of a smart playlist beside it.
+    pub fn duplicate_smart(&mut self, smart: NodeId) {
+        self.change(Change::DuplicateSmart(smart));
     }
 
     fn change(&mut self, change: Change) {

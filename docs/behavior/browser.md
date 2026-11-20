@@ -336,6 +336,17 @@ at its end.
   Up and Down move, Enter or Space operates the item, Escape closes. The pointer takes the
   highlight when it moves over an item. A press outside closes it
   and still reaches what it lands on. Rows of the explorer have no menu.
+- **Smart playlists** (`docs/behavior/library.md`, *Smart playlists*). The menu of *Playlists*,
+  or of a folder, also offers *New smart playlist*, named in the same field
+  (`browser.playlist.create` with `item=smart`); it starts without rules, so it holds the
+  whole collection. It sits in the tree with the playlists, with the playlist glyph and the
+  number of tracks it holds now, and is shown as a playlist is, in the order of the collection.
+  Its menu offers *Edit rules*, which puts a field in its row holding its rules as text, such
+  as `genre techno; tempo 128..134`; Enter replaces them (`browser.smart.rules.set`). Then
+  *Rename*, *Move to*, *Save as playlist*, which makes a playlist beside it with its name and
+  the tracks it holds now, at most 1000 (`browser.smart.to_playlist`), *Duplicate*
+  (`browser.smart.duplicate`), *Delete playlist* and the export to the folder of the explorer.
+  Tracks dropped on it are not taken, and the menu of its rows has no *Remove from playlist*.
 - **Changes run on the worker of the library**, in the order they were asked for. After each
   one the tree and the list are read again; a change that fails, such as on a playlist that is
   gone, changes nothing and leaves the library available.
@@ -352,6 +363,10 @@ at its end.
 - Delete takes the selected entry out of the playlist shown. The public manual does it only
   from the menu; the key is Platter's, for the keyboard.
 - The menus hold only what Platter does so far: no export, import, colours or played state.
+- The public manual edits the filters of a smart playlist in a window of its own. Platter edits
+  its rules as text in the field of the tree until that window is designed; text that is no
+  rule changes nothing, and the field takes 200 characters, fewer than 16 rules may need.
+  A smart playlist has no glyph of its own yet: the design system draws none.
 - The design system names `browser.node.select` for showing a node of the tree. A playlist is
   shown with `browser.playlist.select` instead, because a command takes typed parameters and
   the choices of `browser.node.select` are fixed names, while a playlist is named by the number
@@ -376,6 +391,8 @@ at its end.
 | The folder or item of an open name field is gone | The field closes |
 | A track dropped on a folder of playlists, or on the collection | Nothing happens |
 | Insert with a folder row selected in the list | Nothing happens |
+| Rules text that is no rule, such as `colour pink` | The field closes; the rules stay as they were |
+| A track dropped on a smart playlist | Nothing happens |
 
 ## Played state
 

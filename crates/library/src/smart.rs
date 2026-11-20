@@ -19,6 +19,10 @@ pub enum TagField {
     Genre,
 }
 
+impl TagField {
+    pub const ALL: [Self; 4] = [Self::Title, Self::Artist, Self::Album, Self::Genre];
+}
+
 /// A value of a track a range applies to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RangeField {
@@ -33,6 +37,17 @@ pub enum RangeField {
     Imported,
     /// Seconds since 1 January 1970 UTC; a track never played has none.
     LastPlayed,
+}
+
+impl RangeField {
+    pub const ALL: [Self; 6] = [
+        Self::Tempo,
+        Self::Duration,
+        Self::Rating,
+        Self::PlayCount,
+        Self::Imported,
+        Self::LastPlayed,
+    ];
 }
 
 /// One condition a track must pass to be in a smart playlist.
@@ -192,6 +207,111 @@ impl Rule {
     }
 }
 
+/// The rules written as text, as commands carry them: each rule is a field name and its value,
+/// and rules are separated by `;`. Words: `title`, `artist`, `album` or `genre` followed by
+/// the words. Ranges: `tempo`, `length` (seconds), `rating`, `plays`, `imported` or `played`
+/// (seconds since 1970) followed by `low..high`, `low..` or `..high`. `colour` and `key` take a
+/// number; `missing` and `analysed` take `yes` or `no`. An empty text is no rule.
+pub fn parse_rules(text: &str) -> Result<Vec<Rule>, LibraryError> {
+    let rules = text
+        .split(';')
+        .map(str::trim)
+        .filter(|rule| !rule.is_empty())
+        .map(parse_rule)
+        .collect::<Result<Vec<_>, _>>()?;
+    if rules.len() > MAX_RULES {
+        return Err(LibraryError::InvalidRule);
+    }
+    Ok(rules)
+}
+
+/// The rules as [`parse_rules`] reads them.
+pub fn rules_text(rules: &[Rule]) -> String {
+    let bound = |value: &Option<f64>| value.map(|value| value.to_string()).unwrap_or_default();
+    let yes = |set: bool| if set { "yes" } else { "no" };
+    rules
+        .iter()
+        .map(|rule| match rule {
+            Rule::Words { field, words } => format!("{} {words}", tag_name(*field)),
+            Rule::Range { field, low, high } => {
+                format!("{} {}..{}", range_name(*field), bound(low), bound(high))
+            }
+            Rule::Colour(colour) => format!("colour {colour}"),
+            Rule::Key(key) => format!("key {key}"),
+            Rule::Missing(set) => format!("missing {}", yes(*set)),
+            Rule::Analysed(set) => format!("analysed {}", yes(*set)),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn parse_rule(text: &str) -> Result<Rule, LibraryError> {
+    let (name, value) = text
+        .split_once(char::is_whitespace)
+        .map(|(name, value)| (name, value.trim()))
+        .ok_or(LibraryError::InvalidRule)?;
+    let number = |value: &str| value.parse::<u8>().map_err(|_| LibraryError::InvalidRule);
+    let flag = |value: &str| match value {
+        "yes" => Ok(true),
+        "no" => Ok(false),
+        _ => Err(LibraryError::InvalidRule),
+    };
+    let rule = if let Some(field) = TagField::ALL.into_iter().find(|f| tag_name(*f) == name) {
+        Rule::Words {
+            field,
+            words: value.to_owned(),
+        }
+    } else if let Some(field) = RangeField::ALL.into_iter().find(|f| range_name(*f) == name) {
+        let (low, high) = value.split_once("..").ok_or(LibraryError::InvalidRule)?;
+        let bound = |bound: &str| {
+            let bound = bound.trim();
+            if bound.is_empty() {
+                Ok(None)
+            } else {
+                bound
+                    .parse::<f64>()
+                    .map(Some)
+                    .map_err(|_| LibraryError::InvalidRule)
+            }
+        };
+        Rule::Range {
+            field,
+            low: bound(low)?,
+            high: bound(high)?,
+        }
+    } else {
+        match name {
+            "colour" => Rule::Colour(number(value)?),
+            "key" => Rule::Key(number(value)?),
+            "missing" => Rule::Missing(flag(value)?),
+            "analysed" => Rule::Analysed(flag(value)?),
+            _ => return Err(LibraryError::InvalidRule),
+        }
+    };
+    rule.validate()?;
+    Ok(rule)
+}
+
+fn tag_name(field: TagField) -> &'static str {
+    match field {
+        TagField::Title => "title",
+        TagField::Artist => "artist",
+        TagField::Album => "album",
+        TagField::Genre => "genre",
+    }
+}
+
+fn range_name(field: RangeField) -> &'static str {
+    match field {
+        RangeField::Tempo => "tempo",
+        RangeField::Duration => "length",
+        RangeField::Rating => "rating",
+        RangeField::PlayCount => "plays",
+        RangeField::Imported => "imported",
+        RangeField::LastPlayed => "played",
+    }
+}
+
 const TITLE: i64 = 0;
 const ARTIST: i64 = 1;
 const ALBUM: i64 = 2;
@@ -283,6 +403,41 @@ mod tests {
             let (code, low, high, words) = rule.to_row();
             assert_eq!(Rule::from_row(code, low, high, words), Some(rule));
         }
+    }
+
+    #[test]
+    fn rules_read_back_from_their_text() {
+        let text = "genre deep house; tempo 120..126.5; played ..1700000000; plays 2..;                     colour 3; key 23; missing no; analysed yes";
+        let rules = parse_rules(text).unwrap();
+        assert_eq!(rules.len(), 8);
+        assert_eq!(parse_rules(&rules_text(&rules)).unwrap(), rules);
+        assert_eq!(
+            rules_text(&rules[..2]),
+            "genre deep house; tempo 120..126.5"
+        );
+        assert_eq!(parse_rules(" ; ").unwrap(), []);
+    }
+
+    #[test]
+    fn text_that_is_no_rule_is_refused() {
+        for text in [
+            "genre",
+            "bpm 120..130",
+            "tempo 120",
+            "tempo ..",
+            "tempo 130..120",
+            "tempo inf..",
+            "colour 9",
+            "key -1",
+            "missing maybe",
+        ] {
+            assert!(
+                matches!(parse_rules(text), Err(LibraryError::InvalidRule)),
+                "{text}"
+            );
+        }
+        let many = vec!["analysed yes"; MAX_RULES + 1].join(";");
+        assert!(matches!(parse_rules(&many), Err(LibraryError::InvalidRule)));
     }
 
     #[test]
