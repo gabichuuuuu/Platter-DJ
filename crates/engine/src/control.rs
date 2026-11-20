@@ -1158,6 +1158,7 @@ impl Engine {
             | Command::FxUnitRoutingSet { .. }
             | Command::FxUnitReset { .. }
             | Command::FxUnitSnapshotSave { .. }
+            | Command::FxKeepValuesToggle
             | Command::FxSlotEffectSet { .. }
             | Command::FxSlotAmountSet { .. }
             | Command::FxSlotToggle { .. }
@@ -1271,6 +1272,10 @@ impl Engine {
                 }
                 Ok(())
             }
+            Command::FxKeepValuesToggle => {
+                self.effects.keep_values = !self.effects.keep_values;
+                Ok(())
+            }
             Command::FxSlotEffectSet { unit, slot, effect } => {
                 self.set_place(unit, Place::Group(slot), effect)
             }
@@ -1370,19 +1375,22 @@ impl Engine {
                 effect: effect.map(|kind| self.build_effect(kind)),
             })?;
         }
+        let keep = self.effects.keep_values;
         self.update_unit(unit, |controls| match place {
             Place::Group(slot) => {
                 if let Some(kind) = controls.slots.get_mut(slot) {
                     *kind = effect;
                 }
-                if let Some(values) = controls.values.slots.get_mut(slot) {
+                if let Some(values) = controls.values.slots.get_mut(slot).filter(|_| !keep) {
                     values.amount = DEFAULT_AMOUNT;
                 }
             }
             Place::Single => {
                 controls.single = effect;
-                controls.values.single.controls =
-                    effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+                if !keep {
+                    controls.values.single.controls =
+                        effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+                }
             }
         })
     }

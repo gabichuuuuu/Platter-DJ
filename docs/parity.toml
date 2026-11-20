@@ -280,7 +280,7 @@ features = [
   { id = "file-management", name = "File management", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; on the Library page, a moved folder is removed and added again, see docs/behavior/settings.md" },
   { id = "analysis", name = "Analysis", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; the range of tempos on the Decks page, no automatic range and no choice of markers, see docs/behavior/analysis.md" },
   { id = "controllers", name = "Controllers", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the Controllers page, see docs/behavior/controllers.md" },
-  { id = "effects", name = "Effects", milestone = "M4", status = "planned" },
+  { id = "effects", name = "Effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-engine --test effects; on the Mixer page: the number of units, the routing and Keep values; no list of preselected effects, see docs/behavior/effects.md" },
   { id = "recorders", name = "Recorders", milestone = "M4", status = "planned" },
   { id = "layouts", name = "Layouts", milestone = "M4", status = "planned" },
   { id = "input-routing", name = "Input routing", milestone = "M5", status = "planned" },

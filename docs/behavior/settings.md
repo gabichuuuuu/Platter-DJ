@@ -122,6 +122,8 @@ shortcuts of the decks and the mixer rest.
 | Main volume | `mixer.external.master_volume.toggle` | A key, lit while it acts in external mode |
 | Automatic fade | `mixer.crossfader.fade_beats.set` | 1, 2, 4, 8, 16, 32 or 64 beats of the master clock (`docs/behavior/mixer.md`) |
 | Crossfader curve | `mixer.crossfader.curve.set` | Smooth, linear or sharp |
+| Effect units, routing of each unit | `app.effect_units.set`, `fx.unit.routing.set` | Two or four; insert or post fader (`docs/behavior/effects.md`) |
+| Keep values | `fx.keep_values.toggle` | A key, lit while a newly chosen effect keeps the values of the controls (`docs/behavior/effects.md`) |
 
 - The two keys of the external mode can be set in either mode; the page says they act only
   in the external one.

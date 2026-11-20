@@ -102,6 +102,10 @@ pub fn write(effects: &EffectControls) -> toml::Table {
     let mut table = toml::Table::new();
     table.insert("units".to_owned(), toml::Value::Array(units));
     table.insert("channels".to_owned(), toml::Value::Array(channels));
+    table.insert(
+        "keep_values".to_owned(),
+        toml::Value::Boolean(effects.keep_values),
+    );
     table
 }
 
@@ -141,6 +145,9 @@ pub fn read(table: Option<&toml::Table>) -> EffectControls {
     let Some(table) = table else {
         return effects;
     };
+    if let Some(keep) = table.get("keep_values").and_then(toml::Value::as_bool) {
+        effects.keep_values = keep;
+    }
     let units = table.get("units").and_then(toml::Value::as_array);
     for (unit, value) in effects.units.iter_mut().zip(units.into_iter().flatten()) {
         let Some(source) = value.as_table() else {
@@ -234,6 +241,7 @@ mod tests {
         effects.assigned[DeckId::C.index()][FxUnit::ALL[1].index()] = true;
         effects.mixer[DeckId::D.index()].effect = EffectKind::Bitcrusher;
         effects.mixer[DeckId::D.index()].amount = 0.5;
+        effects.keep_values = true;
 
         let table = write(&effects);
         let text = toml::to_string(&table).unwrap();

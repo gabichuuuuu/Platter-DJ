@@ -215,3 +215,53 @@ fn commands_out_of_range_change_nothing() {
     }
     assert_eq!(rig.engine.snapshot().effects, before);
 }
+
+#[test]
+fn a_new_effect_keeps_the_values_only_when_the_preference_says_so() {
+    for keep in [false, true] {
+        let mut rig = Rig::new();
+        if keep {
+            rig.send(Command::FxKeepValuesToggle);
+        }
+        rig.send(Command::FxSingleEffectSet {
+            unit: UNIT,
+            effect: Some(EffectKind::Delay),
+        });
+        rig.send(Command::FxSingleKnobSet {
+            unit: UNIT,
+            knob: 0,
+            position: 0.9,
+        });
+        rig.send(Command::FxSlotEffectSet {
+            unit: UNIT,
+            slot: 0,
+            effect: Some(EffectKind::Filter),
+        });
+        rig.send(Command::FxSlotAmountSet {
+            unit: UNIT,
+            slot: 0,
+            position: 0.9,
+        });
+
+        rig.send(Command::FxSingleEffectSet {
+            unit: UNIT,
+            effect: Some(EffectKind::Reverb),
+        });
+        rig.send(Command::FxSlotEffectSet {
+            unit: UNIT,
+            slot: 0,
+            effect: Some(EffectKind::Gater),
+        });
+
+        let effects = rig.engine.snapshot().effects;
+        assert_eq!(effects.keep_values, keep);
+        let values = &effects.unit(UNIT).values;
+        if keep {
+            assert_eq!(values.single.controls.knobs[0], 0.9);
+            assert_eq!(values.slots[0].amount, 0.9);
+        } else {
+            assert_eq!(values.single.controls, EffectKind::Reverb.defaults());
+            assert_ne!(values.slots[0].amount, 0.9);
+        }
+    }
+}

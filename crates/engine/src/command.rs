@@ -332,6 +332,8 @@ pub enum Command {
     FxUnitSnapshotSave {
         unit: FxUnit,
     },
+    /// Switches whether a newly chosen effect keeps the values of the controls, for every unit.
+    FxKeepValuesToggle,
     /// The effect of a slot of group mode, from 0; `None` empties it.
     FxSlotEffectSet {
         unit: FxUnit,
@@ -1209,6 +1211,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[UNIT],
     },
     CommandSpec {
+        id: "fx.keep_values.toggle",
+        label: "Keep the values when the effect changes",
+        params: &[],
+    },
+    CommandSpec {
         id: "fx.slot.effect.set",
         label: "Choose the effect of a slot",
         params: &[
@@ -2025,6 +2032,7 @@ impl Command {
             },
             "fx.unit.reset" => Self::FxUnitReset { unit: read.unit()? },
             "fx.unit.snapshot.save" => Self::FxUnitSnapshotSave { unit: read.unit()? },
+            "fx.keep_values.toggle" => Self::FxKeepValuesToggle,
             "fx.slot.effect.set" => Self::FxSlotEffectSet {
                 unit: read.unit()?,
                 slot: read.index("slot", SLOTS)?,
@@ -2145,6 +2153,7 @@ impl Command {
             Self::FxUnitRoutingSet { .. } => "fx.unit.routing.set",
             Self::FxUnitReset { .. } => "fx.unit.reset",
             Self::FxUnitSnapshotSave { .. } => "fx.unit.snapshot.save",
+            Self::FxKeepValuesToggle => "fx.keep_values.toggle",
             Self::FxSlotEffectSet { .. } => "fx.slot.effect.set",
             Self::FxSlotAmountSet { .. } => "fx.slot.amount.set",
             Self::FxSlotToggle { .. } => "fx.slot.toggle",
