@@ -2299,10 +2299,11 @@ impl Readings {
         let loaded = is_ready(snapshot);
         // Both follow the speed of the deck, which sync sets apart from the fader.
         let offset = format::signed_percent(snapshot.speed - 1.0);
-        // The tempo of the grid; until there is one, the tempo the tag gives.
+        // The tempo of the grid where the deck plays; until there is one, the tempo the tag
+        // gives.
         let base = snapshot
             .grid
-            .bpm()
+            .bpm_at(snapshot.position_seconds)
             .map(|bpm| bpm.value())
             .or_else(|| track.and_then(|track| track.tags.bpm))
             .filter(|_| loaded);

@@ -120,6 +120,16 @@ pub enum Command {
         deck: DeckId,
         seconds: f64,
     },
+    /// Gives the marker on or before the play position a tempo of its own up to the next
+    /// marker, `20.0..=400.0` beats per minute.
+    DeckGridMarkerBpmSet {
+        deck: DeckId,
+        bpm: f64,
+    },
+    /// Gives the marker on or before the play position the tempo of the grid again.
+    DeckGridMarkerBpmClear {
+        deck: DeckId,
+    },
     /// Deletes the marker on or before the play position.
     DeckGridMarkerDelete {
         deck: DeckId,
@@ -332,6 +342,8 @@ pub enum Command {
     FxUnitSnapshotSave {
         unit: FxUnit,
     },
+    /// Switches whether a newly chosen effect keeps the values of the controls, for every unit.
+    FxKeepValuesToggle,
     /// The effect of a slot of group mode, from 0; `None` empties it.
     FxSlotEffectSet {
         unit: FxUnit,
@@ -469,6 +481,8 @@ pub enum Command {
     GlobalSnapToggle,
     /// Whether a track with a cue of the type load starts at it.
     GlobalLoadMarkerToggle,
+    /// Switches whether a deck crossing a fade-out cue starts its partner from its fade-in cue.
+    GlobalFadeMarkersToggle,
     /// A playing deck that goes to a stored cue keeps its place in the beat.
     GlobalQuantizeToggle,
     /// Starts recording the master into a file, or stops the recording:
@@ -899,6 +913,16 @@ pub const SPECS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        id: "deck.grid.marker.bpm.set",
+        label: "Set the tempo of a grid marker",
+        params: &[DECK, number("bpm", Bpm::MIN, Bpm::MAX)],
+    },
+    CommandSpec {
+        id: "deck.grid.marker.bpm.clear",
+        label: "Give a grid marker the tempo of the grid",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.grid.marker.delete",
         label: "Delete grid marker",
         params: &[DECK],
@@ -1209,6 +1233,11 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[UNIT],
     },
     CommandSpec {
+        id: "fx.keep_values.toggle",
+        label: "Keep the values when the effect changes",
+        params: &[],
+    },
+    CommandSpec {
         id: "fx.slot.effect.set",
         label: "Choose the effect of a slot",
         params: &[
@@ -1400,6 +1429,11 @@ pub const SPECS: &[CommandSpec] = &[
     CommandSpec {
         id: "global.load_marker.toggle",
         label: "Start at the load marker",
+        params: &[],
+    },
+    CommandSpec {
+        id: "global.fade_markers.toggle",
+        label: "Mix with the fade cues",
         params: &[],
     },
     CommandSpec {
@@ -1830,6 +1864,7 @@ impl Command {
             {
                 return Self::sync_from_args(sync, &read);
             }
+            "global.fade_markers.toggle" => Self::GlobalFadeMarkersToggle,
             "recorder.toggle" => Self::RecorderToggle,
             "recorder.cut" => Self::RecorderCut,
             mixer => return Self::mixer_from_args(mixer, &read),
@@ -1919,6 +1954,11 @@ impl Command {
                 deck,
                 seconds: read.number("seconds")?,
             },
+            "deck.grid.marker.bpm.set" => Self::DeckGridMarkerBpmSet {
+                deck,
+                bpm: read.number("bpm")?,
+            },
+            "deck.grid.marker.bpm.clear" => Self::DeckGridMarkerBpmClear { deck },
             "deck.grid.marker.delete" => Self::DeckGridMarkerDelete { deck },
             "deck.grid.marker.previous" => Self::DeckGridMarkerPrevious { deck },
             "deck.grid.marker.next" => Self::DeckGridMarkerNext { deck },
@@ -2025,6 +2065,7 @@ impl Command {
             },
             "fx.unit.reset" => Self::FxUnitReset { unit: read.unit()? },
             "fx.unit.snapshot.save" => Self::FxUnitSnapshotSave { unit: read.unit()? },
+            "fx.keep_values.toggle" => Self::FxKeepValuesToggle,
             "fx.slot.effect.set" => Self::FxSlotEffectSet {
                 unit: read.unit()?,
                 slot: read.index("slot", SLOTS)?,
@@ -2095,6 +2136,8 @@ impl Command {
             Self::DeckGridTap { .. } => "deck.grid.tap",
             Self::DeckGridMarkerSet { .. } => "deck.grid.marker.set",
             Self::DeckGridMarkerMove { .. } => "deck.grid.marker.move",
+            Self::DeckGridMarkerBpmSet { .. } => "deck.grid.marker.bpm.set",
+            Self::DeckGridMarkerBpmClear { .. } => "deck.grid.marker.bpm.clear",
             Self::DeckGridMarkerDelete { .. } => "deck.grid.marker.delete",
             Self::DeckGridMarkerPrevious { .. } => "deck.grid.marker.previous",
             Self::DeckGridMarkerNext { .. } => "deck.grid.marker.next",
@@ -2145,6 +2188,7 @@ impl Command {
             Self::FxUnitRoutingSet { .. } => "fx.unit.routing.set",
             Self::FxUnitReset { .. } => "fx.unit.reset",
             Self::FxUnitSnapshotSave { .. } => "fx.unit.snapshot.save",
+            Self::FxKeepValuesToggle => "fx.keep_values.toggle",
             Self::FxSlotEffectSet { .. } => "fx.slot.effect.set",
             Self::FxSlotAmountSet { .. } => "fx.slot.amount.set",
             Self::FxSlotToggle { .. } => "fx.slot.toggle",
@@ -2179,6 +2223,7 @@ impl Command {
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
+            Self::GlobalFadeMarkersToggle => "global.fade_markers.toggle",
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
             Self::RecorderToggle => "recorder.toggle",
             Self::RecorderCut => "recorder.cut",

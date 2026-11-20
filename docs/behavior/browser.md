@@ -1092,6 +1092,49 @@ play count nor its played state.
 | A seek past the end, or a position that is not a number | The position is clamped to the track, or refused |
 | Another track loaded while one plays | The new one plays from its start |
 
+## Recordings
+
+The tree has a node for the files of the mix recorder.
+
+### What the public manual says
+
+Sections of the public manual, read on 19 November 2026:
+
+- *Overview*, section *Browser*
+- *Advanced operation*, section on recording the mix
+
+The tree of the browser has a node for the audio recordings, after the explorer, which holds
+the recordings made with the recorder of the application; the recorder writes them into the
+folder chosen in its preferences. The sections read do not say what can be done with the
+files of the node beyond what the browser does with tracks: loading them into decks.
+
+### What Platter does
+
+- **The node.** *Recordings* comes last in the tree, after the folders of the explorer, with the
+  folder icon. It is there whenever the application has a folder for the recordings
+  (`docs/behavior/recording.md`, *Files*), with or without a library, and whether or not the
+  folder exists yet.
+- **Operating it** shows the recordings folder in the list, as the explorer shows a folder
+  (`browser.navigate` with the path of the folder): its audio files load into the decks, sort
+  and search as the files of any folder do, and the tree opens down to it. The node is marked
+  as the current one while the list shows that folder, as is the row of that folder in the
+  explorer when the tree has it open.
+
+### Differences
+
+- The node is a way into a folder of the explorer, not a list of its own: Platter keeps no
+  record of the recordings beyond the files, so a file moved or renamed outside Platter is
+  shown as it is.
+- The folder is fixed (`docs/behavior/recording.md`, *Differences*).
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| No recording made yet, so no folder | An empty list; browsing does not create the folder |
+| No folder for the recordings (no home folder and no settings folder) | No *Recordings* node |
+| A recording finished while the list shows the folder | Its file appears the next time the folder is read, as in any folder of the explorer |
+
 ## Tests
 
 `crates/ui-egui/tests/files.rs` for listing, selection, loading and the tree, against folders
@@ -1102,6 +1145,7 @@ and the unit tests of `crates/ui-egui/src/widgets/field.rs` for the search field
 `crates/ui-egui/tests/playlist_menu.rs` and the unit tests of
 `crates/ui-egui/src/widgets/menu.rs` for the context menus;
 `crates/ui-egui/tests/panels.rs` for the controls and the keys of the list;
+`crates/ui-egui/tests/tree_folders.rs` for the folders of playlists, *History* and *Recordings* in the tree;
 `crates/ui-egui/tests/keys.rs` and the unit tests of `crates/ui-egui/src/keys.rs` for the key
 column, its notations and the compatible keys; the unit tests of
 `apps/platter/src/background.rs` for the analysis in the background. `crates/engine/tests/preview.rs`

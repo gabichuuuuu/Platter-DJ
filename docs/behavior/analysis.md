@@ -124,7 +124,8 @@ period and the offset that collect the most of it over the whole track.
   bar: the bars of the waveform then count from it until the marker is moved.
 - The documented application's analysis page also chooses which markers analysis sets. Platter
   always sets the grid marker on the first beat and no cue.
-- One tempo per track, as the grid holds in M3.
+- One tempo per track: the analysis finds no tempo zones; they are set by hand on the markers
+  (`docs/behavior/beatgrid.md`).
 - The tuning of a track is not measured; a track tuned far from A = 440 Hz may get a key a
   semitone away.
 - The gain of the analysis is the loudness autogain reads, measured on the same load:

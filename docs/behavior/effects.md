@@ -98,7 +98,7 @@ or a unit is unassigned.
   assigned to units 3 and 4 while they are hidden, and they keep acting on it, as decks C and
   D keep playing while the two-deck layout hides them.
 - The Mixer page scrolls: its *Effects* section, under *Mixing*, holds the number of
-  units and the routing of each unit (*Insert* or *Post fader*). The wheel scrolls the page,
+  units, the routing of each unit (*Insert* or *Post fader*) and *Keep values*. The wheel scrolls the page,
   and the keyboard focus brings a control it reaches into view.
 - The two-deck mixer has the assign keys 1 and 2 of each channel, side by side in the row of
   its crossfader assign keys, and no mixer effect knob: its channels have no room for one. The
@@ -115,7 +115,13 @@ or a unit is unassigned.
   puts the three knobs and the two keys back to the defaults of the effect (`fx.unit.reset`).
 - Switching the mode keeps what each mode had, so switching back finds it again.
 - A newly selected effect starts from its defaults, or from its snapshot in that unit when
-  there is one. *Save snapshot* (`fx.unit.snapshot.save`) is the menu of the unit title, which
+  there is one. *Keep values*, a key of the *Effects* section of the Mixer page
+  (`fx.keep_values.toggle`, off to begin with, kept in the settings file under `[effects]` as
+  `keep_values`), turns this round for every unit: while it is on, a newly selected effect
+  leaves the three knobs and the two keys of single mode, and the amount of a slot of group
+  mode, where they were, and no snapshot is applied. It is the public manual's option to
+  restore the parameters when the effect changes, with its sense inverted so that the key is
+  lit when it does something other than the default. *Save snapshot* (`fx.unit.snapshot.save`) is the menu of the unit title, which
   a click or the right button opens; it keeps the values of the effect of single mode, so the
   title opens it only in single mode with an effect. Snapshots, modes, effects, values, routings, assignments and
   the effect of each mixer effect knob are kept in the settings file, under `[effects]`;
@@ -192,6 +198,9 @@ follow the tempo and the beat of the master clock (`docs/behavior/sync.md`).
   reverb's second key and the bitcrusher's second key are unused, and the gater's rate stops
   at 1/8 beat.
 - **No list of preselected effects** per unit for now: every selector offers all eight.
+- **The mode of each unit is chosen in its panel only**, not also on the preferences page,
+  as the public manual allows; the Mixer page has the other effect settings of the manual's
+  Effects page.
 - **The mixer effect has no on key**: the M4 screen draws none, and the knob at zero is off.
 - In external mixer mode the mixer effect knob and its name collapse with the channel, as the
   filter does. The assign keys stay: a unit in insert routing still acts on the deck.
@@ -217,6 +226,7 @@ The maintainer approved these on 18 November 2026; `docs/design/DESIGN.md` recor
 | A unit, a slot, a knob or a key out of range | The command is rejected; nothing changes |
 | An amount, a dry/wet or a knob value that is not a number, or outside 0 to 1 | Rejected |
 | An effect switched on in a unit no channel is assigned to | Its state changes; nothing is heard |
+| *Keep values* on, and an effect chosen in a slot or a unit that held none | The amount or the knobs stay where they were; for an empty unit those are the neutral values of no effect |
 | A channel taken out of a unit while an effect rings | The tail of that channel stops with a 10 ms fade |
 | The master clock changes tempo during a delay | The echoes move to the new time with a crossfade |
 | The engine restarts after a change of sample rate or device | Units, modes, effects, values and assignments come back as they were; tails do not |
@@ -234,6 +244,7 @@ The maintainer approved these on 18 November 2026; `docs/design/DESIGN.md` recor
   and comes back to be freed; single mode; the mixer effect at zero.
 - `crates/engine/tests/effects.rs`: a unit acts only on the channels assigned to it; a delay
   after the fader rings on when the fader closes and an insert does not; an engine at another
-  rate keeps the effects and their assignments; commands out of range change nothing.
+  rate keeps the effects and their assignments; commands out of range change nothing; a new
+  effect keeps the values only when *Keep values* is on.
 - `crates/engine/tests/realtime_memory.rs`: effects built, swapped and switched while the
   decks play, without an allocation in the callback.

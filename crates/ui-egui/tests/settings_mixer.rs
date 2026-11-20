@@ -17,9 +17,11 @@ use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
 /// The commands of the controls of the page.
-const PAGE: [&str; 5] = [
+const PAGE: [&str; 7] = [
+    "global.fade_markers.toggle",
     "mixer.mode.set",
     "mixer.autogain.toggle",
+    "fx.keep_values.toggle",
     "mixer.external.eq_gain.toggle",
     "mixer.external.master_volume.toggle",
     "mixer.crossfader.fade_beats.set",
@@ -158,6 +160,8 @@ fn the_page_has_a_control_for_each_mixer_setting() {
     let mut count = |command: &str| stage.count_anywhere(command);
     assert_eq!(count("mixer.mode.set"), 2);
     assert_eq!(count("mixer.autogain.toggle"), 1);
+    assert_eq!(count("fx.keep_values.toggle"), 1);
+    assert_eq!(count("global.fade_markers.toggle"), 1);
     assert_eq!(count("mixer.external.eq_gain.toggle"), 1);
     assert_eq!(count("mixer.external.master_volume.toggle"), 1);
     assert_eq!(count("mixer.crossfader.fade_beats.set"), 7);
@@ -174,6 +178,11 @@ fn each_control_emits_its_command() {
     );
     for (command, expected) in [
         ("mixer.autogain.toggle", Command::MixerAutogainToggle),
+        ("fx.keep_values.toggle", Command::FxKeepValuesToggle),
+        (
+            "global.fade_markers.toggle",
+            Command::GlobalFadeMarkersToggle,
+        ),
         (
             "mixer.external.eq_gain.toggle",
             Command::MixerExternalEqGainToggle,

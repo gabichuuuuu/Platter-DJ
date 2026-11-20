@@ -413,6 +413,8 @@ pub enum GridEdit {
     MarkerSet,
     /// Moves the marker on or before the play position by this many seconds.
     MarkerMove(f64),
+    /// The tempo of the marker on or before the play position, or that of the grid.
+    MarkerBpm(Option<Bpm>),
     MarkerDelete,
     MarkerPrevious,
     MarkerNext,

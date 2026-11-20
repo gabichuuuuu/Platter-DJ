@@ -273,7 +273,9 @@ impl PlatterApp {
             engine.set_recall(recall);
         }
         let home = config::home_dir();
-        if let Some(recordings) = config::recordings_folder(home.as_deref(), folder.as_deref()) {
+        let recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
+        browser.set_recordings(recordings.clone());
+        if let Some(recordings) = recordings {
             engine.set_recording_names(recording_names(recordings));
         }
         let settings_min_playtime = settings.min_playtime;
@@ -967,6 +969,11 @@ impl PlatterApp {
                 Command::GlobalLoadMarkerToggle,
             ),
             (
+                self.engine.snapshot().fade_markers,
+                settings.fade_markers,
+                Command::GlobalFadeMarkersToggle,
+            ),
+            (
                 mixer.maximiser.on,
                 settings.maximiser.on,
                 Command::MasterLimiterToggle,
@@ -998,6 +1005,7 @@ impl PlatterApp {
             fade_beats: mixer.fade_beats.round() as u32,
             maximiser: mixer.maximiser,
             load_marker: snapshot.load_marker,
+            fade_markers: snapshot.fade_markers,
             ..self.settings.clone()
         };
         if kept != self.settings {
@@ -1043,6 +1051,7 @@ impl PlatterApp {
                 | Command::MixerFilterModelSet { .. }
                 | Command::GlobalSyncModeSet { .. }
                 | Command::GlobalLoadMarkerToggle
+                | Command::GlobalFadeMarkersToggle
                 | Command::MasterLimiterToggle
                 | Command::MasterMaximiserDriveSet { .. }
                 | Command::MasterMaximiserCeilingSet { .. }

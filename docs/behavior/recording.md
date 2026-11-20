@@ -74,7 +74,8 @@ home folder itself; without a home folder it is the folder `Recordings` beside t
 file. It is created by the first recording. Each recording is named by the moment it started,
 in UTC, as the backups of the collection are (`mix-20261118-214105.wav`); the files after a
 cut add a part number (`mix-20261118-214105-2.wav`). A file is never written over: a name in
-use takes the next number.
+use takes the next number. *Recordings*, last in the tree of the browser, shows the folder
+(`docs/behavior/browser.md`, *Recordings*).
 
 **Split.** A file is closed and the next one opened, as a cut does, when it reaches 2048 MiB,
 the largest split the public manual offers. A WAV file stores its size in 32 bits and cannot

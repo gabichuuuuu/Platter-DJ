@@ -215,7 +215,7 @@ pub fn settings(
 }
 
 /// The height of the content of the Mixer page, which scrolls.
-const MIXER_PAGE_HEIGHT: f32 = 860.0;
+const MIXER_PAGE_HEIGHT: f32 = 960.0;
 
 /// Draws a page taller than its room, scrolled by `scroll`: the wheel over it scrolls it, and
 /// a control of the page the keyboard focus reaches out of view is brought into view.
@@ -1733,7 +1733,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
 
     effects_section(cx, page, 265.0, view);
 
-    let top = section(cx, page, 540.0, "settings.external_section");
+    let top = section(cx, page, 590.0, "settings.external_section");
     switch(
         cx,
         page,
@@ -1757,7 +1757,7 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         },
     );
 
-    let top = section(cx, page, 695.0, "settings.crossfader_section");
+    let top = section(cx, page, 745.0, "settings.crossfader_section");
     let control = setting(cx, page, top, "settings.fade_length");
     let fade_labels = FADE_BEATS.map(|beats| beats.to_string());
     let fade_choices: Vec<Choice<'_>> = fade_labels
@@ -1822,6 +1822,17 @@ fn mixer_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         cx,
         Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
         texts.get("settings.curve_help"),
+    );
+    switch(
+        cx,
+        page,
+        top + 100.0,
+        Switch {
+            name: "settings.fade_markers",
+            help: "settings.fade_markers_help",
+            on: view.engine.fade_markers,
+            action: Command::GlobalFadeMarkersToggle.into(),
+        },
     );
 }
 
@@ -1906,6 +1917,17 @@ fn effects_section(cx: &mut Cx<'_>, page: Rect, at: f32, view: &View<'_>) {
         row_top += 40.0;
     }
     help(cx, last, texts.get("settings.fx_routing_help"));
+    switch(
+        cx,
+        page,
+        row_top + 10.0,
+        Switch {
+            name: "settings.keep_values",
+            help: "settings.keep_values_help",
+            on: view.engine.effects.keep_values,
+            action: Command::FxKeepValuesToggle.into(),
+        },
+    );
 }
 
 /// The minimum play times the Library page offers, in seconds.

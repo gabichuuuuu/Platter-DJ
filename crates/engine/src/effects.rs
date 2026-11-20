@@ -119,6 +119,9 @@ pub struct EffectControls {
     /// Which units each channel goes through, deck A first.
     pub assigned: [[bool; UNITS]; DeckId::COUNT],
     pub mixer: [MixerEffectControls; DeckId::COUNT],
+    /// Whether a newly chosen effect keeps the knobs, the keys and the amount where they are,
+    /// instead of starting from its snapshot or its defaults (`docs/behavior/effects.md`).
+    pub keep_values: bool,
 }
 
 impl EffectControls {

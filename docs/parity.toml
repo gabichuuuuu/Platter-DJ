@@ -100,7 +100,7 @@ features = [
   { id = "reset", name = "Reset of the grid and of the tempo", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test panels" },
   { id = "analysis-lock", name = "Analysis lock", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; the lock keeps the grid, not the key, which cannot be edited, see docs/behavior/analysis.md" },
   { id = "beat-tick", name = "Beat tick", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test beat_tick; cargo test -p platter-ui-egui --test panels; not heard on a device with four outputs, see ROADMAP.md" },
-  { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "planned" },
+  { id = "flexible", name = "Flexible beatgrids with several tempo zones", milestone = "M4", status = "done", evidence = "cargo test -p platter-core grid; cargo test -p platter-core --test track_text; cargo test -p platter-engine --test sync marker; the tempo of a marker is set by command, with no control on the GRID page, and the analysis finds one tempo, see docs/behavior/beatgrid.md" },
 ]
 
 [[area]]
@@ -198,7 +198,7 @@ title = "Recording and output"
 features = [
   { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test recorder --test realtime_memory; cargo test -p platter-ui-egui --test panels; the level is the master meter of the header, with no gain or meter of its own, and the folder and the split are fixed, see docs/behavior/recording.md" },
   { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "planned" },
-  { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "planned" },
+  { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test auto_mix; cargo test -p platter-ui-egui --test settings_mixer; no automatic playback of a playlist, and nobody has listened to a transition, see docs/behavior/auto-mix.md" },
   { id = "broadcasting", name = "Broadcasting to a server the user configures", milestone = "M5", status = "planned" },
 ]
 
@@ -210,7 +210,7 @@ features = [
   { id = "folder-import", name = "Folder import", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test folders; cargo test -p platter-ui-egui --test collection --test import_key --test settings_mixer; cargo test -p platter --bin platter starting; the progress is a count of files, not a share; no real large collection imported yet, see docs/behavior/browser.md" },
   { id = "background-analysis", name = "Background analysis: tempo, grid, key, autogain", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter background; cargo test -p platter-library --test store; the detection itself waits for the measurement on real tracks, see ROADMAP.md" },
   { id = "tree", name = "Tree with collection, playlists, file explorer and history", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tree_folders --test collection --test playlist_menu; which folders are closed is not kept between runs, see docs/behavior/browser.md" },
-  { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "planned" },
+  { id = "recordings-node", name = "Recordings in the tree", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test tree_folders recordings; the folder of the mix recorder shown as the explorer shows a folder, see docs/behavior/browser.md" },
   { id = "search", name = "Live search", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test search_field; cargo test -p platter-ui-egui --test collection; tags only, see docs/behavior/browser.md" },
   { id = "sorting-columns", name = "Sorting and configurable columns", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test columns; cargo test -p platter-library --test store; columns are shown and hidden, not resized or reordered, and the comment is not sorted by, see docs/behavior/browser.md" },
   { id = "cover-status-bar", name = "Cover art and status bar", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test covers; cargo test -p platter-ui-egui --test panels; the cover is drawn in each row rather than in a window of its own, see docs/behavior/cover-art.md" },
@@ -280,7 +280,7 @@ features = [
   { id = "file-management", name = "File management", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; on the Library page, a moved folder is removed and added again, see docs/behavior/settings.md" },
   { id = "analysis", name = "Analysis", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; the range of tempos on the Decks page, no automatic range and no choice of markers, see docs/behavior/analysis.md" },
   { id = "controllers", name = "Controllers", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the Controllers page, see docs/behavior/controllers.md" },
-  { id = "effects", name = "Effects", milestone = "M4", status = "planned" },
+  { id = "effects", name = "Effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-engine --test effects; on the Mixer page: the number of units, the routing and Keep values; no list of preselected effects, see docs/behavior/effects.md" },
   { id = "recorders", name = "Recorders", milestone = "M4", status = "planned" },
   { id = "layouts", name = "Layouts", milestone = "M4", status = "planned" },
   { id = "input-routing", name = "Input routing", milestone = "M5", status = "planned" },

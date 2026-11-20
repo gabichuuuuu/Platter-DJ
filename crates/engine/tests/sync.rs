@@ -638,3 +638,37 @@ fn a_tempo_master_in_a_loop_off_the_beat_leaves_the_clock_counting() {
     let offset = offset_frames(&mut rig);
     assert!(offset.abs() < 0.5, "{offset} frames after the loop");
 }
+
+#[test]
+fn a_synced_deck_takes_the_tempo_of_each_marker_it_plays_into() {
+    let mut rig = rig();
+    // From three seconds on, deck B is at 80 BPM: synced to 120, it plays 1.5 times as fast.
+    rig.send(Command::DeckSeek {
+        deck: B,
+        seconds: 3.0,
+    });
+    rig.processor.process(&mut [0.0; 2], 2);
+    rig.send(Command::DeckGridMarkerSet { deck: B });
+    rig.send(Command::DeckGridMarkerBpmSet { deck: B, bpm: 80.0 });
+    let grid = deck_b(&mut rig).grid;
+    assert_eq!(grid.markers().len(), 2);
+    assert_eq!(grid.bpm_at(1.0).unwrap().value(), 100.0);
+    assert_eq!(grid.bpm_at(3.5).unwrap().value(), 80.0);
+    rig.send(Command::DeckSeek {
+        deck: B,
+        seconds: 0.0,
+    });
+    rig.processor.process(&mut [0.0; 2], 2);
+
+    play(&mut rig, A);
+    sync(&mut rig, B);
+    play(&mut rig, B);
+    rig.run(1.0);
+    assert!(close(deck_b(&mut rig).speed, 1.2, 1e-6));
+    // 1.2 times two seconds and a half reach the marker; a second later B is past it.
+    rig.run(2.5);
+    let b = deck_b(&mut rig);
+    assert!(b.position_seconds > 3.0, "{}", b.position_seconds);
+    assert!(close(b.speed, 1.5, 1e-6), "{}", b.speed);
+    assert!(close(state(&mut rig).clock.bpm, 120.0, 1e-9));
+}

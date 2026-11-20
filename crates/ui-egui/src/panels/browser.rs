@@ -1118,7 +1118,23 @@ fn tree(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView, memory: &mut Browser
         .and_then(|index| browser.rows.get(index))
         .filter(|row| matches!(row.kind, RowKind::Track(_) | RowKind::Pending))
         .map(|row| row.path.as_path());
-    let content = (fixed + browser.tree.len()) as f32 * (TREE_ROW + 1.0);
+    // *Recordings* comes last, after the folders of the explorer.
+    let recordings = browser.recordings.as_ref().map(|folder| Node {
+        id: id("tree-recordings"),
+        glyph: Glyph::Folder,
+        name: cx.texts.get("browser.recordings"),
+        depth: 0,
+        count: None,
+        current: browser.folder.as_ref() == Some(folder),
+        action: Some(AppCommand::BrowserNavigate {
+            path: folder.clone(),
+        }),
+        menu: None,
+        takes: None,
+        open: None,
+    });
+    let places = fixed + browser.tree.len() + usize::from(recordings.is_some());
+    let content = places as f32 * (TREE_ROW + 1.0);
     let hover = cx.ui.interact(rect, id("browser-tree"), Sense::hover());
     if hover.hovered() && cx.interactive {
         memory.tree_scroll -= cx.ui.input(|input| input.smooth_scroll_delta.y);
@@ -1155,6 +1171,12 @@ fn tree(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView, memory: &mut Browser
         let (row_rect, whole) = slot(fixed + index);
         if area.intersects(row_rect) {
             tree_row(cx, &painter, row_rect, index, row, whole);
+        }
+    }
+    if let Some(node) = recordings {
+        let (row_rect, whole) = slot(fixed + browser.tree.len());
+        if area.intersects(row_rect) {
+            node_row(cx, &painter, row_rect, node, whole, memory, selected);
         }
     }
     scroll_thumb(cx, area, memory.tree_scroll, content);

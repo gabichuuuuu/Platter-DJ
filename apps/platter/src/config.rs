@@ -142,6 +142,8 @@ pub struct Settings {
     /// What Platter writes into the files, from the Library page.
     pub tag_writing: TagWriting,
     pub autogain: bool,
+    /// A deck crossing a fade-out cue starts its partner, from the Mixer page.
+    pub fade_markers: bool,
     pub external_eq_gain: bool,
     pub external_master_volume: bool,
     /// Beats of an automatic fade across the whole travel of the crossfader.
@@ -193,6 +195,7 @@ impl Default for Settings {
             check_at_start: false,
             tag_writing: TagWriting::default(),
             autogain: true,
+            fade_markers: false,
             external_eq_gain: false,
             external_master_volume: false,
             fade_beats: 8,
@@ -369,6 +372,7 @@ impl Settings {
                 .and_then(|name| TagWriting::ALL.into_iter().find(|mode| mode.name() == name))
                 .unwrap_or(defaults.tag_writing),
             autogain: flag(table("mixer"), "autogain").unwrap_or(defaults.autogain),
+            fade_markers: flag(table("mixer"), "fade_markers").unwrap_or(defaults.fade_markers),
             external_eq_gain: flag(table("mixer"), "external_eq_gain")
                 .unwrap_or(defaults.external_eq_gain),
             external_master_volume: flag(table("mixer"), "external_master_volume")
@@ -457,6 +461,7 @@ impl Settings {
         );
         for (name, on) in [
             ("autogain", self.autogain),
+            ("fade_markers", self.fade_markers),
             ("external_eq_gain", self.external_eq_gain),
             ("external_master_volume", self.external_master_volume),
         ] {
@@ -663,6 +668,7 @@ mod tests {
             check_at_start: true,
             tag_writing: TagWriting::PlatterOnly,
             autogain: false,
+            fade_markers: true,
             external_eq_gain: true,
             external_master_volume: true,
             fade_beats: 32,

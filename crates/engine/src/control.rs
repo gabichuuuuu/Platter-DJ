@@ -24,11 +24,11 @@ use platter_dsp::filter::FilterModel;
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
-    CROSSFADER_STEP, ClockMode, Command, CueStep, Direction, MAX_BPM_STEP, MAX_CEILING_DB,
-    MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT,
-    MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_RELEASE_MS, MAX_SEEK_SECONDS,
-    MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep,
-    SyncMode,
+    CROSSFADER_STEP, ClockMode, Command, CrossfaderDirection, CueStep, Direction, MAX_BPM_STEP,
+    MAX_CEILING_DB, MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB,
+    MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_RELEASE_MS,
+    MAX_SEEK_SECONDS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode,
+    MoveSize, SizeStep, SyncMode,
 };
 use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
@@ -301,7 +301,8 @@ pub struct DeckSnapshot {
     pub position_seconds: f64,
     pub cue_seconds: f64,
     /// Beatgrid of the loaded track, as of the last [`Engine::poll`].
-    pub grid: BeatGrid,
+    /// On the heap: the snapshot is copied often, on the stack of the interface too.
+    pub grid: Box<BeatGrid>,
     /// Loop of the loaded track, as of the last [`Engine::poll`].
     pub looping: LoopState,
     /// Stored cues of the loaded track, as of the last [`Engine::poll`].
@@ -346,7 +347,7 @@ impl Default for DeckSnapshot {
             playing: false,
             position_seconds: 0.0,
             cue_seconds: 0.0,
-            grid: BeatGrid::default(),
+            grid: Box::default(),
             looping: LoopState::default(),
             cues: Cues::default(),
             controls: DeckControls::default(),
@@ -371,6 +372,8 @@ pub struct Snapshot {
     pub decks: [DeckSnapshot; DeckId::COUNT],
     /// A track with a cue of the type load starts at it: `docs/behavior/cues.md`.
     pub load_marker: bool,
+    /// A deck crossing a fade-out cue starts its partner: `docs/behavior/auto-mix.md`.
+    pub fade_markers: bool,
     pub preview: PreviewSnapshot,
     pub mixer: MixerControls,
     /// The effect units and the mixer effects: `docs/behavior/effects.md`.
@@ -479,6 +482,10 @@ pub struct Engine {
     metronome: bool,
     /// A track with a cue of the type load starts at it.
     load_marker: bool,
+    /// A deck crossing a fade-out cue starts its partner from its fade-in cue.
+    fade_markers: bool,
+    /// Where each playing deck was at the last poll, to see a fade-out cue being crossed.
+    marker_positions: [Option<f64>; DeckId::COUNT],
     clock_tap: TapTempo,
     /// An automatic fade was started and nothing has set the crossfader since: the
     /// processor knows where it is.
@@ -547,6 +554,8 @@ impl Engine {
             quantize: false,
             metronome: false,
             load_marker: true,
+            fade_markers: false,
+            marker_positions: [None; DeckId::COUNT],
             clock_tap: TapTempo::default(),
             crossfading: false,
             swaps_in_flight: 0,
@@ -644,6 +653,7 @@ impl Engine {
         engine.quantize = previous.quantize;
         engine.metronome = previous.metronome;
         engine.load_marker = previous.load_marker;
+        engine.fade_markers = previous.fade_markers;
         // A fresh queue has room for all of it: see `docs/decisions/0033-effect-chain.md`.
         let _ = engine.replay_effects(&previous.effects);
         (engine, processor)
@@ -655,6 +665,10 @@ impl Engine {
             Command::DeckLoad { deck, path } => self.start_load(deck, path),
             Command::GlobalLoadMarkerToggle => {
                 self.load_marker = !self.load_marker;
+                Ok(())
+            }
+            Command::GlobalFadeMarkersToggle => {
+                self.fade_markers = !self.fade_markers;
                 Ok(())
             }
             Command::PreviewLoad { path } => self.start_preview(path),
@@ -837,6 +851,10 @@ impl Engine {
                 )?;
                 (deck, GridEdit::MarkerMove(by))
             }
+            Command::DeckGridMarkerBpmSet { deck, bpm } => {
+                (deck, GridEdit::MarkerBpm(Some(Bpm::new(bpm)?)))
+            }
+            Command::DeckGridMarkerBpmClear { deck } => (deck, GridEdit::MarkerBpm(None)),
             Command::DeckGridMarkerDelete { deck } => (deck, GridEdit::MarkerDelete),
             Command::DeckGridMarkerPrevious { deck } => (deck, GridEdit::MarkerPrevious),
             Command::DeckGridMarkerNext { deck } => (deck, GridEdit::MarkerNext),
@@ -1158,6 +1176,7 @@ impl Engine {
             | Command::FxUnitRoutingSet { .. }
             | Command::FxUnitReset { .. }
             | Command::FxUnitSnapshotSave { .. }
+            | Command::FxKeepValuesToggle
             | Command::FxSlotEffectSet { .. }
             | Command::FxSlotAmountSet { .. }
             | Command::FxSlotToggle { .. }
@@ -1271,6 +1290,10 @@ impl Engine {
                 }
                 Ok(())
             }
+            Command::FxKeepValuesToggle => {
+                self.effects.keep_values = !self.effects.keep_values;
+                Ok(())
+            }
             Command::FxSlotEffectSet { unit, slot, effect } => {
                 self.set_place(unit, Place::Group(slot), effect)
             }
@@ -1370,19 +1393,22 @@ impl Engine {
                 effect: effect.map(|kind| self.build_effect(kind)),
             })?;
         }
+        let keep = self.effects.keep_values;
         self.update_unit(unit, |controls| match place {
             Place::Group(slot) => {
                 if let Some(kind) = controls.slots.get_mut(slot) {
                     *kind = effect;
                 }
-                if let Some(values) = controls.values.slots.get_mut(slot) {
+                if let Some(values) = controls.values.slots.get_mut(slot).filter(|_| !keep) {
                     values.amount = DEFAULT_AMOUNT;
                 }
             }
             Place::Single => {
                 controls.single = effect;
-                controls.values.single.controls =
-                    effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+                if !keep {
+                    controls.values.single.controls =
+                        effect.map_or_else(Controls::default, |kind| controls.start_of(kind));
+                }
             }
         })
     }
@@ -1634,6 +1660,7 @@ impl Engine {
                 deck.cues = cues;
             }
         }
+        self.follow_fade_markers();
         let mut events = Vec::new();
         while let Ok(finished) = self.finished_loads.try_recv() {
             events.extend(self.finish_load(finished));
@@ -1642,6 +1669,69 @@ impl Engine {
         self.recorder
             .poll(&mut self.ends.commands, dropped, &mut events);
         events
+    }
+
+    /// Starts the partner of a playing deck from its fade-in cue when the deck crosses one of
+    /// its fade-out cues, while the preference asks for it: `docs/behavior/auto-mix.md`.
+    fn follow_fade_markers(&mut self) {
+        for deck in DeckId::ALL {
+            let published = &self.ends.shared.decks[deck.index()];
+            let (now, playing) = (published.position.get(), published.playing.get());
+            let before = self.marker_positions[deck.index()];
+            self.marker_positions[deck.index()] = (playing && now.is_finite()).then_some(now);
+            let Some(before) = before.filter(|_| self.fade_markers && playing) else {
+                continue;
+            };
+            // A jump forward is not playback crossing the cue.
+            if !(now > before && now - before <= MAX_MARKER_STEP_SECONDS) {
+                continue;
+            }
+            let crossed = self.decks[deck.index()].cues.iter().any(|(_, cue)| {
+                cue.kind() == CueKind::FadeOut && cue.position > before && cue.position <= now
+            });
+            // With the queue full, the crossing is seen again at the next poll.
+            if crossed && self.start_partner(deck).is_err() {
+                self.marker_positions[deck.index()] = Some(before);
+            }
+        }
+    }
+
+    /// Plays the partner of `deck` from its first fade-in cue, if it holds a stopped track
+    /// with one, and fades the crossfader towards it when the two are on opposite sides.
+    fn start_partner(&mut self, deck: DeckId) -> Result<(), EngineError> {
+        let partner = fade_partner(deck);
+        let state = &self.decks[partner.index()];
+        if state.track.is_none()
+            || state.loading
+            || self.ends.shared.decks[partner.index()].playing.get()
+        {
+            return Ok(());
+        }
+        let Some(start) = state
+            .cues
+            .iter()
+            .find(|(_, cue)| cue.kind() == CueKind::FadeIn)
+            .map(|(_, cue)| cue.position)
+        else {
+            return Ok(());
+        };
+        self.dispatch(Command::DeckSeek {
+            deck: partner,
+            seconds: start,
+        })?;
+        self.dispatch(Command::DeckPlay { deck: partner })?;
+        let sides = self.mixer.crossfader_sides;
+        let direction = match sides[partner.index()] {
+            CrossfaderSide::Left => Some(CrossfaderDirection::Left),
+            CrossfaderSide::Right => Some(CrossfaderDirection::Right),
+            CrossfaderSide::Thru => None,
+        };
+        match direction {
+            Some(direction) if sides[deck.index()] != sides[partner.index()] => {
+                self.dispatch(Command::MixerCrossfaderAutoFade { direction })
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Waits until no load is running. The deviceless render uses it so that a script gives
@@ -1771,7 +1861,7 @@ impl Engine {
                 playing: published.playing.get(),
                 position_seconds: published.position.get(),
                 cue_seconds: published.cue.get(),
-                grid: control.grid,
+                grid: Box::new(control.grid),
                 looping: control.looping,
                 cues: control.cues,
                 controls: control.controls.clone(),
@@ -1813,6 +1903,7 @@ impl Engine {
             maximiser_gain: shared.maximiser_gain.get(),
             recorder: self.recorder.snapshot(shared, self.rate),
             load_marker: self.load_marker,
+            fade_markers: self.fade_markers,
             preview: PreviewSnapshot {
                 track: self.preview.track.clone(),
                 peaks: self.preview.peaks.clone(),
@@ -1967,5 +2058,18 @@ fn prepare(
         stretch,
         info,
         peaks,
+    }
+}
+
+/// The longest step between two polls that still counts as playback crossing a fade-out cue.
+const MAX_MARKER_STEP_SECONDS: f64 = 1.0;
+
+/// The deck a fade-out cue starts: A and B start each other, and so do C and D.
+fn fade_partner(deck: DeckId) -> DeckId {
+    match deck {
+        DeckId::A => DeckId::B,
+        DeckId::B => DeckId::A,
+        DeckId::C => DeckId::D,
+        DeckId::D => DeckId::C,
     }
 }
