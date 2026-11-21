@@ -22,7 +22,7 @@ const FILE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       <POSITION_MARK Name="Out" Type="2" Start="200.0" Num="-1"/>
       <POSITION_MARK Name="Roll" Type="4" Start="64.0" End="66.0" Num="0"/>
     </TRACK>
-    <TRACK TrackID="12" Name="Second" Location="file://localhost/Users/dj/Music/second.flac">
+    <TRACK TrackID="12" Name="Second" Location="file://localhost/music/sets/second.flac">
       <TEMPO Inizio="0.5" Bpm="120" Metro="4/4" Battito="3"/>
     </TRACK>
     <TRACK TrackID="13" Name="Streamed" Location="https://example.com/track"/>
@@ -81,7 +81,7 @@ fn tracks_their_grids_and_cues_and_the_tree_of_playlists_are_read() {
     // A mark on the third beat is moved back two beats to its downbeat, which would fall
     // before the start, so it goes a bar forward.
     let second = &collection.tracks[1];
-    assert_eq!(second.path, PathBuf::from("/Users/dj/Music/second.flac"));
+    assert_eq!(second.path, PathBuf::from("/music/sets/second.flac"));
     assert_eq!(second.memory.grid.markers(), [1.5]);
 
     let [sets, by_path] = &collection.playlists[..] else {
