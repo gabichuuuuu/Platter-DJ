@@ -2237,6 +2237,7 @@ dependencies = [
  "platter-device-io",
  "platter-engine",
  "platter-library",
+ "platter-mcp",
  "platter-ui-egui",
  "toml",
 ]
@@ -2327,6 +2328,13 @@ dependencies = [
  "platter-core",
  "proptest",
  "rusqlite",
+]
+
+[[package]]
+name = "platter-mcp"
+version = "0.5.0"
+dependencies = [
+ "platter-engine",
 ]
 
 [[package]]

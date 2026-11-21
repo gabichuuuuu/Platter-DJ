@@ -1,0 +1,48 @@
+<!--
+  Questions for an assistant that drives Platter through its MCP server, to measure whether the
+  tools let it find its way (docs/behavior/mcp.md). Each answer comes from the commands of the
+  application as platter_list_commands gives them, read on 21 November 2026; none needs a
+  track or changes anything. An answer changes only when a command changes.
+-->
+<evaluation>
+  <qa_pair>
+    <question>A DJ wants to drive the input of one channel of the mixer as hot as it goes. How many decibels of boost does Platter allow there at most?</question>
+    <answer>12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many times its original speed can a deck be set to play at most?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many instant jump points, each with its own pad, does one deck offer?</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>The recorder that captures a short phrase and repeats it over the mix can be sized in bars. What is the longest size it takes?</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>When an effect unit holds one effect alone, how many different effects can be chosen for it, leaving out the empty choice?</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>A stem deck has controls for each of its separated parts. How many distinct commands act on one part of a deck?</question>
+    <answer>6</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Long recordings of a set are split into several files. What is the largest file size, in megabytes, that can be chosen for the split?</question>
+    <answer>2048</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Among the models of the equaliser of the mixer, which one is named after removing a band completely?</question>
+    <answer>isolator</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many semitones up can the key of a deck be moved at most?</question>
+    <answer>12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>The maximiser of the master output lets its release be set. What is the longest release, in milliseconds?</question>
+    <answer>1000</answer>
+  </qa_pair>
+</evaluation>

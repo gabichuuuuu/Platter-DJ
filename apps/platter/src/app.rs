@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::ViewportCommand;
@@ -13,12 +14,14 @@ use platter_audio_io::{
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
-use platter_engine::command::SPECS;
+use platter_engine::command::{Args, CommandSpec, SPECS};
 use platter_engine::{
     Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
     RecordingNames, StemRecall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
+use platter_mcp::json::Value as McpValue;
+use platter_mcp::{Host, Server};
 use platter_ui_egui::collection::Collection;
 use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
@@ -176,6 +179,8 @@ fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
 }
 
 pub struct PlatterApp {
+    /// The MCP server, when the application was started with `--mcp`.
+    mcp: Option<(Receiver<crate::mcp::Request>, Server)>,
     /// The folder of the files of the user; without one nothing is saved.
     folder: Option<PathBuf>,
     /// Where the mix recorder writes when the user has chosen no folder.
@@ -324,6 +329,7 @@ impl PlatterApp {
             problem: None,
             devices: Vec::new(),
             last_device_scan: Instant::now(),
+            mcp: None,
             browser,
             notices: [None; DeckId::COUNT],
             fullscreen: false,
@@ -1111,6 +1117,27 @@ impl PlatterApp {
         }
     }
 
+    /// Answers the messages of the MCP client: `docs/behavior/mcp.md`.
+    pub fn serve_mcp(&mut self, requests: Receiver<crate::mcp::Request>) {
+        let server = Server {
+            name: "platter".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        };
+        self.mcp = Some((requests, server));
+    }
+
+    fn answer_mcp(&mut self) {
+        let Some((requests, server)) = self.mcp.take() else {
+            return;
+        };
+        while let Ok(request) = requests.try_recv() {
+            let answer = server.handle(&request.line, &mut McpHost(self));
+            // The reader may have given up waiting; then nobody takes the answer.
+            let _ = request.reply.send(answer);
+        }
+        self.mcp = Some((requests, server));
+    }
+
     fn run_engine(&mut self, command: Command) -> Result<(), EngineError> {
         match &command {
             // The rules of loading of the Decks page: a playing deck takes no track.
@@ -1719,6 +1746,32 @@ impl PlatterApp {
     }
 }
 
+/// The application as the MCP server sees it: its commands, run as the keyboard runs them, and
+/// its state.
+struct McpHost<'a>(&'a mut PlatterApp);
+
+impl Host for McpHost<'_> {
+    fn commands(&self) -> Vec<&'static CommandSpec> {
+        Action::specs().collect()
+    }
+
+    fn run(&mut self, id: &str, args: &Args) -> Result<String, String> {
+        let action = Action::from_args(id, args).map_err(|error| error.to_string())?;
+        match action {
+            Action::Engine(command) => self
+                .0
+                .run_engine(command)
+                .map_err(|error| error.to_string())?,
+            Action::App(command) => self.0.dispatch_app(command),
+        }
+        Ok(format!("{id}: done"))
+    }
+
+    fn state(&mut self) -> McpValue {
+        crate::mcp::state_of(&self.0.engine.snapshot())
+    }
+}
+
 impl eframe::App for PlatterApp {
     fn on_exit(&mut self) {
         // The output still runs, so the processor marks the end and the file is finished.
@@ -1743,6 +1796,7 @@ impl eframe::App for PlatterApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         let midi_waiting = self.take_midi();
         self.poll();
+        self.answer_mcp();
         let ctx = ui.ctx().clone();
         // A window narrower than the layout is designed for shows the whole interface
         // smaller; the layout itself has no narrow form yet.

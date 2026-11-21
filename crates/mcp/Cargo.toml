@@ -1,0 +1,13 @@
+[package]
+name = "platter-mcp"
+description = "The MCP server of Platter: JSON-RPC messages over the commands of the application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-engine = { path = "../engine" }
