@@ -11,9 +11,11 @@ mod backup;
 mod error;
 mod folder;
 mod m3u;
+mod rekordbox;
 mod smart;
 mod store;
 mod text;
+mod xml;
 
 use std::path::{Path, PathBuf};
 
@@ -26,7 +28,12 @@ pub use folder::{
     import_file, import_folder, relocate_missing,
 };
 pub use m3u::{
-    M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u,
+    M3uEntry, M3uError, M3uReading, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, read_pls, read_xspf,
+    write_m3u,
+};
+pub use rekordbox::{
+    CollectionError, MAX_COLLECTION_BYTES, MAX_COLLECTION_NODES, MAX_COLLECTION_TRACKS,
+    SharedCollection, SharedNode, SharedTrack, read_collection,
 };
 pub use smart::{MAX_RULES, RangeField, Rule, TagField, parse_rules, rules_text};
 pub use store::SqliteLibrary;

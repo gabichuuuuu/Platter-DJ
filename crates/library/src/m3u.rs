@@ -104,6 +104,151 @@ pub fn read_m3u(bytes: &[u8], folder: &Path) -> Result<M3uReading, M3uError> {
     Ok(M3uReading { entries, skipped })
 }
 
+/// Reads a PLS playlist: `FileN=` lines give the entries in the order of their numbers,
+/// `TitleN=` and `LengthN=` describe them. Paths are read as in an M3U file.
+pub fn read_pls(bytes: &[u8], folder: &Path) -> Result<M3uReading, M3uError> {
+    if bytes.len() > MAX_M3U_BYTES {
+        return Err(M3uError::TooLarge);
+    }
+    let text = decode(bytes);
+    let mut numbered: Vec<(u32, Option<PathBuf>, Info)> = Vec::new();
+    let mut skipped = 0;
+    let slot = |numbered: &mut Vec<(u32, Option<PathBuf>, Info)>, number: u32| match numbered
+        .iter()
+        .position(|(at, ..)| *at == number)
+    {
+        Some(index) => Some(index),
+        None if numbered.len() < MAX_M3U_ENTRIES => {
+            numbered.push((number, None, Info::default()));
+            Some(numbered.len() - 1)
+        }
+        None => None,
+    };
+    for line in text.lines() {
+        let Some((key, value)) = line.trim().split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        let field = ["file", "title", "length"]
+            .into_iter()
+            .find_map(|name| Some((name, key.strip_prefix(name)?.parse::<u32>().ok()?)));
+        let Some((name, number)) = field else {
+            continue;
+        };
+        let Some(index) = slot(&mut numbered, number) else {
+            skipped += usize::from(name == "file");
+            continue;
+        };
+        let entry = &mut numbered[index];
+        match name {
+            "file" => match entry_path(value, folder) {
+                Some(path) => entry.1 = Some(path),
+                None => skipped += 1,
+            },
+            "title" => entry.2.title = non_empty(value),
+            _ => {
+                entry.2.seconds = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+            }
+        }
+    }
+    numbered.sort_by_key(|(number, ..)| *number);
+    let entries = numbered
+        .into_iter()
+        .filter_map(|(_, path, info)| {
+            Some(M3uEntry {
+                path: path?,
+                artist: info.artist,
+                title: info.title,
+                seconds: info.seconds,
+            })
+        })
+        .collect();
+    Ok(M3uReading { entries, skipped })
+}
+
+/// Reads an XSPF playlist: each `track` of its `trackList` with a `location`, a `title`, a
+/// `creator` and a `duration` in milliseconds. Specification: <https://xspf.org/spec>.
+pub fn read_xspf(bytes: &[u8], folder: &Path) -> Result<M3uReading, M3uError> {
+    if bytes.len() > MAX_M3U_BYTES {
+        return Err(M3uError::TooLarge);
+    }
+    let Ok(events) = crate::xml::read(bytes) else {
+        return Ok(M3uReading {
+            entries: Vec::new(),
+            skipped: 1,
+        });
+    };
+    let mut entries = Vec::new();
+    let mut skipped = 0;
+    let mut track: Option<(Option<String>, Info)> = None;
+    let mut field: Option<String> = None;
+    for event in events {
+        match event {
+            crate::xml::Event::Start { name, empty, .. } => {
+                if name == "track" {
+                    track = Some((None, Info::default()));
+                } else if !empty {
+                    field = Some(name);
+                }
+            }
+            crate::xml::Event::Text(text) => {
+                if let (Some((location, info)), Some(name)) = (track.as_mut(), field.as_deref()) {
+                    match name {
+                        "location" if location.is_none() => *location = Some(text),
+                        "title" => info.title = non_empty(&text),
+                        "creator" => info.artist = non_empty(&text),
+                        "duration" => {
+                            info.seconds = text
+                                .trim()
+                                .parse::<f64>()
+                                .ok()
+                                .map(|milliseconds| milliseconds / 1000.0)
+                                .filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            crate::xml::Event::End { name } => {
+                field = None;
+                if name != "track" {
+                    continue;
+                }
+                let Some((location, info)) = track.take() else {
+                    continue;
+                };
+                if entries.len() >= MAX_M3U_ENTRIES {
+                    skipped += 1;
+                    continue;
+                }
+                // A location is a URI: a relative one is escaped as a file URL is.
+                let path = location.and_then(|location| {
+                    let location = location.trim();
+                    if url_scheme(location).is_some() {
+                        entry_path(location, folder)
+                    } else {
+                        entry_path(&percent_decode(location)?, folder)
+                    }
+                });
+                match path {
+                    Some(path) => entries.push(M3uEntry {
+                        path,
+                        artist: info.artist,
+                        title: info.title,
+                        seconds: info.seconds,
+                    }),
+                    None => skipped += 1,
+                }
+            }
+        }
+    }
+    Ok(M3uReading { entries, skipped })
+}
+
 /// Writes entries as an extended M3U in UTF-8 with `\n` line ends (the `.m3u8` convention).
 /// Paths are written as they are, with the separators of the platform.
 pub fn write_m3u(entries: &[M3uEntry]) -> String {
@@ -205,7 +350,7 @@ fn url_scheme(line: &str) -> Option<&str> {
 
 /// The path in what follows `file://`: `/C:/x.mp3` becomes `C:/x.mp3`, `/music/x.mp3` stays, an
 /// empty or `localhost` host is dropped and another host makes a UNC path.
-fn file_url_path(rest: &str) -> Option<String> {
+pub(crate) fn file_url_path(rest: &str) -> Option<String> {
     let (host, path) = match rest.find('/') {
         Some(at) => rest.split_at(at),
         None => (rest, ""),

@@ -17,9 +17,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use platter_core::TrackMemory;
 use platter_decode::{CoverPicture, MAX_COVER_IMPORT_BYTES, TagEdit, probe_file, write_tags};
 use platter_library::{
-    Column, EntryId, Library, LibraryError, M3uEntry, MAX_M3U_BYTES, MAX_NAME_CHARS, MAX_PAGE,
-    NodeId, NodeKind, Page, Query, Reading, Rule, Session, SessionId, Source, TagReader, Timestamp,
-    Track, TrackId, TrackTags, import_file, import_folder, read_m3u, relocate_missing, rules_text,
+    Column, EntryId, Library, LibraryError, M3uEntry, MAX_COLLECTION_BYTES, MAX_M3U_BYTES,
+    MAX_NAME_CHARS, MAX_PAGE, NodeId, NodeKind, Page, Query, Reading, Rule, Session, SessionId,
+    SharedNode, Source, TagReader, Timestamp, Track, TrackId, TrackTags, import_file,
+    import_folder, read_collection, read_m3u, read_pls, read_xspf, relocate_missing, rules_text,
     write_m3u,
 };
 
@@ -94,9 +95,14 @@ enum Write {
     Export(NodeId, String, PathBuf),
     /// Writes the history of a session, named as given, as an M3U file into a folder.
     ExportHistory(SessionId, String, PathBuf),
-    /// Makes a playlist of each M3U file of a folder, in a folder of the tree.
+    /// Makes a playlist of each playlist file of a folder, in a folder of the tree.
     ImportPlaylists(Option<NodeId>, PathBuf),
+    /// Imports each collection file of a folder: its tracks and its tree of playlists.
+    ImportCollections(PathBuf),
 }
+
+/// Collection files of a folder one import reads, by name.
+const MAX_COLLECTION_FILES: usize = 10;
 
 /// Files with the same name an export tries before it gives up.
 const MAX_EXPORT_NAMES: usize = 100;
@@ -733,6 +739,13 @@ fn serve(
                         .unwrap_or(PlaylistFileOutcome::Failed);
                     Reply::PlaylistFile(outcome)
                 }
+                Write::ImportCollections(folder) => {
+                    changed = true;
+                    imported = true;
+                    let outcome =
+                        import_collections(library, &folder).unwrap_or(PlaylistFileOutcome::Failed);
+                    Reply::PlaylistFile(outcome)
+                }
                 Write::Maintain(job) => {
                     let outcome = match job {
                         Job::List => None,
@@ -942,8 +955,9 @@ fn import_playlists(
                     .extension()
                     .and_then(|extension| extension.to_str())
                     .is_some_and(|extension| {
-                        extension.eq_ignore_ascii_case("m3u")
-                            || extension.eq_ignore_ascii_case("m3u8")
+                        ["m3u", "m3u8", "pls", "xspf"]
+                            .iter()
+                            .any(|known| extension.eq_ignore_ascii_case(known))
                     })
         })
         .collect();
@@ -959,7 +973,19 @@ fn import_playlists(
         let reading = std::fs::read(&file)
             .ok()
             .filter(|_| fits)
-            .and_then(|bytes| read_m3u(&bytes, folder).ok());
+            .and_then(|bytes| {
+                let extension = file
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                match extension.as_str() {
+                    "pls" => read_pls(&bytes, folder),
+                    "xspf" => read_xspf(&bytes, folder),
+                    _ => read_m3u(&bytes, folder),
+                }
+                .ok()
+            });
         let Some(reading) = reading else {
             skipped += 1;
             continue;
@@ -992,6 +1018,142 @@ fn import_playlists(
         tracks,
         skipped,
     })
+}
+
+/// Imports each collection file of `folder`, at most [`MAX_COLLECTION_FILES`] by name:
+/// `docs/behavior/browser.md`, *Playlist files*.
+fn import_collections(
+    library: &mut dyn Library,
+    folder: &Path,
+) -> Result<PlaylistFileOutcome, LibraryError> {
+    let Ok(listing) = std::fs::read_dir(folder) else {
+        return Ok(PlaylistFileOutcome::Failed);
+    };
+    let mut files: Vec<PathBuf> = listing
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("xml"))
+        })
+        .collect();
+    files.sort_by_key(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+    });
+    files.truncate(MAX_COLLECTION_FILES);
+    let (mut playlists, mut tracks, mut skipped) = (0, 0, 0);
+    let mut read_any = false;
+    for file in files {
+        let fits = std::fs::metadata(&file)
+            .is_ok_and(|metadata| metadata.len() <= MAX_COLLECTION_BYTES as u64);
+        // Another XML file of the folder is not a collection: it is passed over.
+        let Some(shared) = std::fs::read(&file)
+            .ok()
+            .filter(|_| fits)
+            .and_then(|bytes| read_collection(&bytes).ok())
+        else {
+            continue;
+        };
+        read_any = true;
+        skipped += shared.skipped;
+        let mut found: Vec<Option<TrackId>> = Vec::with_capacity(shared.tracks.len());
+        for shared_track in &shared.tracks {
+            let track = import_file(library, &shared_track.path, &mut HeaderReader, now())?;
+            match track {
+                Some(track) => {
+                    tracks += 1;
+                    take_shared(library, track, shared_track)?;
+                }
+                None => skipped += 1,
+            }
+            found.push(track);
+        }
+        let stem = file
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let name: String = shared
+            .product
+            .clone()
+            .unwrap_or(stem)
+            .trim()
+            .chars()
+            .take(MAX_NAME_CHARS)
+            .collect();
+        let name = if name.is_empty() {
+            "Collection".to_owned()
+        } else {
+            name
+        };
+        let top = library.create(None, NodeKind::Folder, &name)?;
+        playlists += make_tree(library, top, &shared.playlists, &found)?;
+    }
+    Ok(if read_any {
+        PlaylistFileOutcome::Imported {
+            playlists,
+            tracks,
+            skipped,
+        }
+    } else {
+        PlaylistFileOutcome::Failed
+    })
+}
+
+/// Gives a track what the collection file knows and Platter does not: the beatgrid and the
+/// cues of a track without them, the rating and the comment of one without them.
+fn take_shared(
+    library: &mut dyn Library,
+    id: TrackId,
+    shared: &platter_library::SharedTrack,
+) -> Result<(), LibraryError> {
+    let Some(track) = library.track(id)? else {
+        return Ok(());
+    };
+    let memory = &shared.memory;
+    let has_memory = !memory.grid.is_empty() || memory.cues.iter().next().is_some();
+    if has_memory && !library.has_memory(&track.path)? {
+        library.set_memory(track.id, memory)?;
+    }
+    if track.rating == 0 && shared.rating > 0 {
+        library.set_rating(track.id, shared.rating)?;
+    }
+    if track.comment.is_none() && shared.comment.is_some() {
+        library.set_comment(track.id, shared.comment.as_deref())?;
+    }
+    Ok(())
+}
+
+/// Makes the folders and playlists of `nodes` under `parent`; returns how many playlists.
+fn make_tree(
+    library: &mut dyn Library,
+    parent: NodeId,
+    nodes: &[SharedNode],
+    found: &[Option<TrackId>],
+) -> Result<usize, LibraryError> {
+    let mut made = 0;
+    for node in nodes {
+        let name: String = node.name.chars().take(MAX_NAME_CHARS).collect();
+        match &node.playlist {
+            Some(entries) => {
+                let playlist = library.create(Some(parent), NodeKind::Playlist, &name)?;
+                made += 1;
+                let entries: Vec<TrackId> = entries
+                    .iter()
+                    .filter_map(|index| found.get(*index).copied().flatten())
+                    .collect();
+                library.add(playlist, &entries, None)?;
+            }
+            None => {
+                let folder = library.create(Some(parent), NodeKind::Folder, &name)?;
+                made += make_tree(library, folder, &node.children, found)?;
+            }
+        }
+    }
+    Ok(made)
 }
 
 /// The paths of the missing tracks, the first [`MAX_MISSING_LISTED`], and how many there are.
@@ -1246,7 +1408,22 @@ impl Collection {
         }
     }
 
-    /// Makes a playlist of each M3U file of `folder`, in the folder `parent` of the tree.
+    /// Imports each collection file of `folder`: its tracks with their grids and cues, and its
+    /// playlists under a new folder of the tree.
+    pub fn import_collections(&mut self, folder: PathBuf) {
+        if self.exchanging || self.importing || self.available != Some(true) {
+            return;
+        }
+        self.exchanging = true;
+        self.send(Request::Write(Write::ImportCollections(folder)));
+        let lookup = Lookup {
+            changes: self.lookup.changes.wrapping_add(1),
+            ..self.lookup.clone()
+        };
+        self.ask(lookup);
+    }
+
+    /// Makes a playlist of each playlist file of `folder`, in the folder `parent` of the tree.
     pub fn import_playlists(&mut self, parent: Option<NodeId>, folder: PathBuf) {
         if self.exchanging || self.importing || self.available != Some(true) {
             return;

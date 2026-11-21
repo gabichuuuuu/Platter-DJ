@@ -1910,3 +1910,120 @@ fn a_history_is_saved_as_a_playlist_exported_and_deleted() {
         Some(this_run)
     );
 }
+
+/// A path as the collection file writes it: a `file://localhost/` URI with `/` separators.
+fn file_uri(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let text = text.strip_prefix("//?/").unwrap_or(&text);
+    let text = text.strip_prefix('/').unwrap_or(text);
+    format!("file://localhost/{}", text.replace(' ', "%20"))
+}
+
+/// `docs/behavior/browser.md`, *Playlist files*: the tracks of a collection file come in with
+/// their grid and cues, and its tree under a folder named after the program.
+#[test]
+fn a_collection_file_brings_its_tracks_their_cues_and_its_playlists() {
+    let root = place("shared-collection");
+    seed(&root, true);
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    let music = std::fs::canonicalize(root.join("music")).unwrap();
+    let exports = root.join("exports");
+    std::fs::create_dir_all(&exports).unwrap();
+    let a = file_uri(&music.join("a-side.wav"));
+    let b = file_uri(&music.join("b-side.wav"));
+    let gone = file_uri(&music.join("gone.wav"));
+    std::fs::write(
+        exports.join("collection.xml"),
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="Other DJ"/>
+  <COLLECTION Entries="3">
+    <TRACK TrackID="1" Location="{a}" Rating="255" Comments="kept"/>
+    <TRACK TrackID="2" Location="{b}" Rating="102" Comments="peak">
+      <TEMPO Inizio="0.05" Bpm="128" Metro="4/4" Battito="1"/>
+      <POSITION_MARK Name="In" Type="0" Start="0.5" Num="0"/>
+    </TRACK>
+    <TRACK TrackID="3" Location="{gone}"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="1">
+      <NODE Type="0" Name="Gigs" Count="1">
+        <NODE Type="1" Name="Club" KeyType="0" Entries="3">
+          <TRACK Key="2"/><TRACK Key="1"/><TRACK Key="3"/>
+        </NODE>
+      </NODE>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>
+"#
+        ),
+    )
+    .unwrap();
+    // Another XML file of the folder is passed over.
+    std::fs::write(exports.join("other.xml"), "<rss/>").unwrap();
+
+    change(
+        &mut browser,
+        AppCommand::BrowserCollectionImport {
+            path: exports.clone(),
+        },
+    );
+    assert_eq!(
+        collection(&browser).exchanged,
+        Some(PlaylistFileOutcome::Imported {
+            playlists: 1,
+            tracks: 2,
+            skipped: 1,
+        })
+    );
+    let tree: Vec<_> = collection(&browser)
+        .playlists
+        .iter()
+        .map(|row| (row.depth, row.name.clone(), row.entries))
+        .collect();
+    for wanted in [
+        (0, "Other DJ".to_owned(), None),
+        (1, "Gigs".to_owned(), None),
+        (2, "Club".to_owned(), Some(2)),
+    ] {
+        assert!(tree.contains(&wanted), "{wanted:?} in {tree:?}");
+    }
+    // The track already in the collection keeps itself; the new one takes the file's grid,
+    // cue, rating and comment.
+    assert_eq!(collection(&browser).tracks, Some(2));
+    let store = SqliteLibrary::open(&root.join("library.sqlite")).unwrap();
+    let b_side = store
+        .track_at(&music.join("b-side.wav"))
+        .unwrap()
+        .or_else(|| {
+            let plain = music.to_str().and_then(|text| text.strip_prefix(r"\\?\"));
+            plain.and_then(|plain| {
+                store
+                    .track_at(&PathBuf::from(plain).join("b-side.wav"))
+                    .unwrap()
+            })
+        })
+        .unwrap();
+    assert_eq!(
+        (b_side.rating, b_side.comment.as_deref()),
+        (2, Some("peak"))
+    );
+    let memory = store.memory_at(&b_side.path).unwrap().unwrap();
+    assert_eq!(memory.grid.bpm().map(|bpm| bpm.value()), Some(128.0));
+    assert_eq!(memory.grid.markers(), [0.05]);
+    assert_eq!(memory.cues.iter().count(), 1);
+
+    // A folder without a collection file says so.
+    let empty = root.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    change(
+        &mut browser,
+        AppCommand::BrowserCollectionImport { path: empty },
+    );
+    assert_eq!(
+        collection(&browser).exchanged,
+        Some(PlaylistFileOutcome::Failed)
+    );
+}

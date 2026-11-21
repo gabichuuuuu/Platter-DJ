@@ -254,6 +254,50 @@ format alone; the commands that import a file as a playlist and export a playlis
   then for each entry an `#EXTINF` line, with the length in whole seconds or `-1` and
   "artist - title", and its absolute path as the system writes it. A line break inside a title,
   an artist or a path becomes a space, so it cannot split the file.
+- **PLS and XSPF.** Two other playlist formats media software writes are read as M3U is, with
+  the same limits and the same rules for paths. In a PLS file the `FileN=` lines are the
+  entries, in the order of their numbers, and `TitleN=` and `LengthN=` describe them. In an
+  XSPF file (<https://xspf.org/spec>) each `track` of the list gives its `location`, a URI, a
+  relative one escaped as a file URL is, and its `title`, `creator` and `duration` in
+  milliseconds; a track without a location is skipped and counted, and a file that is not XML
+  gives nothing and counts once.
+
+### Collection files
+
+The public manual (*Managing Your Track Collection* and *Working with Playlists*, read on 21
+November 2026) imports music folders, the library of a media player with its playlists, and
+playlist files of the documented application; it names no format of another DJ program.
+Moving from another DJ program, a DJ brings the tracks with their beatgrids, cues and
+playlists, so Platter reads the XML format for sharing playlists that one DJ program's vendor
+publishes for other software (*XML file format for playlists sharing*, the format document
+linked from that vendor's page for developers, read on 21 November 2026), which several DJ
+programs write.
+
+- **The format.** The root element `DJ_PLAYLISTS` holds `PRODUCT` (the program that wrote the
+  file), `COLLECTION` with one `TRACK` per track, and `PLAYLISTS` with a tree of `NODE`s under
+  a root folder. A `TRACK` has its location as a `file://localhost/` URI, its tags as
+  attributes, `TEMPO` children for its beatgrid (`Inizio`, the start in seconds; `Bpm`;
+  `Battito`, the beat of the bar the mark is on) and `POSITION_MARK` children for its cues
+  (`Type` 0 cue, 1 fade-in, 2 fade-out, 3 load, 4 loop; `Start` and `End` in seconds; `Num` the
+  hot cue from 0, or -1 for a memory cue). A playlist node (`Type` 1) lists its tracks by
+  `TrackID` or by location (`KeyType` 0 or 1). The rating goes from 0 to 255 in steps of 51 a
+  star. Numbers may use a point or a comma.
+- **Reading.** A file larger than 256 MiB is refused, and so is one that is not UTF-8 XML or
+  whose root is not `DJ_PLAYLISTS`. The reader is Platter's own (`crates/library/src/xml.rs`):
+  it takes elements, attributes, text, the five predefined entities and character references,
+  and skips the declaration, comments, processing instructions and the document type; it
+  refuses elements that do not nest and nesting deeper than 64. At most 200 000 tracks and
+  playlist entries and 10 000 playlists and folders are read; the rest are counted as skipped.
+- **Tracks.** A track whose location is not a `file://` URI is skipped and counted. The title,
+  artist, album, genre, comment and rating are read; the other attributes are not used.
+- **Beatgrid.** Each `TEMPO` gives a marker on its downbeat: a mark on beat 3 is moved back two
+  beats, or forward one bar when that falls before the start of the track. The first gives the
+  tempo of the grid; a later one with another tempo keeps its own. At most 128 markers.
+- **Cues.** Hot cues 0 to 7 go to slots 1 to 8 with their name, kind and, for a loop, length.
+  The other marks, memory cues among them, take the free slots in the order of the file, a mark
+  at the place and of the kind of a cue already stored excepted.
+- **Playlists.** Each folder and playlist keeps its name and its place in the tree; an entry
+  naming no track of the collection is skipped and counted.
 
 ### The file
 

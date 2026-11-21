@@ -241,7 +241,7 @@ features = [
   { id = "backups", name = "Automatic backups", milestone = "M3", status = "done", evidence = "cargo test -p platter-library --test backup; no command takes a backup back yet, see docs/behavior/library.md" },
   { id = "delete-tracks", name = "Delete tracks", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test collection; the first of the three ways of the public manual, see docs/behavior/browser.md" },
   { id = "tag-writing", name = "Writing tempo, key and cues to file tags", milestone = "M3", status = "done", evidence = "cargo test -p platter-decode --test tag_write; cargo test -p platter-ui-egui --test collection; cargo test -p platter --bin platter background; no real encoder files were written, see docs/behavior/tag-writing.md" },
-  { id = "import-collections", name = "Import collections of other programs", milestone = "M4", status = "planned" },
+  { id = "import-collections", name = "Import collections of other programs", milestone = "M4", status = "done", evidence = "cargo test -p platter-library --test collection_file --test m3u --lib; cargo test -p platter-ui-egui --test collection --test playlist_menu; the XML format for sharing playlists, PLS and XSPF; no colours, play counts or dates, and no file of a real program was read, see docs/behavior/library.md" },
 ]
 
 [[area]]

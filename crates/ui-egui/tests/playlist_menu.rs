@@ -753,8 +753,15 @@ fn the_menus_export_and_import_playlists_with_the_folder_of_the_explorer() {
         app(&stage.click(import, PointerButton::Primary)),
         [AppCommand::BrowserPlaylistImport {
             folder: None,
-            path: sets,
+            path: sets.clone(),
         }]
+    );
+    // `docs/behavior/browser.md`, *Playlist files*.
+    stage.heading_menu();
+    let collections = stage.control("browser.collection.import").unwrap();
+    assert_eq!(
+        app(&stage.click(collections, PointerButton::Primary)),
+        [AppCommand::BrowserCollectionImport { path: sets }]
     );
 
     // Without a folder in the explorer, neither is offered.

@@ -1048,6 +1048,11 @@ impl FileBrowser {
                     collection.import_playlists(*folder, path.clone());
                 }
             }
+            AppCommand::BrowserCollectionImport { path } => {
+                if let Some(collection) = &mut self.collection {
+                    collection.import_collections(path.clone());
+                }
+            }
             AppCommand::LibraryMaintenanceOpen
             | AppCommand::LibraryCheck
             | AppCommand::LibraryRelocate { .. }
