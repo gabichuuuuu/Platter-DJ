@@ -62,4 +62,8 @@ and the hints; the tests of the application check the reading of lines and the s
 build was run once as `platter --mcp` with a script of messages on its input, a profile of its
 own and no MCP client: it answered `initialize`, `tools/list`, `server/discover` and the three
 tools, moved the crossfader and closed when its input closed. `crates/mcp/evaluation.xml` holds
-ten questions for an assistant; none was run with one yet.
+ten questions for an assistant. On 21 November 2026, Windows x64, a release build of `main` was
+started by Claude Code 2.1.330 as its MCP client, with a model of the Sonnet family, the tools of
+Platter alone and a settings folder of its own: the model answered the ten questions right in
+seven turns, set the crossfader to its centre through `platter_run_command` and read it back as
+0.5 through `platter_get_state`, with no error from a tool.
