@@ -677,6 +677,41 @@ fn process_neither_allocates_nor_frees() {
         events += counted;
     }
 
+    // Key lock on worker threads, run between the blocks: the audio thread only takes what the
+    // workers rendered, through a seek and a change of tempo. Its pitch shows it was stretched.
+    rig.engine.set_key_lock_pumped();
+    rig.load(DeckId::A, sine_file("memory-e", 440.0, 4.0, 0.5, RATE));
+    // The shift of the key the deck kept from above is taken back.
+    rig.send(Command::DeckKeySet {
+        deck: DeckId::A,
+        semitones: 0.0,
+    });
+    rig.send(Command::DeckPlay { deck: DeckId::A });
+    let mut pumped = |rig: &mut Rig, blocks: usize| {
+        let mut heard = Vec::new();
+        for _ in 0..blocks {
+            let (_, counted) = count(|| rig.processor.process(&mut block, 4));
+            events += counted;
+            rig.engine.pump_key_lock();
+            heard.extend(block.iter().step_by(4).copied());
+        }
+        heard
+    };
+    pumped(&mut rig, 40);
+    rig.send(Command::DeckTempoSet {
+        deck: DeckId::A,
+        ratio: 1.04,
+    });
+    let heard = pumped(&mut rig, 80);
+    let hz = frequency(&heard[heard.len() / 2..]);
+    assert!(
+        (1200.0 * (hz / 440.0).log2()).abs() < 5.0,
+        "key lock on worker threads did not hold: {hz:.2} Hz"
+    );
+    assert_eq!(rig.engine.key_lock_starved(), 0);
+    rig.send(Command::DeckEject { deck: DeckId::A });
+    pumped(&mut rig, 5);
+
     assert_eq!(
         events, 0,
         "process allocated or freed memory {events} times"

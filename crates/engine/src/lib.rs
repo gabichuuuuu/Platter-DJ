@@ -16,6 +16,7 @@ mod render;
 pub mod rt;
 pub mod separation;
 mod stretch;
+mod stretch_pool;
 mod tap;
 mod wav;
 

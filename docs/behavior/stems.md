@@ -149,6 +149,17 @@ What Platter does (choices: `docs/decisions/0038-stem-separation.md`):
 - In the two-deck layout the stem lanes are folded by default: the manual shows them open with
   an arrow that hides their controls; Platter keeps the parallel lane of the deck its height and
   the mute keys in view, and opens the lanes on demand.
+- A stem deck with key lock on runs four stretches, one per stem. Measured on 21 November 2026,
+  Windows x64, release build, blocks of 256 frames at 48 kHz, tempo 1.05, tracks of 25 s, 3750
+  blocks (`cargo test -p platter-engine --release --test stems cost -- --ignored --nocapture`).
+  On the audio thread, each stretch takes 4 to 5 % of its time: one stem deck with key lock takes
+  17 to 22 % on average and four take 70 to 85 % and overran their period in 500 to 1400 blocks,
+  so they would drop out. On worker threads (`docs/behavior/keylock.md`, *Worker threads*), the
+  default, four stem decks with key lock leave 10 to 11 % on the audio thread and overran no
+  block; in four runs of 20 s the workers fell behind in two, once each, for 8 and 9 frames.
+- A stem deck keeps its four stems decoded beside the track, each as long as the track, in
+  stereo samples of 32 bits: by calculation, a track of 6 minutes at 44.1 kHz takes 127 MB and
+  its stems 508 MB more.
 
 ## Edge cases
 

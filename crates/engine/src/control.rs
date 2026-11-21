@@ -21,6 +21,7 @@ use platter_dsp::effects::unit::Place;
 use platter_dsp::effects::{Controls, DEFAULT_AMOUNT, Effect, EffectKind};
 use platter_dsp::eq::{Band, EqModel, band_gain};
 use platter_dsp::filter::FilterModel;
+use platter_dsp::stretch::Stretch;
 
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
@@ -39,6 +40,7 @@ use crate::rt::{
     StemSettings, Stretcher, TrackAudio,
 };
 use crate::stretch::TrackStretch;
+use crate::stretch_pool::StretchPool;
 use crate::tap::TapTempo;
 
 /// Ranges of the tempo fader, as a fraction of the original speed either way.
@@ -600,6 +602,8 @@ pub struct Engine {
     finished_loads: Receiver<LoadResult>,
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
+    /// The workers key lock runs on, when it runs on worker threads.
+    stretch_pool: Option<Arc<StretchPool>>,
     recall: Option<Recall>,
     stem_recall: Option<StemRecall>,
     recorder: Recorder,
@@ -628,6 +632,47 @@ impl Engine {
     /// processor goes to whoever drives the audio: the device callback or the render.
     pub fn new(rate: SampleRate) -> (Self, Processor) {
         Self::with_analyser(rate, Arc::new(PlatterAnalyser::default()))
+    }
+
+    /// Runs key lock on worker threads at the priority of audio, or on the audio thread:
+    /// `docs/behavior/keylock.md`, *Worker threads*. Tracks loaded from then on follow it; a
+    /// loaded track keeps where it plays, and its workers, until it is loaded again.
+    pub fn set_key_lock_threads(&mut self, on: bool) -> Result<(), EngineError> {
+        if on == self.stretch_pool.is_some() {
+            return Ok(());
+        }
+        self.stretch_pool = if on {
+            Some(Arc::new(
+                StretchPool::start(self.rate).map_err(EngineError::Worker)?,
+            ))
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    /// As [`Self::set_key_lock_threads`] on, with workers that run only when
+    /// [`Self::pump_key_lock`] is called: for the tests, which run faster than real time.
+    pub fn set_key_lock_pumped(&mut self) {
+        self.stretch_pool = Some(Arc::new(StretchPool::pumped(self.rate)));
+    }
+
+    /// One pass of the workers of [`Self::set_key_lock_pumped`]; nothing otherwise.
+    pub fn pump_key_lock(&self) {
+        if let Some(pool) = &self.stretch_pool {
+            pool.pump();
+        }
+    }
+
+    /// The workers of key lock that run at the priority of audio, of all of them; `None` while
+    /// key lock runs on the audio thread.
+    pub fn key_lock_threads(&self) -> Option<(usize, usize)> {
+        self.stretch_pool.as_ref().map(|pool| pool.raised())
+    }
+
+    /// The frames key lock asked while playing that its workers had not rendered in time.
+    pub fn key_lock_starved(&self) -> usize {
+        self.stretch_pool.as_ref().map_or(0, |pool| pool.starved())
     }
 
     /// Sets where each load finds the grid and the cues kept for its track.
@@ -704,6 +749,7 @@ impl Engine {
             finished_loads,
             load_reports,
             analyser,
+            stretch_pool: None,
             recall: None,
             stem_recall: None,
             recorder: Recorder::new(recorded),
@@ -725,6 +771,8 @@ impl Engine {
         let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
         engine.recall = previous.recall.clone();
         engine.stem_recall = previous.stem_recall.clone();
+        // New workers at the new rate; without them key lock runs on the audio thread.
+        let _ = engine.set_key_lock_threads(previous.stretch_pool.is_some());
         // A recording is not carried over: it ends with the engine that made it.
         engine.recorder.names = previous.recorder.names.clone();
         engine.recorder.split_bytes = previous.recorder.split_bytes;
@@ -1774,6 +1822,7 @@ impl Engine {
         let analyser = Arc::clone(&self.analyser);
         let recall = self.recall.clone();
         let stem_recall = self.stem_recall.clone();
+        let pool = self.stretch_pool.clone();
         let rate = self.rate;
         std::thread::Builder::new()
             .name("platter-load".to_owned())
@@ -1788,9 +1837,10 @@ impl Engine {
                         Stems::None => None,
                         Stems::Given(paths) => Some(*paths),
                     };
-                    let mut loaded = prepare(decoded, path, rate, memory);
+                    let pool = pool.as_ref();
+                    let mut loaded = prepare(decoded, path, rate, memory, pool);
                     if let Some(paths) = &stems {
-                        match prepare_stems(&loaded.audio, paths, rate) {
+                        match prepare_stems(&loaded.audio, paths, rate, pool) {
                             Ok(stems) => loaded.stems = Some(stems),
                             Err(message) => loaded.stems_failed = Some(message),
                         }
@@ -2352,6 +2402,7 @@ fn prepare(
     path: PathBuf,
     engine_rate: SampleRate,
     memory: TrackMemory,
+    pool: Option<&Arc<StretchPool>>,
 ) -> Loaded {
     let info = TrackInfo {
         path,
@@ -2367,7 +2418,7 @@ fn prepare(
     let audio = TrackAudio::new(rate, stereo);
     // A track the stretch does not take plays without key lock.
     let stretch = TrackStretch::new(audio.frames(), rate, engine_rate)
-        .map(|stretch| Stretcher(Box::new(stretch)));
+        .map(|stretch| Stretcher(on_worker(Box::new(stretch), &audio, pool)));
     Loaded {
         audio,
         memory,
@@ -2379,6 +2430,18 @@ fn prepare(
     }
 }
 
+/// The stretch of `audio` on a worker of `pool`, or as it is without one.
+fn on_worker(
+    stretch: Box<dyn Stretch>,
+    audio: &TrackAudio,
+    pool: Option<&Arc<StretchPool>>,
+) -> Box<dyn Stretch> {
+    match pool {
+        Some(pool) => pool.adopt(stretch, audio),
+        None => stretch,
+    }
+}
+
 /// Decodes the four stems of `track` and builds what the deck plays them with. A stem at
 /// another rate is brought to that of the track; a shorter one is completed with silence and a
 /// longer one cut at the length of the track.
@@ -2386,6 +2449,7 @@ fn prepare_stems(
     track: &TrackAudio,
     paths: &[PathBuf; Stem::COUNT],
     engine_rate: SampleRate,
+    pool: Option<&Arc<StretchPool>>,
 ) -> Result<(Box<DeckStems>, [WaveformPeaks; Stem::COUNT]), String> {
     let mut audio = Vec::with_capacity(Stem::COUNT);
     let mut peaks = Vec::with_capacity(Stem::COUNT);
@@ -2400,7 +2464,7 @@ fn prepare_stems(
         let part = TrackAudio::new(track.rate(), stereo);
         stretch.push(
             TrackStretch::new(part.frames(), part.rate(), engine_rate)
-                .map(|stretch| Stretcher(Box::new(stretch))),
+                .map(|stretch| Stretcher(on_worker(Box::new(stretch), &part, pool))),
         );
         audio.push(part);
     }

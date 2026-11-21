@@ -328,3 +328,26 @@ fn key_lock_holds_on_a_44_1_khz_track_and_at_the_ends_of_the_tempo_range() {
         );
     }
 }
+
+/// `docs/behavior/keylock.md`, *Worker threads*: with key lock on worker threads, the deck keeps
+/// the pitch of its track and the tempo asked, as on the audio thread.
+#[test]
+fn key_lock_on_worker_threads_keeps_the_pitch_and_the_tempo() {
+    let mut rig = Rig::with_deck_a(tone());
+    rig.engine.set_key_lock_pumped();
+    // The track was loaded before: it is loaded again to run on the workers.
+    rig.load(A, tone());
+    rig.send(Command::DeckTempoSet {
+        deck: A,
+        ratio: 1.08,
+    });
+    rig.send(Command::DeckKeyLockToggle { deck: A });
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.5);
+    let start = position(&mut rig);
+    let heard = rig.run(2.0);
+    let moved = position(&mut rig) - start;
+    assert!(is_tone(&heard, 440.0), "{:?}", tone_of(&heard));
+    assert!((moved - 2.0 * 1.08).abs() < 0.01, "moved {moved} s");
+    assert_eq!(rig.engine.key_lock_starved(), 0);
+}
