@@ -31,7 +31,7 @@ pub use command::{
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
     FINE_MOVE_SECONDS, LoopRecorderSnapshot, MaximiserControls, MixerControls, PreviewSnapshot,
-    Recall, Snapshot, TEMPO_RANGES, TrackInfo,
+    Recall, Snapshot, StemRecall, TEMPO_RANGES, TrackInfo,
 };
 pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;

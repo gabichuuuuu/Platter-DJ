@@ -601,6 +601,7 @@ pub struct Engine {
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
     recall: Option<Recall>,
+    stem_recall: Option<StemRecall>,
     recorder: Recorder,
     loop_recorder: LoopControls,
     rate: SampleRate,
@@ -609,6 +610,18 @@ pub struct Engine {
 /// Gives the grid and the cues kept for the file at a path. It runs on the worker that
 /// loads the track, so it may read a file.
 pub type Recall = Arc<dyn Fn(&Path) -> Option<TrackMemory> + Send + Sync>;
+
+/// What the collection links to a track as its stems, in the order of [`Stem::ALL`]; it is
+/// called on the worker that loads the track: `docs/behavior/stems.md`.
+pub type StemRecall = Arc<dyn Fn(&Path) -> Option<[PathBuf; Stem::COUNT]> + Send + Sync>;
+
+/// Which stems a load plays.
+enum Stems {
+    /// Those the collection links to the track, if any.
+    Linked,
+    None,
+    Given(Box<[PathBuf; Stem::COUNT]>),
+}
 
 impl Engine {
     /// Builds an engine that runs at `rate` and the processor that produces its audio. The
@@ -620,6 +633,11 @@ impl Engine {
     /// Sets where each load finds the grid and the cues kept for its track.
     pub fn set_recall(&mut self, recall: Recall) {
         self.recall = Some(recall);
+    }
+
+    /// Lets `deck.load` find the stems of a track. Without it a track loads alone.
+    pub fn set_stem_recall(&mut self, recall: StemRecall) {
+        self.stem_recall = Some(recall);
     }
 
     /// Sets where each recording goes and how it is named. Without it `recorder.toggle` is
@@ -687,6 +705,7 @@ impl Engine {
             load_reports,
             analyser,
             recall: None,
+            stem_recall: None,
             recorder: Recorder::new(recorded),
             loop_recorder: LoopControls::default(),
             rate,
@@ -705,6 +724,7 @@ impl Engine {
     pub fn with_controls_of(rate: SampleRate, previous: &Self) -> (Self, Processor) {
         let (mut engine, processor) = Self::with_analyser(rate, Arc::clone(&previous.analyser));
         engine.recall = previous.recall.clone();
+        engine.stem_recall = previous.stem_recall.clone();
         // A recording is not carried over: it ends with the engine that made it.
         engine.recorder.names = previous.recorder.names.clone();
         engine.recorder.split_bytes = previous.recorder.split_bytes;
@@ -792,9 +812,10 @@ impl Engine {
     /// Validates a command and applies it. An invalid command changes nothing.
     pub fn dispatch(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
-            Command::DeckLoad { deck, path } => self.start_load(deck, path, None),
+            Command::DeckLoad { deck, path } => self.start_load(deck, path, Stems::Linked),
+            Command::DeckLoadTrack { deck, path } => self.start_load(deck, path, Stems::None),
             Command::DeckLoadStems { deck, path, stems } => {
-                self.start_load(deck, path, Some(stems))
+                self.start_load(deck, path, Stems::Given(stems))
             }
             stem @ (Command::DeckStemVolumeSet { .. }
             | Command::DeckStemMuteToggle { .. }
@@ -1745,18 +1766,14 @@ impl Engine {
         Ok(())
     }
 
-    fn start_load(
-        &mut self,
-        deck: DeckId,
-        path: PathBuf,
-        stems: Option<Box<[PathBuf; Stem::COUNT]>>,
-    ) -> Result<(), EngineError> {
+    fn start_load(&mut self, deck: DeckId, path: PathBuf, stems: Stems) -> Result<(), EngineError> {
         let state = &mut self.decks[deck.index()];
         state.generation += 1;
         let generation = state.generation;
         let reports = self.load_reports.clone();
         let analyser = Arc::clone(&self.analyser);
         let recall = self.recall.clone();
+        let stem_recall = self.stem_recall.clone();
         let rate = self.rate;
         std::thread::Builder::new()
             .name("platter-load".to_owned())
@@ -1766,6 +1783,11 @@ impl Engine {
                         .as_ref()
                         .and_then(|recall| recall(&path))
                         .unwrap_or_default();
+                    let stems = match stems {
+                        Stems::Linked => stem_recall.as_ref().and_then(|recall| recall(&path)),
+                        Stems::None => None,
+                        Stems::Given(paths) => Some(*paths),
+                    };
                     let mut loaded = prepare(decoded, path, rate, memory);
                     if let Some(paths) = &stems {
                         match prepare_stems(&loaded.audio, paths, rate) {

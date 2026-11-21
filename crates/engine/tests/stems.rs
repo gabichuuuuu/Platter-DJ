@@ -2,7 +2,8 @@
 
 mod common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use common::{RATE, Rig, sine_file};
 use platter_core::{DeckId, Stem};
@@ -225,4 +226,24 @@ fn stem_commands_are_read_by_name_and_checked() {
             })
             .is_err()
     );
+}
+
+#[test]
+fn a_load_takes_the_stems_the_collection_links_unless_it_asks_for_the_track() {
+    let mut rig = Rig::new();
+    let (path, stems) = stem_files("stems-linked", RATE);
+    let linked = path.clone();
+    rig.engine.set_stem_recall(Arc::new(move |asked: &Path| {
+        (asked == linked).then(|| (*stems).clone())
+    }));
+    rig.send(Command::DeckLoad {
+        deck: A,
+        path: path.clone(),
+    });
+    rig.engine.wait_for_loads();
+    assert!(rig.engine.snapshot().decks[0].stem_peaks.is_some());
+    rig.send(Command::DeckLoadTrack { deck: A, path });
+    rig.engine.wait_for_loads();
+    let snapshot = rig.engine.snapshot();
+    assert!(snapshot.decks[0].track.is_some() && snapshot.decks[0].stem_peaks.is_none());
 }

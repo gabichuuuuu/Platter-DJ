@@ -34,8 +34,14 @@ pub enum Command {
     PreviewSeek {
         position: f64,
     },
-    /// Loads a file into a deck, in the background.
+    /// Loads a file into a deck, in the background, with the stems the collection links to
+    /// it when there are some: `docs/behavior/stems.md`.
     DeckLoad {
+        deck: DeckId,
+        path: PathBuf,
+    },
+    /// Loads a file into a deck without its stems.
+    DeckLoadTrack {
         deck: DeckId,
         path: PathBuf,
     },
@@ -851,6 +857,11 @@ const BUTTON_ACTION: ParamSpec = ParamSpec {
 
 /// Every command, in the order a list shows them.
 pub const SPECS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "deck.load_track",
+        label: "Load track without its stems",
+        params: &[DECK, path("path")],
+    },
     CommandSpec {
         id: "deck.load_stems",
         label: "Load track with its stems",
@@ -1939,6 +1950,10 @@ impl Command {
                 deck: read.deck()?,
                 path: PathBuf::from(read.text("path")?),
             },
+            "deck.load_track" => Self::DeckLoadTrack {
+                deck: read.deck()?,
+                path: PathBuf::from(read.text("path")?),
+            },
             "deck.load_stems" => Self::DeckLoadStems {
                 deck: read.deck()?,
                 path: PathBuf::from(read.text("path")?),
@@ -2341,6 +2356,7 @@ impl Command {
             Self::PreviewPlayPause => "preview.play_pause",
             Self::PreviewSeek { .. } => "preview.seek",
             Self::DeckLoad { .. } => "deck.load",
+            Self::DeckLoadTrack { .. } => "deck.load_track",
             Self::DeckLoadStems { .. } => "deck.load_stems",
             Self::DeckStemVolumeSet { .. } => "deck.stem.volume.set",
             Self::DeckStemMuteToggle { .. } => "deck.stem.mute.toggle",
