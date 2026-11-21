@@ -64,6 +64,9 @@ The messages come from the MIDI 1.0 specification of the MIDI Association
 - A jump of the tempo master, a seek or a beatjump of the deck that leads, is not sent as a
   burst of messages: the count goes on from the new place in the beat, and a device that
   follows takes the new phase at the next restart.
+- A message found while no output was open, or more than 30 ms late, is dropped rather than
+  sent, so opening an output never sends a burst. An output that opens while sending is on
+  gets Stop and Start on the next beat; the output sends Stop as it closes after a Start.
 - The output, the offset and whether the clock is sent are kept with the settings. At start,
   sending is switched on again if it was on; messages go out once the output opens.
 - The *Sync* page of the preferences holds the output, the Send switch, the Restart key and the
@@ -77,14 +80,20 @@ The messages come from the MIDI 1.0 specification of the MIDI Association
   a bend ends, and the commands that set, step, tap or bend its tempo, choose a deck as the
   tempo master or change the mode of the clock do nothing.
 - Start makes the first Timing Clock after it the start of a beat; each 24th message after that
-  is the start of the next one. Continue goes on counting. Stop, or no message for half a
-  second, leaves the master clock running on its own at the last tempo it took.
+  is the start of the next one. Continue goes on counting from the next tick, at the tempo it
+  had. Stop, or no message for half a second, leaves the master clock running on its own at the
+  last tempo it took. A single tick off its time by more than half a tick is taken as it comes
+  without changing the tempo.
 - The tempo is taken once a beat of messages has come, between 20 and 400 BPM, smoothed by a
   loop that follows a step of tempo within about two beats.
 - The master clock takes that tempo and, about 60 times a second, where the clock received is
   in its beat when the block it renders next is heard: a gap up to a quarter of a beat is closed
   over 200 ms, a wider one at once.
-- A clock that follows is sent on as the master clock is, if sending is on.
+- A clock that follows is sent on as the master clock is, if sending is on. When following
+  makes its beat jump, the clock sent starts again on the next beat, so its count marks the
+  beat of the clock followed.
+- The tempo field, Tap, the step and bend keys and Auto and Master of the status header are
+  disabled while the source is external, as the commands would do nothing.
 - The input and the source are kept with the settings, on the Sync page with what arrives.
 
 ### What the snapshot shows
@@ -112,7 +121,7 @@ external.
 
 | Input | Result |
 | --- | --- |
-| The output goes away while sending | Its thread ends, the log says so and the Sync page says the output cannot be opened; choosing it again opens it |
+| The output goes away while sending | Its thread ends, the log says so and the Sync page says the output cannot be opened; choosing it again, or opening the preferences, tries it again |
 | `clock.midi.send.toggle` without an output | Accepted: the switch is on and nothing is sent until an output opens |
 | A new sample rate or buffer size | The sender keeps its output and takes the new latency; a new engine gives it a new queue |
 | The same port as the output of the clock and as a controller | The clock uses a connection of its own |

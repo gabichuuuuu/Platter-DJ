@@ -279,7 +279,12 @@ impl Processor {
             RtCommand::Metronome { on } => self.metronome.set_on(on),
             RtCommand::MidiClock { on } => self.midi_clock.set_sending(on),
             RtCommand::MidiClockRestart => self.midi_clock.restart(),
-            RtCommand::ClockFollow { bpm, phase } => self.clock.follow(bpm, phase),
+            RtCommand::ClockFollow { bpm, phase } => {
+                // The count of the clock sent no longer marks the beat: start it again there.
+                if self.clock.follow(bpm, phase) {
+                    self.midi_clock.restart();
+                }
+            }
             RtCommand::Record { on, recording } => self.recorder.set(on, recording),
             RtCommand::LoopRecord => {
                 let bpm = self.clock.pulse().bpm;

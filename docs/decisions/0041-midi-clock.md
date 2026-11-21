@@ -55,7 +55,11 @@ does not move while the connection is open (`MidiInput::connect`).
   up to a millisecond and a fraction of a buffer; the loop smooths the variation and keeps the
   mean, which the offset of the preferences takes away.
 - A jump of the phase of the master clock by more than three 24ths in one frame is not sent as a
-  burst: the count goes on from there.
+  burst: the count goes on from there. A jump that following a received clock makes restarts
+  the clock sent on the next beat.
+- The sender drops a message more than 30 ms past its time instead of sending it, so the
+  messages found while no output was open do not go out as a burst; an output that opens while
+  sending is on gets a restart, and the thread sends Stop as it ends after a Start.
 - A received clock comes through an input connection of its own that keeps the timing messages.
   Its callback stamps each one with the same clock as the sender, rather than with the
   timestamp of `midir`, whose zero is not that clock and whose unit on Windows is the
@@ -63,7 +67,8 @@ does not move while the connection is open (`MidiInput::connect`).
   (`platter_engine::midi_clock::ClockFollower`, 2 Hz), giving the tempo and the place in the
   beat; the application sends them to the engine about 60 times a second, for the time the
   next block is heard, and the master clock closes a gap of up to a quarter of a beat over
-  200 ms and a wider one at once.
+  200 ms and a wider one at once. After Continue, and for a tick more than half a tick off, the
+  loop takes the tick where it is and keeps its period, so neither swings the tempo.
 - `docs/dependencies.md` records that `midir` also opens outputs for this.
 
 ## How it was measured
@@ -78,10 +83,15 @@ With synthesised timings only, in the tests:
   than 0.25 ms (`src/midi_clock.rs`);
 - a received clock at 120 BPM with up to 2 ms of lateness on each message: the tempo found is
   within 0.1 BPM after two beats and the beat within 0.02 of a beat after five seconds; a step
-  to 126 BPM is within 0.5 BPM two beats later (`src/midi_clock.rs`);
+  to 126 BPM is within 0.5 BPM two beats later; after Stop, three seconds of ticks and
+  Continue, the tempo is within 0.2 BPM; one tick 100 ms late leaves it within 1 BPM
+  (`src/midi_clock.rs`);
 - the engine following a clock at 126 BPM: it takes the tempo exactly, and after a second each
-  tick it sends falls within a tenth of a 24th of the beat of the clock followed
+  tick it sends falls within a tenth of a 24th of the beat of the clock followed, and from the
+  restart its jump made, every 24th tick within a hundredth of a beat of a beat
   (`tests/midi_clock.rs`);
+- the sender: a message waits for its time, goes out up to 30 ms late and is dropped after
+  (`apps/platter/src/clock_sender.rs`);
 - the processor sending the clock with nobody reading the queue, and switching the source, does
   not allocate (`realtime_memory`).
 

@@ -135,6 +135,8 @@ pub struct ClockFollower {
     last: Option<f64>,
     /// Start or Continue came and Stop has not.
     running: bool,
+    /// The next tick puts the loop where it arrives, keeping the period: after Continue.
+    reseat: bool,
 }
 
 impl ClockFollower {
@@ -154,7 +156,10 @@ impl ClockFollower {
                 self.period = 0.0;
                 self.last = None;
             }
-            ClockMessage::Continue => self.running = true,
+            ClockMessage::Continue => {
+                self.running = true;
+                self.reseat = true;
+            }
             ClockMessage::Stop => self.running = false,
             ClockMessage::Tick => self.tick(time),
         }
@@ -190,6 +195,12 @@ impl ClockFollower {
         self.count += 1;
         let predicted = self.time + self.period;
         let error = time - predicted;
+        // Ticks after Continue, or one far off its time, are not jitter: the loop takes the
+        // tick where it is and keeps its period, rather than swing the tempo.
+        if std::mem::take(&mut self.reseat) || error.abs() > self.period / 2.0 {
+            self.time = time;
+            return;
+        }
         let omega = 2.0 * PI * FOLLOW_BANDWIDTH_HZ * self.period;
         self.time = predicted + SQRT_2 * omega * error;
         self.period += omega * omega * error;
@@ -292,6 +303,32 @@ mod tests {
         let end = send(&mut follower, end, 126.0, 2.0 * 60.0 / 126.0, 0.002);
         let bpm = follower.bpm(end).unwrap_or(0.0);
         assert!((bpm - 126.0).abs() < 0.5, "{bpm}");
+    }
+
+    #[test]
+    fn stop_and_continue_with_the_ticks_running_keep_the_tempo() {
+        let mut follower = ClockFollower::new();
+        follower.take(0.0, ClockMessage::Start);
+        let end = send(&mut follower, 0.0, 120.0, 2.0, 0.001);
+        follower.take(end, ClockMessage::Stop);
+        // The sender goes on ticking for three seconds while stopped, then continues.
+        let end = send(&mut follower, end, 120.0, 3.0, 0.001);
+        follower.take(end, ClockMessage::Continue);
+        let end = send(&mut follower, end, 120.0, 1.0, 0.001);
+        let bpm = follower.bpm(end).unwrap_or(0.0);
+        assert!((bpm - 120.0).abs() < 0.2, "{bpm}");
+    }
+
+    #[test]
+    fn one_tick_far_late_does_not_swing_the_tempo() {
+        let mut follower = ClockFollower::new();
+        follower.take(0.0, ClockMessage::Start);
+        let end = send(&mut follower, 0.0, 120.0, 2.0, 0.0);
+        let period = 60.0 / (120.0 * f64::from(TICKS_PER_BEAT));
+        follower.take(end + 0.1, ClockMessage::Tick);
+        let end = send(&mut follower, end + 0.1 + period, 120.0, 0.25, 0.0);
+        let bpm = follower.bpm(end).unwrap_or(0.0);
+        assert!((bpm - 120.0).abs() < 1.0, "{bpm}");
     }
 
     #[test]

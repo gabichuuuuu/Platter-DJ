@@ -84,17 +84,19 @@ impl Clock {
 
     /// Takes the tempo of a clock it follows, and where that clock is in its beat for the
     /// frame that comes next: `docs/behavior/midi-clock.md`, *Following*. The control side
-    /// makes the clock the tempo master first.
-    pub(super) fn follow(&mut self, bpm: Bpm, phase: f64) {
+    /// makes the clock the tempo master first. Returns whether the beat jumped.
+    pub(super) fn follow(&mut self, bpm: Bpm, phase: f64) -> bool {
         self.bpm = bpm.value();
         self.pulse.bpm = self.bpm;
         let gap = (phase - self.pulse.phase + 1.5).rem_euclid(1.0) - 0.5;
         if gap.abs() > FOLLOW_JUMP || self.follow_frames == 0 {
             self.pulse.phase = phase.rem_euclid(1.0);
             self.correction_frames = 0;
+            true
         } else {
             self.correction = gap / f64::from(self.follow_frames);
             self.correction_frames = self.follow_frames;
+            false
         }
     }
 

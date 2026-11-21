@@ -119,13 +119,15 @@ fn stopping_sends_stop_and_the_setting_survives_a_new_engine() {
 
 #[test]
 fn an_external_source_takes_the_tempo_and_the_beat_it_is_given() {
+    // Without the external source the tempo given is not taken.
+    let mut internal = Rig::new();
+    internal.engine.follow_clock(126.0, 0.0).unwrap();
+    internal.run_stereo(0.1);
+    internal.engine.poll();
+    assert_eq!(internal.engine.snapshot().clock.bpm, 120.0);
+    // The frames of this one start with the clock followed.
     let mut rig = Rig::new();
     let mut feed = rig.engine.take_clock_feed().unwrap();
-    // Without the external source the tempo given is not taken.
-    rig.engine.follow_clock(126.0, 0.0).unwrap();
-    rig.run_stereo(0.1);
-    rig.engine.poll();
-    assert_eq!(rig.engine.snapshot().clock.bpm, 120.0);
     rig.send(Command::ClockSourceSet { external: true });
     rig.send(Command::ClockMidiSendToggle);
     // A clock at 126 BPM whose beat starts a quarter of a second in: given before each block.
@@ -146,17 +148,37 @@ fn an_external_source_takes_the_tempo_and_the_beat_it_is_given() {
     assert!((clock.bpm - 126.0).abs() < 1e-9, "{}", clock.bpm);
     // After the first second, each tick sent falls on a 24th of the beat of the clock
     // followed, within a tenth of a 24th.
-    let late: Vec<u64> = drain(&mut feed)
+    let events = drain(&mut feed);
+    let late: Vec<u64> = events
         .iter()
         .filter(|event| event.message == ClockMessage::Tick && event.frame > u64::from(RATE))
         .map(|event| event.frame)
         .collect();
     assert!(late.len() > 2 * TICKS_PER_BEAT as usize);
+    // The jump to the beat followed restarted the clock sent: from its last Start, every 24th
+    // tick is the start of a beat.
     for frame in &late {
         let beat = (*frame as f64 / f64::from(RATE) - 0.25) / seconds_per_beat;
         let ticks = beat * f64::from(TICKS_PER_BEAT);
         let off = (ticks + 0.5).rem_euclid(1.0) - 0.5;
         assert!(off.abs() < 0.1, "{off} of a 24th at frame {frame}");
+    }
+    let restart = events
+        .iter()
+        .rposition(|event| event.message == ClockMessage::Start)
+        .unwrap();
+    assert!(events[restart].frame > 0, "a restart after the jump");
+    let beats: Vec<u64> = events[restart..]
+        .iter()
+        .filter(|event| event.message == ClockMessage::Tick)
+        .map(|event| event.frame)
+        .step_by(TICKS_PER_BEAT as usize)
+        .collect();
+    assert!(beats.len() >= 3);
+    for frame in beats {
+        let beat = (frame as f64 / f64::from(RATE) - 0.25) / seconds_per_beat;
+        let off = (beat + 0.5).rem_euclid(1.0) - 0.5;
+        assert!(off.abs() < 0.01, "{off} of a beat at frame {frame}");
     }
     // The tempo commands of the clock and the choice of a deck do nothing meanwhile.
     rig.send(Command::ClockTempoSet { bpm: 90.0 });
