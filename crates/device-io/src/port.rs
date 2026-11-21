@@ -20,14 +20,17 @@ pub enum PortError {
     NoSuchPort(String),
     /// The input exists but cannot be opened, for instance because another program holds it.
     Busy(String),
+    /// An open port stopped taking messages, usually because its device went away.
+    Gone(String),
 }
 
 impl fmt::Display for PortError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::System => f.write_str("the MIDI system cannot be used"),
-            Self::NoSuchPort(name) => write!(f, "no MIDI input is called `{name}`"),
-            Self::Busy(name) => write!(f, "the MIDI input `{name}` cannot be opened"),
+            Self::NoSuchPort(name) => write!(f, "no MIDI port is called `{name}`"),
+            Self::Busy(name) => write!(f, "the MIDI port `{name}` cannot be opened"),
+            Self::Gone(name) => write!(f, "the MIDI port `{name}` went away"),
         }
     }
 }
