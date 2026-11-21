@@ -38,9 +38,9 @@ pub(super) struct ChannelStrip {
     eq: ThreeBandEq,
     filter_position: Smoothed,
     filter: OneKnobFilter,
-    /// The path around the effects, used only while the deck plays stems.
-    around_eq: ThreeBandEq,
-    around_filter: OneKnobFilter,
+    /// The path around the effects, used only while the deck plays stems. Boxed so the
+    /// processor stays small enough to be built on the stack of any thread.
+    around: Box<(ThreeBandEq, OneKnobFilter)>,
     fader: Smoothed,
     balance: [Smoothed; 2],
     meter: PeakMeter,
@@ -57,8 +57,7 @@ impl ChannelStrip {
             eq: ThreeBandEq::new(rate),
             filter_position: parameter(0.0),
             filter: OneKnobFilter::new(rate),
-            around_eq: ThreeBandEq::new(rate),
-            around_filter: OneKnobFilter::new(rate),
+            around: Box::new((ThreeBandEq::new(rate), OneKnobFilter::new(rate))),
             fader: parameter(1.0),
             balance: [parameter(1.0); 2],
             meter: PeakMeter::new(rate),
@@ -91,12 +90,12 @@ impl ChannelStrip {
 
     pub(super) fn set_eq_model(&mut self, model: EqModel) {
         self.eq.set_model(model);
-        self.around_eq.set_model(model);
+        self.around.0.set_model(model);
     }
 
     pub(super) fn set_filter_model(&mut self, model: FilterModel) {
         self.filter.set_model(model);
-        self.around_filter.set_model(model);
+        self.around.1.set_model(model);
     }
 
     pub(super) fn set_filter(&mut self, position: f32) {
@@ -134,10 +133,9 @@ impl ChannelStrip {
         let filtered = self.filter.process(inserted, position);
         let pre = effects(Stage::Filtered, filtered);
         let (around_equalised, around) = if stems {
-            let equalised = self
-                .around_eq
-                .process([input.around[0] * gain, input.around[1] * gain], gains);
-            (equalised, self.around_filter.process(equalised, position))
+            let (eq, filter) = &mut *self.around;
+            let equalised = eq.process([input.around[0] * gain, input.around[1] * gain], gains);
+            (equalised, filter.process(equalised, position))
         } else {
             ([0.0; 2], [0.0; 2])
         };

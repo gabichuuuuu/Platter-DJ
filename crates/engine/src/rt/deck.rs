@@ -122,10 +122,10 @@ pub(super) struct DeckPlayer {
     lock: KeyLock,
     /// The stems played in the place of the track, when it came with them.
     stems: Option<Box<DeckStems>>,
-    /// Key lock of each stem, on and at the pitch of `lock`; boxed, since each one keeps
-    /// a tail of frames.
-    stem_locks: Box<[KeyLock; Stem::COUNT]>,
-    stem_mix: StemMix,
+    /// Key lock of each stem, on and at the pitch of `lock`. On the heap, built one by one:
+    /// each keeps a tail of frames, too large to pass through the stack four at a time.
+    stem_locks: Box<[KeyLock]>,
+    stem_mix: Box<StemMix>,
     /// Shift of the key in semitones, played through key lock.
     key_shift: f64,
     /// A loop or a hotcue of a playing deck keeps the timeline.
@@ -173,8 +173,10 @@ impl DeckPlayer {
             beat_to_keep: None,
             lock: KeyLock::new(rate.as_f64()),
             stems: None,
-            stem_locks: Box::new([(); Stem::COUNT].map(|()| KeyLock::new(rate.as_f64()))),
-            stem_mix: StemMix::new(rate),
+            stem_locks: (0..Stem::COUNT)
+                .map(|_| KeyLock::new(rate.as_f64()))
+                .collect(),
+            stem_mix: Box::new(StemMix::new(rate)),
             key_shift: 0.0,
             flux: false,
             reverse: false,
@@ -1249,11 +1251,11 @@ impl DeckPlayer {
             // What was heard before the jump: the stretch, when it was playing forward.
             let old = if tail.forward {
                 let lock = if stems.is_some() {
-                    &mut self.stem_locks[index]
+                    self.stem_locks.get_mut(index)
                 } else {
-                    &mut self.lock
+                    Some(&mut self.lock)
                 };
-                lock.tail_frame()
+                lock.and_then(KeyLock::tail_frame)
                     .unwrap_or_else(|| read_part(audio, stems, index, tail.position))
             } else {
                 read_part(audio, stems, index, tail.position)
