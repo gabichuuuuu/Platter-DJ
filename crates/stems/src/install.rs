@@ -406,4 +406,110 @@ mod speed {
             .unwrap();
         eprintln!("threads {threads}: 30 s of audio in {:?}", start.elapsed());
     }
+
+    /// The real archive, when `PLATTER_SPLEETER_ARCHIVE` names it: it is never in the
+    /// repository. `cargo test -p platter-stems --release real -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn the_real_archive_installs() {
+        let Some(path) = std::env::var_os("PLATTER_SPLEETER_ARCHIVE") else {
+            return;
+        };
+        let archive = std::fs::read(path).unwrap();
+        let start = std::time::Instant::now();
+        let file = install_spleeter(&archive).unwrap();
+        eprintln!("installed in {:?}: {} bytes", start.elapsed(), file.len());
+        if let Some(out) = std::env::var_os("PLATTER_SPLEETER_WEIGHTS") {
+            std::fs::write(out, &file).unwrap();
+        }
+    }
+
+    /// Separates a mixture of four invented sources with the real weights, when
+    /// `PLATTER_SPLEETER_WEIGHTS` names the installed file, and prints how much of each source
+    /// each stem holds: the largest share of each source should be in its own stem.
+    #[test]
+    #[ignore]
+    fn the_real_model_puts_each_source_in_its_stem() {
+        use crate::Separator;
+        let Some(path) = std::env::var_os("PLATTER_SPLEETER_WEIGHTS") else {
+            return;
+        };
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let model = load_spleeter(&std::fs::read(path).unwrap(), threads).unwrap();
+        let rate = 44_100.0f32;
+        let length = 12 * 44_100;
+        let tau = std::f32::consts::TAU;
+        let mut noise = 12345u32;
+        let mut random = move || {
+            noise = noise.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (noise >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+        };
+        let mut sources: [Vec<f32>; 4] = Default::default();
+        let (mut vocal_phase, mut bass_phase) = (0.0f32, 0.0f32);
+        for n in 0..length {
+            let t = n as f32 / rate;
+            // Drums: a kick on each half second and a hi-hat between.
+            let beat = t % 0.5;
+            let kick =
+                (-beat * 18.0).exp() * (tau * (50.0 + 90.0 * (-beat * 30.0).exp()) * beat).sin();
+            let hat = if (t + 0.25) % 0.5 < 0.04 {
+                random() * 0.3 * (-((t + 0.25) % 0.5) * 60.0).exp()
+            } else {
+                0.0
+            };
+            let drums = 0.6 * kick + hat;
+            // Bass: a line of low notes.
+            let note = [55.0, 55.0, 73.4, 65.4][(t / 1.0) as usize % 4];
+            bass_phase += tau * note / rate;
+            let bass = 0.35 * bass_phase.sin();
+            // Other: a sustained chord.
+            let other = 0.08
+                * [261.6, 329.6, 392.0]
+                    .iter()
+                    .map(|f| (tau * f * t).sin())
+                    .sum::<f32>();
+            // Vocals: a voice-like tone, harmonics with vibrato and a sung note per second.
+            let pitch = [220.0, 246.9, 261.6, 196.0][(t / 1.0) as usize % 4]
+                * (1.0 + 0.02 * (tau * 5.5 * t).sin());
+            vocal_phase += tau * pitch / rate;
+            let formant = |k: f32| {
+                (-((k * pitch - 700.0) / 500.0).powi(2)).exp()
+                    + 0.5 * (-((k * pitch - 1200.0) / 600.0).powi(2)).exp()
+            };
+            let vocals = 0.12
+                * (1..20)
+                    .map(|k| formant(k as f32) * (vocal_phase * k as f32).sin())
+                    .sum::<f32>();
+            for (source, value) in sources.iter_mut().zip([drums, bass, other, vocals]) {
+                source.push(value);
+            }
+        }
+        let mut stereo = Vec::with_capacity(length * 2);
+        for frame in 0..length {
+            let mix: f32 = sources.iter().filter_map(|source| source.get(frame)).sum();
+            stereo.extend_from_slice(&[mix, mix]);
+        }
+        let mut stems: [Vec<f32>; 4] = Default::default();
+        let start = std::time::Instant::now();
+        model
+            .separate(
+                &stereo,
+                &mut |stem, s| stems[stem.index()].extend(s.iter().step_by(2)),
+                &mut |_| true,
+            )
+            .unwrap();
+        eprintln!("12 s separated in {:?}", start.elapsed());
+        // The share of the energy of each source found in each stem, by projection.
+        for (si, source) in sources.iter().enumerate() {
+            let energy: f32 = source.iter().map(|v| v * v).sum();
+            let shares: Vec<String> = stems
+                .iter()
+                .map(|stem| {
+                    let dot: f32 = stem.iter().zip(source).map(|(a, b)| a * b).sum();
+                    format!("{:6.2}", dot / energy)
+                })
+                .collect();
+            eprintln!("{:7}: {}", Stem::ALL[si].name(), shares.join(" "));
+        }
+    }
 }

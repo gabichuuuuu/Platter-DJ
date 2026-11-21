@@ -49,7 +49,7 @@ its own code, graphics and sounds.
 | Loops and cues | Loops of a preset size or between an in and an out point, beatjumps and the moves of a loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them |
 | Sync | SYNC, MASTER and a phase meter per deck, and a master clock with Snap and Quantize |
 | Library | A collection with playlists, folders, favourites, a preparation list and the history of each session; tags of one or several tracks edited and written into the files; covers; tempo, grid, key and loudness analysed in the background; collection files in the XML format of rekordbox and PLS and XSPF playlists imported |
-| Stems | A stem deck plays the four stems linked to a track (drums, bass, other, vocals), each with volume, mute, filter and effect send; the stems are attached from a folder of separated files, and the four-deck layout shows a lane per stem. Platter does not separate tracks itself yet |
+| Stems | A stem deck plays the four stems linked to a track (drums, bass, other, vocals), each with volume, mute, filter and effect send; the stems are attached from a folder of separated files or separated by Platter with the 4-stem Spleeter model the user downloads, and the four-deck layout shows a lane per stem |
 | Remote control | `platter --mcp` serves the Model Context Protocol on the standard input and output, so an assistant that starts Platter can find and run any of its commands and read the state of the decks and the mixer; no port is opened (`docs/behavior/mcp.md`) |
 | Application | A browser with the collection and a file explorer; preferences for audio, general settings, decks, mixer, library and MIDI controllers; keyboard shortcuts in a file the user edits; English and Spanish |
 | Command line | `platter-cli info <file>` prints file information; `platter-cli render --script <mix.toml> --out <mix.wav>` renders a scripted mix to a WAV file without a sound card |
@@ -97,8 +97,9 @@ Everything known to be missing, unfinished or not yet listened to.
   10 ms; the buffer size setting cannot go below it. Going lower needs the exclusive mode of
   WASAPI, which is left for a later version (`docs/decisions/0010-audio-output.md`).
 - The clock of the status header is not shown, and screen readers get no information.
-- Platter does not separate a track into stems: the stems come from files the user attaches.
-  The separation waits for the choice of a model whose training data allows its use.
+- The separation into stems has been checked on invented mixtures, not listened to on real music.
+  Its model, the 4-stem Spleeter model, is downloaded by the user: the licence of its weights is
+  not confirmed by their publisher (`docs/legal-notes.md`).
 - The two-deck layout shows no stem lanes: a stem deck plays there, and its stems are driven
   through commands, the keyboard and MIDI.
 - The MCP server has been run with a script of messages, not with an MCP client yet.

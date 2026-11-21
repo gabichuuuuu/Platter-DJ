@@ -62,5 +62,16 @@ is a repack by a third party, not the original publication.
 - Speed, with invented weights, whose work is that of the real ones
   (`cargo test -p platter-stems --release speed -- --ignored`): on 21 November 2026, Windows x64,
   20 threads, 30 s of audio in 3.0 s. The application separates on half the processors.
-- Not yet: the real archive read end to end and a separation compared by ear and against the
-  original implementation.
+- The real archive, downloaded on 21 November 2026 with the digest of the release, installs in
+  3.2 s into a file of 157 MB: 28 convolutions, 24 transposed convolutions and 48 normalisations,
+  an index without compression (`cargo test -p platter-stems --release real -- --ignored`, with
+  `PLATTER_SPLEETER_ARCHIVE` naming the file).
+- With the real weights, 12 s of a mixture of four invented sources (a kick and a hi-hat, a bass
+  line, a chord, a voice-like tone with vibrato) separate in 2.4 s on 20 threads, and the share
+  of each source found in its own stem, by projection, is 0.73 for the drums (0.24 more of the
+  kick goes to the bass), 0.95 for the bass, 0.88 for the chord in other and 0.97 for the voice.
+- The release build of the application, driven through its MCP server with a profile of its own,
+  installed the model, separated a track of 8 s at 48 kHz, attached the four files and loaded the
+  track as a stem deck.
+- Not yet: a separation compared with the original implementation, nor listened to on real
+  music.

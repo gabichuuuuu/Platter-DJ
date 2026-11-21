@@ -150,3 +150,5 @@ What Platter does (choices: `docs/decisions/0038-stem-separation.md`):
 - A stem at another sample rate is brought to that of the track; one that cannot be read leaves
   the track playing alone.
 - `deck.stem.*` with a stem name that is not `drums`, `bass`, `other` or `vocals` is refused.
+- A track loaded by another spelling of its path, such as a short name of Windows, is not the one
+  the collection holds: it loads without its stems, as it loads without its memory.
