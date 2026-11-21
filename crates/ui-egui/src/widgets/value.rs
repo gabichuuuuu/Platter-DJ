@@ -458,6 +458,25 @@ pub fn fader(
 pub const FADER_WIDTH: f32 = 34.0;
 pub const CHANNEL_FADER_WIDTH: f32 = 46.0;
 
+/// A level along `rect`, such as the volume of a stem: dragging or clicking sets it where
+/// the pointer is, the arrows step it. Emits `make(position)` when it is moved; the caller
+/// draws it.
+pub fn level_bar(
+    cx: &mut Cx<'_>,
+    rect: Rect,
+    id: Id,
+    spec: ValueSpec<'_>,
+    make: impl FnOnce(f64) -> Action,
+) -> Response {
+    let (response, moved) = interact(cx, rect, rect, id, &spec, Axis::Horizontal);
+    let action = make(moved.unwrap_or(spec.position));
+    cx.record(action.id(), rect, ControlKind::Value, spec.enabled);
+    if moved.is_some() {
+        cx.out.emit(action);
+    }
+    response
+}
+
 /// Draws the crossfader along `rect` and emits `make(position)` when it is moved.
 pub fn crossfader(
     cx: &mut Cx<'_>,

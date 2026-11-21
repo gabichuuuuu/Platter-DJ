@@ -380,6 +380,51 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
     playhead(cx, lane, lane.center().x);
 }
 
+/// The scrolling waveform of one stem in `lane`, in the colour of the stem, with the
+/// playhead in the middle, at the zoom of the deck.
+pub fn stem_lane(
+    cx: &Cx<'_>,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    peaks: &WaveformPeaks,
+    ink: Color32,
+    zoom: usize,
+) {
+    let color = &cx.theme.tokens.color;
+    let painter = cx.painter().with_clip_rect(lane);
+    painter.rect_filled(lane, CornerRadius::ZERO, color.bg_app);
+    let window = ZOOM_SECONDS[zoom.min(ZOOM_SECONDS.len() - 1)];
+    let pixels_per_second = f64::from(lane.width()) / window;
+    let columns_per_pixel = 1.0 / (pixels_per_second * peaks.seconds_per_column());
+    let position = snapshot.position_seconds;
+    let centre = f64::from(lane.center().x);
+    let first = ((position - window / 2.0) * pixels_per_second).floor() as i64;
+    let last = ((position + window / 2.0) * pixels_per_second).ceil() as i64;
+    let mut mesh = Mesh::default();
+    for bar in first.max(0)..last {
+        let from = (bar as f64 * columns_per_pixel).floor() as usize;
+        if from >= peaks.columns().len() {
+            break;
+        }
+        let to = (((bar + 1) as f64 * columns_per_pixel).ceil() as usize).max(from + 1);
+        let left = centre + (bar as f64 - position * pixels_per_second);
+        add_column(
+            &mut mesh,
+            lane,
+            left as f32,
+            left as f32 + 1.0,
+            peak_over(peaks.columns(), from, to),
+            [ink; 3],
+        );
+    }
+    painter.add(mesh);
+    painter.vline(
+        lane.center().x,
+        lane.y_range(),
+        Stroke::new(cx.theme.tokens.stroke.playhead, color.playhead),
+    );
+}
+
 /// The two scrolling lanes of the main window: for each deck a gutter with its badge and
 /// zoom keys, and its lane.
 pub fn lanes(

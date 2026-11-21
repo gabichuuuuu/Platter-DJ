@@ -459,6 +459,17 @@ pub enum AppCommand {
     BrowserLoadSelected {
         deck: DeckId,
     },
+    /// Loads the selected track into a deck without its stems.
+    BrowserLoadSelectedTrack {
+        deck: DeckId,
+    },
+    /// Links the audio files of a folder named after the stems to the selected track:
+    /// `docs/behavior/stems.md`.
+    BrowserStemsAttach {
+        path: PathBuf,
+    },
+    /// The selected track forgets its stems; their files stay.
+    BrowserStemsRemove,
     /// Shows a fixed node of the tree, such as the collection, in the list.
     BrowserNodeSelect {
         node: BrowserNode,
@@ -1710,6 +1721,21 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[PATH],
     },
     CommandSpec {
+        id: "browser.load_selected_track",
+        label: "Load the selected track without its stems",
+        params: &[DECK],
+    },
+    CommandSpec {
+        id: "browser.stems.attach",
+        label: "Attach the stems in a folder to the selected track",
+        params: &[PATH],
+    },
+    CommandSpec {
+        id: "browser.stems.remove",
+        label: "Remove the stems of the selected track",
+        params: &[],
+    },
+    CommandSpec {
         id: "browser.preparation.select",
         label: "Use playlist as preparation list",
         params: &[PLAYLIST],
@@ -2369,6 +2395,11 @@ impl AppCommand {
             "browser.collection.import" => Self::BrowserCollectionImport {
                 path: PathBuf::from(read.text("path")?),
             },
+            "browser.load_selected_track" => Self::BrowserLoadSelectedTrack { deck: read.deck()? },
+            "browser.stems.attach" => Self::BrowserStemsAttach {
+                path: PathBuf::from(read.text("path")?),
+            },
+            "browser.stems.remove" => Self::BrowserStemsRemove,
             "browser.preparation.select" => Self::BrowserPreparationSelect {
                 playlist: read.playlist()?,
             },
@@ -2534,6 +2565,9 @@ impl AppCommand {
             Self::BrowserPlaylistExport { .. } => "browser.playlist.export",
             Self::BrowserPlaylistImport { .. } => "browser.playlist.import",
             Self::BrowserCollectionImport { .. } => "browser.collection.import",
+            Self::BrowserLoadSelectedTrack { .. } => "browser.load_selected_track",
+            Self::BrowserStemsAttach { .. } => "browser.stems.attach",
+            Self::BrowserStemsRemove => "browser.stems.remove",
             Self::BrowserPreparationSelect { .. } => "browser.preparation.select",
             Self::BrowserPreparationAppend => "browser.preparation.append",
             Self::BrowserFavouriteSet { .. } => "browser.favourite.set",

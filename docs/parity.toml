@@ -34,7 +34,7 @@ features = [
   { id = "decks-a-b", name = "Decks A and B", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels" },
   { id = "decks-c-d", name = "Decks C and D", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test four_decks; cargo test -p platter-ui-egui --test panels; hidden decks are not muted, see docs/behavior/decks.md" },
   { id = "track-deck", name = "Track deck", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-engine --test transport" },
-  { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "planned" },
+  { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test stems; cargo test -p platter-library --test store; cargo test -p platter-ui-egui --test panels; the stems are four files the user attaches until Platter separates tracks, see docs/behavior/stems.md" },
   { id = "remix-deck", name = "Remix deck", milestone = "M5", status = "planned" },
   { id = "live-input-deck", name = "Live input deck", milestone = "M5", status = "planned" },
 ]
@@ -175,8 +175,8 @@ id = "stems"
 title = "Stems"
 features = [
   { id = "generate", name = "Stem generation", milestone = "M4", status = "planned" },
-  { id = "stem-controls", name = "Stem deck: volume, mute, filter and effect send per stem", milestone = "M4", status = "planned" },
-  { id = "mute-buttons", name = "Always visible mute buttons", milestone = "M4", status = "planned" },
+  { id = "stem-controls", name = "Stem deck: volume, mute, filter and effect send per stem", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test stems; cargo test -p platter-ui-egui --test panels; the filter and the amount of the send are in the menu of the send key, see docs/behavior/stems.md" },
+  { id = "mute-buttons", name = "Always visible mute buttons", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; in the four-deck layout, the two-deck layout has no stem lanes yet, see docs/behavior/stems.md" },
 ]
 
 [[area]]

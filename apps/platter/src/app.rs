@@ -16,7 +16,7 @@ use platter_core::{DeckId, SampleRate};
 use platter_engine::command::SPECS;
 use platter_engine::{
     Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
-    RecordingNames, TempoRange,
+    RecordingNames, StemRecall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_ui_egui::collection::Collection;
@@ -118,6 +118,16 @@ fn recall_from(file: PathBuf) -> Recall {
             .memory_at(path)
             .ok()
             .flatten()
+    })
+}
+
+/// Reads the stems the collection in `file` links to a track; it runs on the worker that loads
+/// the track. A library that cannot be read links none: `docs/behavior/stems.md`.
+fn stem_recall_from(file: PathBuf) -> StemRecall {
+    Arc::new(move |path: &Path| {
+        let library = SqliteLibrary::open(&file).ok()?;
+        let track = library.track_at(path).ok()??;
+        library.stems(track.id).ok().flatten()
     })
 }
 
@@ -237,6 +247,7 @@ impl PlatterApp {
         browser.set_columns(&settings.columns);
         let library = folder.as_ref().map(|folder| folder.join(LIBRARY_FILE));
         let recall = library.clone().map(recall_from);
+        let stem_recall = library.clone().map(stem_recall_from);
         let background = background::Shared::default();
         background.range.set(settings.bpm_range);
         let (background_sender, background_reports) = std::sync::mpsc::channel();
@@ -279,6 +290,9 @@ impl PlatterApp {
         );
         if let Some(recall) = recall {
             engine.set_recall(recall);
+        }
+        if let Some(recall) = stem_recall {
+            engine.set_stem_recall(recall);
         }
         let home = config::home_dir();
         let default_recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
@@ -892,9 +906,16 @@ impl PlatterApp {
         self.engine = engine;
         self.engine_rate = rate;
         for deck in DeckId::ALL {
-            if let Some(track) = &snapshot.decks[deck.index()].track {
+            let held = &snapshot.decks[deck.index()];
+            if let Some(track) = &held.track {
                 let path = track.path.clone();
-                self.dispatch(Command::DeckLoad { deck, path }.into());
+                // A track loaded without its stems comes back without them.
+                let command = if held.stem_peaks.is_some() {
+                    Command::DeckLoad { deck, path }
+                } else {
+                    Command::DeckLoadTrack { deck, path }
+                };
+                self.dispatch(command.into());
             }
         }
         processor
@@ -1094,6 +1115,8 @@ impl PlatterApp {
         match &command {
             // The rules of loading of the Decks page: a playing deck takes no track.
             Command::DeckLoad { deck, path }
+            | Command::DeckLoadTrack { deck, path }
+            | Command::DeckLoadStems { deck, path, .. }
                 if self.settings.load_stopped_only
                     && self.engine.snapshot().decks[deck.index()].playing =>
             {
@@ -1107,7 +1130,9 @@ impl PlatterApp {
                 );
                 return Ok(());
             }
-            Command::DeckLoad { deck, .. } => self.notices[deck.index()] = None,
+            Command::DeckLoad { deck, .. }
+            | Command::DeckLoadTrack { deck, .. }
+            | Command::DeckLoadStems { deck, .. } => self.notices[deck.index()] = None,
             Command::MixerCrossfaderCurveSet { curve }
                 if self.settings.crossfader_curve != *curve =>
             {
@@ -1517,6 +1542,9 @@ impl PlatterApp {
     fn poll(&mut self) {
         for why in self.browser.take_unwritten() {
             self.log(Level::Warning, &format!("cannot write the tags of {why}"));
+        }
+        for why in self.browser.take_unattached() {
+            self.log(Level::Warning, &format!("no stems attached: {why}"));
         }
         while let Ok(report) = self.background_reports.try_recv() {
             match report {

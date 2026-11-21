@@ -12,4 +12,5 @@ pub mod mixer;
 pub mod recorder;
 pub mod rules;
 pub mod settings;
+pub mod stems;
 pub mod waveform;

@@ -27,6 +27,7 @@ use crate::keys;
 use crate::model::{DeckNotice, View};
 use crate::paint;
 use crate::panels::browser;
+use crate::panels::stems;
 use crate::panels::waveform::{self, deck_color};
 use crate::shell::ViewState;
 use crate::tokens::{TextStyle, Tokens, Weight};
@@ -285,7 +286,6 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
         egui::pos2(tempo_column.left() - FOUR_PADDING, body.bottom()),
     );
     let lane = Rect::from_min_size(main.min, egui::vec2(main.width(), FOUR_LANE_HEIGHT));
-    waveform::deck_lane(cx, lane, deck, snapshot, state.zoom[deck.index()]);
     let stripe = Rect::from_min_size(
         egui::pos2(
             main.left(),
@@ -293,7 +293,19 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
         ),
         egui::vec2(main.width(), FOUR_STRIPE_HEIGHT),
     );
-    waveform::overview(cx, stripe, deck, snapshot);
+    // A stem deck shows its four lanes in the place of the waveform and the stripe.
+    if snapshot.stem_peaks.is_some() {
+        stems::lanes(
+            cx,
+            Rect::from_min_max(lane.min, stripe.max),
+            deck,
+            snapshot,
+            state.zoom[deck.index()],
+        );
+    } else {
+        waveform::deck_lane(cx, lane, deck, snapshot, state.zoom[deck.index()]);
+        waveform::overview(cx, stripe, deck, snapshot);
+    }
 
     // From the bottom up: the hotcues, the transport and loop row, then the row of sync.
     let pads = Rect::from_min_max(
@@ -406,7 +418,12 @@ fn four_header(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state
                 egui::pos2(title_line.right() + tokens.space.s3, title_line.top() + 1.0),
                 egui::vec2(FOUR_TAG_WIDTH, 16.0),
             );
-            paint::tag(cx.painter(), theme, tag, texts.get("deck.kind_track"));
+            let kind = if snapshot.stem_peaks.is_some() {
+                "deck.kind_stems"
+            } else {
+                "deck.kind_track"
+            };
+            paint::tag(cx.painter(), theme, tag, texts.get(kind));
             let elided = paint::text_elided(
                 cx.painter(),
                 theme,

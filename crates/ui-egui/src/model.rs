@@ -310,6 +310,8 @@ pub struct TrackRow {
     pub comment: Option<String>,
     /// The key the analysis found, as the collection keeps it (`crate::keys`).
     pub key: Option<u8>,
+    /// A track of the collection with a set of stems linked to it: `docs/behavior/stems.md`.
+    pub stems: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

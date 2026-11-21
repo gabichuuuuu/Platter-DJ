@@ -706,10 +706,10 @@ fn deleting_a_track_asks_first_and_keeping_it_sends_nothing() {
     let mut stage = Stage::new(sample::playlist());
     let list = stage.control("browser.select").unwrap();
     stage.click(list, PointerButton::Secondary);
-    // Delete from collection is the last of ten items: Remove, the two of the preparation
-    // list, Reset played state, Edit details, Import cover, Delete cover, Colour, Rating, then
-    // it.
-    for _ in 0..9 {
+    // Delete from collection is the last of eleven items: Remove, the two of the preparation
+    // list, Reset played state, Edit details, Import cover, Delete cover, Colour, Rating, the
+    // stems of the folder the explorer shows, then it.
+    for _ in 0..10 {
         stage.key(Key::ArrowDown, Modifiers::NONE);
     }
     let opened = stage.key(Key::Enter, Modifiers::NONE);
@@ -723,7 +723,7 @@ fn deleting_a_track_asks_first_and_keeping_it_sends_nothing() {
     assert!(!stage.menu_open());
 
     stage.click(list, PointerButton::Secondary);
-    for _ in 0..9 {
+    for _ in 0..10 {
         stage.key(Key::ArrowDown, Modifiers::NONE);
     }
     stage.key(Key::Enter, Modifiers::NONE);

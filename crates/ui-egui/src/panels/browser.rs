@@ -318,7 +318,10 @@ pub fn browser(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, memory: &mut Browse
                 view.browser,
                 open,
                 memory,
-                view.settings.tag_writing == TagWriting::Everything,
+                MenuOptions {
+                    covers: view.settings.tag_writing == TagWriting::Everything,
+                    decks: view.settings.shown_decks(),
+                },
             ))
     {
         memory.menu = None;
@@ -558,17 +561,69 @@ fn status_bar(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView) {
     }
 }
 
+/// The entries of the stems of the selected track: those of the folder the explorer shows,
+/// and for a track that has some, loading it without them on each deck shown and forgetting
+/// them (`docs/behavior/stems.md`).
+fn stem_entries<'a>(
+    browser: &BrowserView,
+    folder: Option<(&PathBuf, &'a str)>,
+    load_labels: &'a [(DeckId, String)],
+    remove_label: &'a str,
+) -> Vec<(Item<'a>, Then)> {
+    let mut entries = Vec::new();
+    if let Some((path, label)) = folder {
+        entries.push((
+            Item {
+                label,
+                action: Some(AppCommand::BrowserStemsAttach { path: path.clone() }.into()),
+            },
+            Then::Nothing,
+        ));
+    }
+    let has_stems = browser
+        .selected
+        .and_then(|index| browser.rows.get(index))
+        .is_some_and(|row| matches!(&row.kind, RowKind::Track(track) if track.stems));
+    if has_stems {
+        for (deck, label) in load_labels {
+            entries.push((
+                Item {
+                    label,
+                    action: Some(AppCommand::BrowserLoadSelectedTrack { deck: *deck }.into()),
+                },
+                Then::Nothing,
+            ));
+        }
+        entries.push((
+            Item {
+                label: remove_label,
+                action: Some(AppCommand::BrowserStemsRemove.into()),
+            },
+            Then::Nothing,
+        ));
+    }
+    entries
+}
+
+/// What the context menu offers besides what the browser shows.
+struct MenuOptions {
+    /// The entries of the covers: a cover lives only in the file, so only while Platter
+    /// writes every tag.
+    covers: bool,
+    /// The decks the window shows, for the entries that load into one.
+    decks: &'static [DeckId],
+}
+
 /// The context menu of the playlists, a folder or a playlist of the tree, or of a row of a
 /// playlist. Returns whether it stays open; it closes when what it acts on is gone.
-/// `covers` says whether the entries of the covers are offered: a cover lives only in the
-/// file, so only while Platter writes every tag.
 fn context_menu(
     cx: &mut Cx<'_>,
     browser: &BrowserView,
     open: BrowserMenu,
     memory: &mut BrowserMemory,
-    covers: bool,
+    options: MenuOptions,
 ) -> bool {
+    let covers = options.covers;
     let texts = cx.texts;
     if open.target == MenuTarget::Columns {
         return columns_menu(cx, browser, open);
@@ -593,6 +648,20 @@ fn context_menu(
     let collection_label = explorer_name
         .as_deref()
         .map(|name| texts.format("browser.menu_import_collection", &[("folder", name)]));
+    let stems_label = explorer_name
+        .as_deref()
+        .map(|name| texts.format("browser.menu_stems_attach", &[("folder", name)]));
+    let load_track_labels: Vec<(DeckId, String)> = options
+        .decks
+        .iter()
+        .map(|deck| {
+            let letter = deck.letter().to_string();
+            (
+                *deck,
+                texts.format("browser.menu_load_track", &[("deck", &letter)]),
+            )
+        })
+        .collect();
     let import = |folder: Option<NodeId>| {
         explorer.zip(import_label.as_deref()).map(|(path, label)| {
             (
@@ -867,19 +936,28 @@ fn context_menu(
                 AppCommand::BrowserTrackDetailsOpen,
             ));
             entries.extend(cover_entries());
-            for (label, target) in [
-                ("browser.menu_colour", MenuTarget::Colour),
-                ("browser.menu_rating", MenuTarget::Rating),
-                ("browser.menu_delete_track", MenuTarget::ConfirmDelete),
-            ] {
-                entries.push((
+            let opens = |label: &'static str, target: MenuTarget| {
+                (
                     Item {
                         label: texts.get(label),
                         action: None,
                     },
                     Then::Menu(target),
-                ));
-            }
+                )
+            };
+            entries.push(opens("browser.menu_colour", MenuTarget::Colour));
+            entries.push(opens("browser.menu_rating", MenuTarget::Rating));
+            // The stems after what describes the track, and deleting it last.
+            entries.extend(stem_entries(
+                browser,
+                explorer.zip(stems_label.as_deref()),
+                &load_track_labels,
+                texts.get("browser.menu_stems_remove"),
+            ));
+            entries.push(opens(
+                "browser.menu_delete_track",
+                MenuTarget::ConfirmDelete,
+            ));
             (entries, id("browser-list"))
         }
         MenuTarget::Pictures
@@ -3045,6 +3123,30 @@ fn file_row(
                 columns.flag()
             } else {
                 (columns.title, columns.title)
+            };
+            // A track with stems says so at the end of its title cell.
+            let title_cell = if track.stems {
+                let tag = cx.texts.get("browser.stems_tag");
+                let width = paint::text_width(painter, theme, tag, tokens.text.label);
+                let place = Rect::from_min_max(
+                    egui::pos2(title_cell.right() - width, title_cell.top()),
+                    title_cell.max,
+                );
+                paint::text(
+                    painter,
+                    theme,
+                    place,
+                    Align2::LEFT_CENTER,
+                    tag,
+                    tokens.text.label,
+                    color.text_secondary,
+                );
+                Rect::from_min_max(
+                    title_cell.min,
+                    egui::pos2(place.left() - tokens.space.s2, title_cell.bottom()),
+                )
+            } else {
+                title_cell
             };
             let area = Rect::from_min_max(
                 title_cell.min,

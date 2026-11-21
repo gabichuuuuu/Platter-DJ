@@ -205,6 +205,7 @@ fn probe(path: &Path) -> RowKind {
             genre: info.tags.genre,
             comment: None,
             key: None,
+            stems: false,
         }),
         Err(_) => RowKind::Unreadable,
     }
@@ -591,6 +592,8 @@ impl FileBrowser {
             AppCommand::BrowserPlayedReset => collection.reset_played(track),
             AppCommand::BrowserTrackColourSet { colour } => collection.set_colour(track, *colour),
             AppCommand::BrowserTrackRatingSet { rating } => collection.set_rating(track, *rating),
+            AppCommand::BrowserStemsAttach { path } => collection.attach_stems(track, path.clone()),
+            AppCommand::BrowserStemsRemove => collection.remove_stems(track),
             _ => {}
         }
     }
@@ -713,6 +716,14 @@ impl FileBrowser {
         self.collection
             .as_mut()
             .map(Collection::take_unwritten)
+            .unwrap_or_default()
+    }
+
+    /// Why folders gave no set of stems since the last call.
+    pub fn take_unattached(&mut self) -> Vec<String> {
+        self.collection
+            .as_mut()
+            .map(Collection::take_unattached)
             .unwrap_or_default()
     }
 
@@ -920,6 +931,9 @@ impl FileBrowser {
                 }
             }
             AppCommand::BrowserLoadSelected { deck } => return self.load_selected(*deck),
+            AppCommand::BrowserLoadSelectedTrack { deck } => {
+                return self.load_selected_track(*deck);
+            }
             AppCommand::PreviewLoadSelected => {
                 let row = self.selected_row()?;
                 return match row.kind {
@@ -1060,7 +1074,9 @@ impl FileBrowser {
             AppCommand::BrowserTrackDelete
             | AppCommand::BrowserPlayedReset
             | AppCommand::BrowserTrackColourSet { .. }
-            | AppCommand::BrowserTrackRatingSet { .. } => self.change_selected(command),
+            | AppCommand::BrowserTrackRatingSet { .. }
+            | AppCommand::BrowserStemsAttach { .. }
+            | AppCommand::BrowserStemsRemove => self.change_selected(command),
             _ => {}
         }
         None
@@ -1110,6 +1126,17 @@ impl FileBrowser {
                 path: row.path.clone(),
             })),
         }
+    }
+
+    /// The selected track into a deck without its stems: `docs/behavior/stems.md`.
+    fn load_selected_track(&self, deck: DeckId) -> Option<Action> {
+        let row = self.selected_row()?;
+        (!matches!(row.kind, RowKind::Folder)).then(|| {
+            Action::Engine(Command::DeckLoadTrack {
+                deck,
+                path: row.path.clone(),
+            })
+        })
     }
 
     fn tree_rows(&self, folder: &Path, name: String, depth: usize, rows: &mut Vec<TreeRow>) {

@@ -47,12 +47,17 @@ names its own. By default the four stems play at full volume and sound like the 
 - **Stems of a track.** The library links a track to four audio files, one per stem, in the
   order drums, bass, other, vocals. Until Platter separates tracks itself, the files come from
   the user: the entry *Attach the stems in <folder>* of the context menu of a track takes the
-  four files of the folder the explorer shows whose names, without the extension, are `drums`,
-  `bass`, `other` and `vocals`, in any case. This is the layout separation tools commonly write.
-  *Remove the stems* forgets the link and deletes no file: Platter did not write them. A
-  track with stems shows a mark in the list.
-- **Loading.** A track with stems loads as a stem deck (`deck.load_stems`, with the track and its
-  four files); *Load as track* in the context menu loads the track alone (`deck.load`). The four files are
+  four audio files of the folder the explorer shows whose names, without the extension, are
+  `drums`, `bass`, `other` and `vocals`, in any case (`browser.stems.attach`). This is the layout
+  separation tools commonly write. A folder that lacks one of them, or has two files for one,
+  attaches nothing and the log says why. *Remove the stems* (`browser.stems.remove`) forgets the
+  link and deletes no file: Platter did not write them. A track with stems shows the word
+  *Stems* at the end of its title in the list.
+- **Loading.** `deck.load` loads the stems the collection links to the track, so a track with
+  stems loads as a stem deck whichever way it is loaded: the load keys, a drop or a mapping.
+  For such a track the context menu has *Load without stems on <deck>* for each deck shown
+  (`browser.load_selected_track`, which sends `deck.load_track`). `deck.load_stems` loads a track
+  with four files given, for the command line and remote control. The four files are
   decoded with the track on the load worker. Each stem has to have the sample rate of the track;
   a shorter one is completed with silence and a longer one is cut at the length of the track.
   When a stem cannot be read or its rate differs, the track loads alone and the deck says why.
@@ -75,10 +80,13 @@ names its own. By default the four stems play at full volume and sound like the 
   defaults. The controls of a deck that plays a track change nothing until stems are loaded,
   and that load resets them.
 - **Lanes and mute buttons.** In the four-deck layout a stem deck shows its four lanes in the place
-  of the waveform, each with the colour and the name of its stem, the mute button, the volume bar
-  and the send button (`docs/design/screens/M4-effects.html`). The mute buttons are always
-  visible. The filter and the send amount are set from the context menu of a lane and from
-  commands.
+  of the waveform and the stripe, each with the colour and the name of its stem, the mute key
+  `M`, the volume bar and the send key `FX`, and the scrolling waveform of the stem
+  (`docs/design/screens/M4-effects.html`); the header tags the deck *Stems*. The mute keys are
+  always visible. The context menu of the send key sets the amount of the send in steps of a
+  quarter, turns the filter on or off and sets it to five positions; any amount and position
+  are reached through the commands. A muted stem lights its mute key in its colour and dims
+  its volume bar.
 
 ## Differences
 
@@ -89,7 +97,11 @@ names its own. By default the four stems play at full volume and sound like the 
   has one path after the effects, and keeping a second path through the mixer effect would need a
   second instance of it.
 - The filter and the send amount have no knob of their own in the lane: the layout gives the lane
-  the mute button, the volume and the send button.
+  the mute key, the volume and the send key.
+- The stem lanes take the place of the stripe of the whole track in the four-deck layout, as the
+  layout draws them; the manual keeps the stripe.
+- The two-deck layout has no stem lanes yet: its design does not place them. A stem deck plays
+  there and its stems are driven through commands, the keyboard and MIDI.
 
 ## Edge cases
 
