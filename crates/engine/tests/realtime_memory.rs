@@ -15,8 +15,8 @@ use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
 use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, LoopSource,
-    MixerMode, MoveMode, Output, SizeStep, SyncMode, UnitMode,
+    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, InputSource,
+    InputTarget, LoopSource, MixerMode, MoveMode, Output, SizeStep, SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -444,6 +444,29 @@ fn frequency(samples: &[f32]) -> f64 {
     (rising.len() - 1) as f64 * f64::from(RATE) / span
 }
 
+/// A deck that plays the input and the auxiliary input, then the deck back on its track.
+fn input_commands() -> Vec<Command> {
+    vec![
+        Command::InputRoutingSet {
+            target: InputTarget::Deck(DeckId::A),
+            source: InputSource::parse("1-2"),
+        },
+        Command::DeckTypeSet {
+            deck: DeckId::A,
+            live: true,
+        },
+        Command::InputRoutingSet {
+            target: InputTarget::Aux,
+            source: InputSource::parse("1"),
+        },
+        Command::MixerAuxSet { level: 0.5 },
+        Command::DeckTypeSet {
+            deck: DeckId::A,
+            live: false,
+        },
+    ]
+}
+
 fn hotcue(number: usize, pressed: bool) -> Command {
     Command::DeckHotcueTrigger {
         deck: DeckId::A,
@@ -484,14 +507,24 @@ fn process_neither_allocates_nor_frees() {
     // Four channels, so the headphone path runs too.
     let mut block = vec![0.0f32; 512 * 4];
     let mut events = 0;
+    // The input device delivers a block of two inputs before each block of the output, so
+    // the reader of the input runs through all of it.
+    let mut feed = rig
+        .engine
+        .take_input_feed()
+        .expect("the feed of a new engine");
+    let input: Vec<f32> = (0..512 * 2)
+        .map(|i| ((i / 2) as f32 * 0.05).sin() * 0.3)
+        .collect();
     let mut run = |rig: &mut Rig, blocks: usize| {
         for _ in 0..blocks {
+            feed.push(&input, 2);
             let (_, counted) = count(|| rig.processor.process(&mut block, 4));
             events += counted;
         }
     };
 
-    for command in commands() {
+    for command in commands().into_iter().chain(input_commands()) {
         rig.send(command);
         run(&mut rig, 5);
     }

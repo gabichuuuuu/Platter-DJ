@@ -32,8 +32,8 @@ pub use command::{
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
-    FINE_MOVE_SECONDS, LoopRecorderSnapshot, MaximiserControls, MixerControls, PreviewSnapshot,
-    Recall, Snapshot, StemRecall, TEMPO_RANGES, TrackInfo,
+    FINE_MOVE_SECONDS, InputSnapshot, LoopRecorderSnapshot, MaximiserControls, MixerControls,
+    PreviewSnapshot, Recall, Snapshot, StemRecall, TEMPO_RANGES, TrackInfo,
 };
 pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;
@@ -50,6 +50,7 @@ pub use platter_stems::{
 pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{
-    LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
+    INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS, LoopPhase, LoopSource,
+    LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
 };
 pub use wav::WavWriter;
