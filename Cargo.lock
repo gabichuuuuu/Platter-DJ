@@ -2315,6 +2315,7 @@ dependencies = [
  "platter-core",
  "platter-decode",
  "platter-dsp",
+ "platter-stems",
  "platter-testkit",
  "proptest",
  "rtrb",
@@ -2335,6 +2336,13 @@ name = "platter-mcp"
 version = "0.5.0"
 dependencies = [
  "platter-engine",
+]
+
+[[package]]
+name = "platter-stems"
+version = "0.5.0"
+dependencies = [
+ "platter-core",
 ]
 
 [[package]]

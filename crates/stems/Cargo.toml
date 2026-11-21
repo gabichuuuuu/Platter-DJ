@@ -1,0 +1,13 @@
+[package]
+name = "platter-stems"
+description = "Stem separation of Platter: the transform, the networks and the masks, over weights the user installs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+platter-core = { path = "../core" }
