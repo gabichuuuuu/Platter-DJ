@@ -150,7 +150,7 @@ fn follow_section(cx: &mut Cx<'_>, page: Rect, top: f32, view: &View<'_>) {
         settings.clock_received,
     ) {
         (None, _, _) => texts.get("settings.clock_no_input").to_owned(),
-        (Some(_), false, _) => texts.get("settings.clock_closed").to_owned(),
+        (Some(_), false, _) => texts.get("settings.clock_input_closed").to_owned(),
         (Some(_), true, None) => texts.get("settings.clock_waiting").to_owned(),
         (Some(_), true, Some(tenths)) => texts.format(
             "settings.clock_receiving",

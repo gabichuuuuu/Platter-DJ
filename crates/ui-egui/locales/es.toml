@@ -617,6 +617,7 @@ clock_offset_help = "Un valor negativo envía el reloj antes de que se oiga el a
 follow_clock = "Seguir un reloj"
 clock_input = "Entrada del reloj"
 clock_no_input = "No hay ninguna entrada de reloj elegida."
+clock_input_closed = "No se puede abrir la entrada. Conéctala o elige otra."
 clock_waiting = "Esperando un reloj: arranca el equipo que lo envía."
 clock_receiving = "Recibiendo {bpm} BPM"
 clock_source = "Reloj maestro"

@@ -341,8 +341,9 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
         quantize,
     ] = rects;
 
-    // The tempo is the clock's own only while the clock is the tempo master.
-    let own = clock.master.is_none();
+    // The tempo is the clock's own only while the clock is the tempo master and follows no
+    // received clock (`docs/behavior/midi-clock.md`, *Following*).
+    let own = clock.master.is_none() && !clock.external;
     paint::text(
         painter,
         theme,
@@ -410,9 +411,10 @@ fn master_clock(cx: &mut Cx<'_>, span: Rect, clock: &ClockSnapshot) {
         spec,
         Press::Click(Command::ClockMetronomeToggle.into()),
     );
+    // A clock that follows a received one is the tempo master: the mode does not change.
     let choices = modes.map(|label| Choice {
         label,
-        enabled: true,
+        enabled: !clock.external,
     });
     choice::segmented(
         cx,

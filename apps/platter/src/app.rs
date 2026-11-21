@@ -1064,15 +1064,20 @@ impl PlatterApp {
         self.open_clock();
     }
 
-    /// The delay of the MIDI clock: the latency of the output and the offset of the settings.
-    fn clock_delay(&self) -> Duration {
+    /// The latency of the output that plays: zero for the silent one.
+    fn output_latency(&self) -> Duration {
         let latency_ms = self
             .output
             .as_ref()
             .filter(|output| output.is_audible())
             .map_or(0.0, |output| output.info().latency_ms());
-        let latency = Duration::from_secs_f64((latency_ms / 1_000.0).max(0.0));
-        clock_sender::signed_delay(latency, self.settings.clock.offset_ms)
+        Duration::from_secs_f64((latency_ms / 1_000.0).max(0.0))
+    }
+
+    /// The delay of the MIDI clock sent: the latency of the output and the offset of the
+    /// settings.
+    fn clock_delay(&self) -> Duration {
+        clock_sender::signed_delay(self.output_latency(), self.settings.clock.offset_ms)
     }
 
     /// Opens the MIDI output the settings name for the clock and starts its sender; one that
@@ -1107,6 +1112,11 @@ impl PlatterApp {
             Ok(sender) => {
                 self.log(Level::Info, &format!("MIDI clock: sending to `{name}`"));
                 self.clock_sender = Some(sender);
+                // Sending may have been on before the output opened: the devices that follow
+                // get a Start on the next beat.
+                if self.engine.snapshot().clock.midi_clock {
+                    self.dispatch_engine(Command::ClockMidiRestart);
+                }
             }
             // The feed went with the thread that could not start: this engine sends no clock.
             Err(error) => self.log(Level::Error, &format!("MIDI clock: {error}")),
@@ -1145,7 +1155,8 @@ impl PlatterApp {
             }
         }
         let now = self.clock_base.elapsed().as_secs_f64();
-        let heard = now + self.clock_delay().as_secs_f64();
+        // The offset is for the clock sent; a received one is taken as it comes.
+        let heard = now + self.output_latency().as_secs_f64();
         if let (Some(bpm), Some(phase)) = (self.follower.bpm(now), self.follower.phase_at(heard))
             && let Err(error) = self.engine.follow_clock(bpm, phase)
         {
@@ -1563,9 +1574,17 @@ impl PlatterApp {
                 self.last_input_scan = Instant::now();
                 self.midi_outputs = platter_device_io::outputs().unwrap_or_default();
                 self.scan_midi();
+                // A port of the clock that could not be opened may be there now.
+                if self.clock_sender.is_none() {
+                    self.open_clock();
+                }
+                if self.clock_input.is_none() {
+                    self.open_clock_input();
+                }
             }
             AppCommand::ClockMidiOutputSet { port } => {
-                if self.settings.clock.output != port {
+                // Choosing again an output that could not be opened tries it again.
+                if self.settings.clock.output != port || self.clock_sender.is_none() {
                     self.settings.clock.output = port;
                     self.save_settings();
                     self.close_clock();
@@ -1573,7 +1592,7 @@ impl PlatterApp {
                 }
             }
             AppCommand::ClockMidiInputSet { port } => {
-                if self.settings.clock.input != port {
+                if self.settings.clock.input != port || self.clock_input.is_none() {
                     self.settings.clock.input = port;
                     self.save_settings();
                     self.open_clock_input();

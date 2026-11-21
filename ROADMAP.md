@@ -80,6 +80,11 @@ until it is done and its result is written in the note or the decision it names:
   a message to its command, and whether a minimised window still carries out the messages
   (`docs/decisions/0024-midi-mappings.md`, `docs/decisions/0025-midi-ports.md`,
   `docs/decisions/0026-midi-in-the-application.md`).
+- **An audio input and a MIDI clock.** A live deck and the auxiliary input fed by a real input
+  device, on the same interface as the output and on another one, with the delay from input to
+  output (`docs/decisions/0040-audio-input.md`); the MIDI clock sent to a device that follows
+  it and received from one that sends it, with the jitter of each
+  (`docs/decisions/0041-midi-clock.md`).
 - **Listening with real tracks.** Key lock, including the attack of kicks and the start of
   each pass of a short loop (`docs/decisions/0021-key-lock-stretch.md`); sync and the master
   clock; loops, beatjump and hotcues; flux and reverse (`docs/decisions/0030-flux-and-reverse.md`);

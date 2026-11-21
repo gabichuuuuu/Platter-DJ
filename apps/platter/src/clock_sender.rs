@@ -10,7 +10,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use platter_device_io::Output;
-use platter_engine::midi_clock::{ClockEvent, ClockFeed, FrameClock};
+use platter_engine::midi_clock::{ClockEvent, ClockFeed, ClockMessage, FrameClock};
 
 /// The longest the thread sleeps between two looks at the frame count of the processor.
 const LOOK: Duration = Duration::from_millis(1);
@@ -93,11 +93,38 @@ fn micros(duration: Duration) -> i64 {
     i64::try_from(duration.as_micros()).unwrap_or(i64::MAX)
 }
 
+/// A message more than this late is dropped rather than sent: it was found while no output was
+/// open, or the thread stalled, and a burst of old ticks would be heard as a jump of tempo.
+const STALE: Duration = Duration::from_millis(30);
+
+/// What to do with the oldest message waiting.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Next {
+    /// Not due yet: wait this long.
+    Wait(Duration),
+    Send,
+    /// Too late to be of use.
+    Drop,
+}
+
+/// The fate of a message due at `due` seconds, at `now`.
+fn next(due: f64, now: f64) -> Next {
+    if !due.is_finite() || now - due > STALE.as_secs_f64() {
+        Next::Drop
+    } else if due > now {
+        Next::Wait(Duration::from_secs_f64(due - now))
+    } else {
+        Next::Send
+    }
+}
+
 fn run(mut feed: ClockFeed, output: &mut Output, sample_rate: u32, shared: &Shared) -> ClockFeed {
     let start = Instant::now();
     let mut clock = FrameClock::new(sample_rate);
     let mut block = None;
     let mut pending: VecDeque<ClockEvent> = VecDeque::with_capacity(PENDING);
+    // A Start has gone out and no Stop after it: the thread ends with a Stop.
+    let mut started = false;
     while !shared.stop.load(Ordering::Relaxed) {
         let now = start.elapsed().as_secs_f64();
         let frame = feed.block_frame();
@@ -113,22 +140,35 @@ fn run(mut feed: ClockFeed, output: &mut Output, sample_rate: u32, shared: &Shar
         }
         let delay = shared.delay_us.load(Ordering::Relaxed) as f64 / 1e6;
         let mut wait = LOOK;
-        while let Some(event) = pending.front() {
+        while let Some(event) = pending.front().copied() {
             let Some(due) = clock.time_of(event.frame).map(|time| time + delay) else {
                 break;
             };
-            let now = start.elapsed().as_secs_f64();
-            if due > now {
-                wait = wait.min(Duration::from_secs_f64(due - now));
-                break;
-            }
-            if output.send(&[event.message.byte()]).is_err() {
-                shared.gone.store(true, Ordering::Relaxed);
-                return feed;
+            match next(due, start.elapsed().as_secs_f64()) {
+                Next::Wait(until) => {
+                    wait = wait.min(until);
+                    break;
+                }
+                Next::Drop => {}
+                Next::Send => {
+                    if output.send(&[event.message.byte()]).is_err() {
+                        shared.gone.store(true, Ordering::Relaxed);
+                        return feed;
+                    }
+                    match event.message {
+                        ClockMessage::Start => started = true,
+                        ClockMessage::Stop => started = false,
+                        ClockMessage::Tick | ClockMessage::Continue => {}
+                    }
+                }
             }
             pending.pop_front();
         }
         std::thread::sleep(wait);
+    }
+    if started {
+        // A device left running without its clock would keep its last tempo.
+        let _ = output.send(&[ClockMessage::Stop.byte()]);
     }
     feed
 }
@@ -137,7 +177,7 @@ fn run(mut feed: ClockFeed, output: &mut Output, sample_rate: u32, shared: &Shar
 mod tests {
     use std::time::Duration;
 
-    use super::signed_delay;
+    use super::{Next, next, signed_delay};
 
     #[test]
     fn a_negative_offset_sends_earlier_and_never_before_the_frame() {
@@ -146,5 +186,18 @@ mod tests {
         assert_eq!(signed_delay(latency, -5), Duration::from_millis(7));
         assert_eq!(signed_delay(latency, 30), Duration::from_millis(42));
         assert_eq!(signed_delay(latency, -50), Duration::ZERO);
+    }
+
+    #[test]
+    fn a_message_waits_for_its_time_and_one_long_past_is_dropped() {
+        assert!(matches!(
+            next(1.010, 1.000),
+            Next::Wait(wait) if (wait.as_secs_f64() - 0.010).abs() < 1e-6
+        ));
+        assert_eq!(next(1.000, 1.000), Next::Send);
+        assert_eq!(next(1.000, 1.020), Next::Send, "a little late still goes");
+        // Found while no output was open: seconds old.
+        assert_eq!(next(1.000, 4.000), Next::Drop);
+        assert_eq!(next(f64::NAN, 1.000), Next::Drop);
     }
 }

@@ -160,6 +160,13 @@ Everything known to be missing, unfinished or not yet listened to.
   analysis or tapped, typed or stepped in by hand.
 - The metronome of the master clock clicks on the headphones only, so a device with two
   outputs does not play it, and nobody has listened to it.
+- The input of a device feeds live decks and the auxiliary input, chosen on the Input page of
+  the preferences; it has been measured with synthesised signals only, never with a real input
+  device, and the face of a live deck still shows its track (`docs/behavior/live-input.md`).
+  There is no FX Send input yet.
+- The MIDI clock is sent and followed from the Sync page of the preferences; only synthesised
+  timings were measured, never a real MIDI device (`docs/behavior/midi-clock.md`). There is no
+  Link.
 - Key lock softens the attack of kicks, the first milliseconds after a jump play with the
   pitch following the speed, a track below 32 kHz plays without it, and nobody has listened to
   it; only synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`). The
