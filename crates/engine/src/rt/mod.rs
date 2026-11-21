@@ -425,6 +425,10 @@ pub enum RtCommand {
     Metronome {
         on: bool,
     },
+    /// The mix recorder records the input routed to the recorders instead of the master.
+    RecorderSource {
+        external: bool,
+    },
     /// Starts or stops sending the MIDI clock: `docs/behavior/midi-clock.md`.
     MidiClock {
         on: bool,
@@ -488,15 +492,19 @@ pub enum RtCommand {
 pub enum InputTarget {
     Deck(DeckId),
     Aux,
+    /// The external source of the mix recorder and of the loop recorder:
+    /// `docs/behavior/recording.md`.
+    Recorder,
 }
 
 impl InputTarget {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Deck(DeckId::A),
         Self::Deck(DeckId::B),
         Self::Deck(DeckId::C),
         Self::Deck(DeckId::D),
         Self::Aux,
+        Self::Recorder,
     ];
 
     /// Its place in [`Self::ALL`].
@@ -504,6 +512,7 @@ impl InputTarget {
         match self {
             Self::Deck(deck) => deck.index(),
             Self::Aux => DeckId::COUNT,
+            Self::Recorder => DeckId::COUNT + 1,
         }
     }
 
@@ -515,6 +524,7 @@ impl InputTarget {
             Self::Deck(DeckId::C) => "deck_c",
             Self::Deck(DeckId::D) => "deck_d",
             Self::Aux => "aux",
+            Self::Recorder => "recorder",
         }
     }
 

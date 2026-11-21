@@ -57,6 +57,8 @@ pub struct RecorderSnapshot {
     pub file: Option<PathBuf>,
     /// Why the last recording stopped by itself, until the next one starts.
     pub failure: Option<String>,
+    /// It records the input routed to the recorders instead of the internal mix.
+    pub external: bool,
 }
 
 /// What the control side tells a worker.
@@ -90,6 +92,8 @@ pub(crate) struct Recorder {
     /// The number of the last recording started.
     number: u32,
     recording: bool,
+    /// The source is the input routed to the recorders.
+    pub(crate) external: bool,
     /// A worker failed and the stop could not be sent yet.
     stop_wanted: bool,
     file: Option<PathBuf>,
@@ -105,6 +109,7 @@ impl Recorder {
             split_bytes: SPLIT_BYTES,
             number: 0,
             recording: false,
+            external: false,
             stop_wanted: false,
             file: None,
             failure: None,
@@ -304,6 +309,7 @@ impl Recorder {
             dropped_frames: shared.recorder_dropped.get(),
             file: self.file.clone(),
             failure: self.failure.clone(),
+            external: self.external,
         }
     }
 }

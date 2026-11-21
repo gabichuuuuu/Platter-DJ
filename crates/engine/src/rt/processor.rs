@@ -75,6 +75,8 @@ pub struct Processor {
     tone: TestTone,
     metronome: Metronome,
     midi_clock: MidiClock,
+    /// The mix recorder records the input routed to the recorders: `docs/behavior/recording.md`.
+    recorder_external: bool,
     preview: PreviewPlayer,
     /// Zero mixes inside, one sends each deck to its own pair:
     /// `docs/behavior/external-mixer.md`.
@@ -134,6 +136,7 @@ impl Processor {
             tone: TestTone::new(rate),
             metronome: Metronome::new(rate),
             midi_clock: MidiClock::new(queues.clock),
+            recorder_external: false,
             preview: PreviewPlayer::new(rate),
             external: parameter(0.0),
             external_eq_gain: parameter(0.0),
@@ -286,6 +289,7 @@ impl Processor {
                 }
             }
             RtCommand::Record { on, recording } => self.recorder.set(on, recording),
+            RtCommand::RecorderSource { external } => self.recorder_external = external,
             RtCommand::LoopRecord => {
                 let bpm = self.clock.pulse().bpm;
                 self.loop_recorder.record(bpm);
@@ -531,6 +535,7 @@ impl Processor {
         let source = match self.loop_recorder.source() {
             LoopSource::Master => mix,
             LoopSource::Deck(deck) => before_faders[deck.index()],
+            LoopSource::External => routed_input(InputTarget::Recorder, &self.routes),
         };
         let (dry, looped) = self.loop_recorder.next(source, pulse.phase);
         // The auxiliary input joins after the channels; it is silent in external mode, where
@@ -548,7 +553,11 @@ impl Processor {
             .limiter
             .process([maximised[0] + tone, maximised[1] + tone]);
         // The internal mix, in either mode: `docs/behavior/recording.md`.
-        self.recorder.feed(master);
+        self.recorder.feed(if self.recorder_external {
+            routed_input(InputTarget::Recorder, &self.routes)
+        } else {
+            master
+        });
         // The preview plays on, heard or not, so its position moves as it would.
         let preview = self.preview.next();
         // The pre-listened decks and the ticks wait as long as the master does, so a deck

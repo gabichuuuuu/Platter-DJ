@@ -862,6 +862,10 @@ impl Engine {
         // A recording is not carried over: it ends with the engine that made it.
         engine.recorder.names = previous.recorder.names.clone();
         engine.recorder.split_bytes = previous.recorder.split_bytes;
+        let _ = engine.send(RtCommand::RecorderSource {
+            external: previous.recorder.external,
+        });
+        engine.recorder.external = previous.recorder.external;
         // The loop is lost with the engine; its settings are not.
         for command in previous.loop_recorder.as_commands() {
             let _ = engine.send(command);
@@ -1279,6 +1283,11 @@ impl Engine {
             Command::RecorderToggle => {
                 return self.recorder.toggle(self.rate, &mut self.ends.commands);
             }
+            Command::RecorderSourceSet { external } => {
+                self.send(RtCommand::RecorderSource { external })?;
+                self.recorder.external = external;
+                return Ok(());
+            }
             Command::RecorderCut => {
                 self.recorder.cut();
                 return Ok(());
@@ -1580,7 +1589,7 @@ impl Engine {
     }
 
     /// The commands of the loop recorder. Rec is refused in external mixer mode, where the
-    /// mix the loop plays into is not heard.
+    /// mix the loop plays into is not heard, whatever its source.
     fn dispatch_loop_recorder(&mut self, command: Command) -> Result<(), EngineError> {
         let rt = match command {
             Command::LoopRecorderRecord => {

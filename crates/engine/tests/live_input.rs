@@ -7,7 +7,7 @@ mod common;
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
 use platter_engine::command::{Args, Value};
-use platter_engine::{Command, InputFeed, InputSource, InputTarget, MixerMode};
+use platter_engine::{Command, InputFeed, InputSource, InputTarget, LoopSource, MixerMode};
 use platter_testkit::measure::{max_step, sine_fit};
 use platter_testkit::signal::channel;
 
@@ -263,4 +263,52 @@ fn the_commands_parse_from_text() {
             .dispatch(Command::MixerAuxSet { level: 1.5 })
             .is_err()
     );
+}
+
+#[test]
+fn the_loop_recorder_records_the_input_routed_to_the_recorders() {
+    let mut rig = Rig::new();
+    let mut device = Device::new(rig.engine.take_input_feed().unwrap());
+    route(&mut rig, InputTarget::Recorder, "1-2");
+    rig.send(Command::LoopRecorderSizeSet { bars: 1.0 });
+    rig.send(Command::LoopRecorderSourceSet {
+        source: LoopSource::External,
+    });
+    // In external mixer mode the loop would play into a master nobody hears: Rec is refused
+    // for the input too.
+    rig.send(Command::MixerModeSet {
+        mode: MixerMode::External,
+    });
+    assert!(rig.engine.dispatch(Command::LoopRecorderRecord).is_err());
+    rig.send(Command::MixerModeSet {
+        mode: MixerMode::Internal,
+    });
+    run(&mut rig, &mut device, 0.3);
+    rig.send(Command::LoopRecorderRecord);
+    // The pass waits for the beat and lasts a bar of two seconds at 120 BPM.
+    run(&mut rig, &mut device, 2.6);
+    // Nothing routed any more: what sounds is the loop of the input.
+    route(&mut rig, InputTarget::Recorder, "none");
+    run(&mut rig, &mut device, 0.1);
+    let heard = run(&mut rig, &mut device, 1.0);
+    let measured = amplitude(&heard, 0, 1_000.0);
+    assert!((measured - 0.5).abs() < 0.02, "{measured}");
+    assert!((amplitude(&heard, 1, 300.0) - 0.25).abs() < 0.02);
+}
+
+#[test]
+fn the_mix_recorder_takes_its_source_and_keeps_it_for_a_new_engine() {
+    let mut rig = Rig::new();
+    assert!(!rig.engine.snapshot().recorder.external);
+    rig.send(Command::RecorderSourceSet { external: true });
+    assert!(rig.engine.snapshot().recorder.external);
+    let (engine, _) = platter_engine::Engine::with_controls_of(common::rate(), &rig.engine);
+    assert!(engine.snapshot().recorder.external);
+    let args: Args = [("source".to_owned(), Value::Text("external".to_owned()))]
+        .into_iter()
+        .collect();
+    assert!(matches!(
+        Command::from_args("recorder.source.set", &args),
+        Ok(Command::RecorderSourceSet { external: true })
+    ));
 }

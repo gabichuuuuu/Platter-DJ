@@ -115,15 +115,19 @@ a recording that runs keeps its folder, its name and its split size until it sto
   recording is the master output at its own level, which the master meter of the header
   already shows. The *level* of the inventory item is therefore the master level; a gain of
   its own is a question for the maintainer.
-- No external source: Platter has no audio input until M5 (input routing).
+- **The external source is an input routing.** `recorder.source.set` `internal` records the
+  master, `external` the input routed to the recorders on the Input page
+  (`input.routing.set` with the target `recorder`, `docs/behavior/live-input.md`), where the
+  source is chosen too; the input is recorded as it arrives, without the master volume or the
+  limiter.
 - Three split sizes instead of any size up to 2048 MB: the manual gives the largest only, and
   three steps of a segmented choice are quicker to set than a number.
 - The folder is taken from the explorer of the browser, as the music folders are: Platter has
   no dialog of the system to pick a folder.
-- The source is always the internal mix: an external input waits for input routing (M5).
+- The source is the internal mix unless the external one is chosen.
 - The display shows the time, not the size of the file.
-- In external mixer mode the file holds the internal mix, which the collapsed mixer of that
-  mode does not show; recording the external mixer needs an input.
+- In external mixer mode the internal mix is the one the collapsed mixer of that mode does not
+  show; the external source records the hardware mixer through an input.
 - Names in UTC: Platter has no source for the local time zone (`docs/behavior/browser.md`,
   *Differences*).
 - At 1440 points the status header has no room left for the indicator. The master clock is
@@ -250,7 +254,8 @@ can be chosen again.
 
 **Source.** `Master` (default), the mix of the decks before the master volume, or one deck,
 `Deck A` to `Deck D`, after its equaliser, filter and effects and before its fader, so a deck
-heard only in the headphones can be recorded (`loop_recorder.source.set`). The source can
+heard only in the headphones can be recorded (`loop_recorder.source.set`), or `External`, the
+input routed to the recorders on the Input page (`docs/behavior/live-input.md`). The source can
 change during an overdub. The loop is never recorded into itself: the source is taken before
 the loop is added to the mix.
 
@@ -272,9 +277,10 @@ playing and around an undo or a redo; an overdub fades its input in and out over
 
 - Rec waits for the next beat instead of starting at once, so the loop lies on the beats of the
   mix and repeats in time.
-- No external input and no *Rec. Latency*: Platter has no audio input until M5 (input
-  routing). In external mixer mode the panel is disabled and Rec is refused, since the mix of
-  the decks the loop would play into is not heard.
+- No *Rec. Latency*. In external mixer mode the panel is disabled and Rec is refused, the
+  external source too, since the mix the loop plays into is not heard: the manual makes the
+  external input the only source there, and where its loop is heard is a question for the
+  maintainer.
 - One layer of undo, as the manual describes Undo as undoing the last overdub.
 - The loop is not stretched when the tempo changes; nothing in the sections read says it is.
 - The size is a menu of four lengths, as the design system draws it.

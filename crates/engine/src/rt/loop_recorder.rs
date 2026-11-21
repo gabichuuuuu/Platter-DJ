@@ -35,6 +35,8 @@ pub enum LoopSource {
     Master,
     /// One deck after its effects and before its fader.
     Deck(DeckId),
+    /// The input routed to the recorders: `docs/behavior/recording.md`.
+    External,
 }
 
 /// What the loop recorder is doing, as the panel shows it.
