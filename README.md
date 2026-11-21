@@ -6,10 +6,11 @@
 
 <p align="center">
   An open-source DJ application for professional use, written in Rust,<br>
-  with its own code, graphics and sounds.
+  with its own graphics and sounds, and its own code as the goal.
 </p>
 
 <p align="center">
+  <a href="#why-platter">Why Platter</a> ·
   <a href="#status">Status</a> ·
   <a href="#download">Download</a> ·
   <a href="#building">Building</a> ·
@@ -31,6 +32,40 @@ Platter is an independent, open-source DJ application written in Rust. The goal 
 desktop program for DJs, with the functions expected of professional DJ software, written with
 its own code, graphics and sounds.
 
+That goal is not reached yet. The graphics, the sounds and most of the code are Platter's, but
+today it also uses open-source libraries of others: for the audio device and MIDI, the window,
+decoding audio and cover pictures, key lock and the library file. Each one is listed with its
+licence in [`docs/dependencies.md`](docs/dependencies.md), is confined to one place and is to be
+replaced with Platter's own code, piece by piece. Until then Platter is not presented as written
+entirely by its project.
+
+## Why Platter
+
+The professional DJ applications in wide use are closed programs sold by their vendors. Platter
+differs in these ways; each one is enforced by the code or was measured, and none is a promise.
+
+- **Open.** The whole program is under `MIT OR Apache-2.0`, with no paid tier. Controller
+  mappings and keyboard shortcuts are TOML files the user edits, and every action is a command
+  with a stable identifier, so the keyboard, the window, the command line and the MCP server
+  drive the same functions.
+- **Private.** No telemetry, no account and no automatic reports; the application opens no
+  network connection without an explicit action of the user. Stem separation runs on the
+  computer, with no service and no native library.
+- **Built not to crash.** The workspace lints deny `unwrap`, `expect`, `panic!` and `unsafe` in
+  shipped code, and files, MIDI messages and command parameters are treated as untrusted input.
+  `cargo xtask ci` checks this on every change.
+- **Steady audio.** The audio thread does not allocate, lock or wait, and a test fails if it
+  allocates or frees memory (`crates/engine/tests/realtime_memory.rs`). Rust has no garbage
+  collector, so nothing pauses the audio to reclaim memory. Decoding, analysis and separation
+  run on worker threads.
+- **Measured** (Windows x64, release build): 30 s of audio separated into four stems in 3.0 s
+  on 20 threads; the application uses half the processors for it.
+
+Latency, CPU per deck, memory with four decks and start-up time have not been measured yet,
+against Platter or any other program, so no claim of speed against other software is made. Rust
+compiles to native code like the C++ most DJ software is written in; a difference will come
+from design and has to be shown by measurement.
+
 ## Status
 
 > [!IMPORTANT]
@@ -48,7 +83,9 @@ its own code, graphics and sounds.
 | Mixer | Gain, three-band equaliser with kill keys, filter, pan, faders, a crossfader with three curves, meters and a master with a safety limiter; pre-listening on a second output pair |
 | Loops and cues | Loops of a preset size or between an in and an out point, beatjumps and the moves of a loop; eight hotcues per deck that store cues and loops, with a CUE page to edit them |
 | Sync | SYNC, MASTER and a phase meter per deck, and a master clock with Snap and Quantize |
-| Library | A collection with playlists, folders, favourites, a preparation list and the history of each session; tags of one or several tracks edited and written into the files; covers; tempo, grid, key and loudness analysed in the background |
+| Library | A collection with playlists, folders, favourites, a preparation list and the history of each session; tags of one or several tracks edited and written into the files; covers; tempo, grid, key and loudness analysed in the background; collection files in the XML format of rekordbox and PLS and XSPF playlists imported |
+| Stems | A stem deck plays the four stems linked to a track (drums, bass, other, vocals), each with volume, mute, filter and effect send; the stems are attached from a folder of separated files or separated by Platter with the 4-stem Spleeter model the user downloads, and a lane per stem shows in both layouts, with the mute keys always on screen |
+| Remote control | `platter --mcp` serves the Model Context Protocol on the standard input and output, so an assistant that starts Platter can find and run any of its commands and read the state of the decks and the mixer; no port is opened (`docs/behavior/mcp.md`) |
 | Application | A browser with the collection and a file explorer; preferences for audio, general settings, decks, mixer, library and MIDI controllers; keyboard shortcuts in a file the user edits; English and Spanish |
 | Command line | `platter-cli info <file>` prints file information; `platter-cli render --script <mix.toml> --out <mix.wav>` renders a scripted mix to a WAV file without a sound card |
 | Gate | `cargo xtask ci` runs formatting, lints, tests, the layer rules, the licence and advisory checks, the clean-room check and the feature inventory check |
@@ -95,6 +132,14 @@ Everything known to be missing, unfinished or not yet listened to.
   10 ms; the buffer size setting cannot go below it. Going lower needs the exclusive mode of
   WASAPI, which is left for a later version (`docs/decisions/0010-audio-output.md`).
 - The clock of the status header is not shown, and screen readers get no information.
+- The separation into stems has been checked on invented mixtures, not listened to on real music.
+  Its model, the 4-stem Spleeter model, is downloaded by the user: the licence of its weights is
+  not confirmed by their publisher (`docs/legal-notes.md`).
+- Key lock runs on worker threads by default, so four stem decks with key lock fit; a change of
+  tempo is then heard about 17 ms later. Without that preference, four stem decks with key lock
+  would drop out. The workers have been measured on Windows only; on Linux they need the right to
+  real-time scheduling (`docs/behavior/keylock.md`, *Worker threads*).
+- The MCP server has been run with a script of messages, not with an MCP client yet.
 - The file selector does not list the drives of a Windows machine by itself; a drive is named
   in the settings file.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)

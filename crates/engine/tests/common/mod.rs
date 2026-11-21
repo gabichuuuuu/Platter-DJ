@@ -74,6 +74,8 @@ impl Rig {
         let mut output = vec![0.0; frames * channels];
         for block in output.chunks_mut(BLOCK_FRAMES * channels) {
             self.processor.process(block, channels);
+            // The workers of key lock, when a test asks for them, run between two blocks.
+            self.engine.pump_key_lock();
         }
         output
     }

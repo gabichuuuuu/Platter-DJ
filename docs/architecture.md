@@ -115,7 +115,7 @@ change of sample rate builds the engine again. Details and what was measured:
 
 Every action visible to the user is a command with a stable identifier such as
 `deck.play_pause`, a label, typed parameters and tests. Keyboard, interface and CLI emit the same
-commands; MIDI and MCP will too. The interface reads a state snapshot and acts through commands;
+commands, and so do MIDI and the MCP server (`docs/behavior/mcp.md`). The interface reads a state snapshot and acts through commands;
 it holds no engine state. The list of commands is the table `SPECS` in
 `crates/engine/src/command.rs`; their behaviour is described in `docs/behavior/`.
 

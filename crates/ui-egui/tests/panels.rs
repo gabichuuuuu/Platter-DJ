@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
-use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
 use platter_engine::{ClockMode, Command, EffectKind, LoopPhase, MixerMode, UnitMode};
 use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
@@ -296,6 +296,35 @@ fn states() -> Vec<State> {
     let mut bands = sample::four_decks();
     bands.settings.wave_colour = WaveColour::Bands;
     let bands = state("wave-bands", bands, None);
+    let stems = state("stem-deck", sample::stem_deck(), None);
+    let two_deck_stems = state("two-deck-stems", sample::two_deck_stems(), None);
+    // The menu of a track with stems, with a folder in the explorer to take stems from.
+    let mut stem_entry = sample::playlist();
+    stem_entry.browser.explorer = Some(PathBuf::from("Music/Stems/Glasshouse"));
+    if let Some(row) = stem_entry
+        .browser
+        .selected
+        .and_then(|index| stem_entry.browser.rows.get_mut(index))
+        && let platter_ui_egui::model::RowKind::Track(track) = &mut row.kind
+    {
+        track.stems = true;
+    }
+    let mut stem_entry = state("stem-entry-menu", stem_entry, None);
+    stem_entry.menu = Some(BrowserMenu {
+        target: MenuTarget::Entry,
+        at: egui::pos2(1000.0, 560.0),
+    });
+    // The same menu with the separation model installed, and while a track is separated: the
+    // status bar says how far it has gone.
+    let mut separate = stem_entry.clone();
+    separate.name = "separation-menu";
+    separate.scene.browser.separation_model = true;
+    let mut separating = separate.clone();
+    separating.name = "separating-menu";
+    separating.scene.browser.separation = Some(platter_ui_egui::model::SeparationStatus {
+        track: "Glasshouse".to_owned(),
+        done: 0.42,
+    });
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -339,6 +368,11 @@ fn states() -> Vec<State> {
         details_several,
         state("four-decks", sample::four_decks(), None),
         bands,
+        stems,
+        two_deck_stems,
+        stem_entry,
+        separate,
+        separating,
         state("effects-single", single_unit(), None),
         state("four-units", sample::four_units(), None),
         state(
@@ -2444,4 +2478,151 @@ fn the_keys_of_the_loop_recorder_send_its_commands() {
         stage.click(delete.center()),
         [Action::Engine(Command::LoopRecorderDelete)]
     );
+}
+
+/// A stem deck of the four-deck layout shows its four lanes in the place of its waveform,
+/// each with its mute key, volume and send key: `docs/behavior/stems.md`.
+#[test]
+fn a_stem_deck_shows_a_lane_with_its_controls_for_each_stem() {
+    for language in Language::ALL {
+        let texts = Texts::load(language).unwrap();
+        let state = state_named("stem-deck");
+        let mut stage = Stage::with_texts(&state, texts.clone());
+        let (_, shapes) = stage.frame(Vec::new());
+        let controls = stage.controls();
+        let of = |command: &str| -> Vec<Rect> {
+            controls
+                .iter()
+                .filter(|control| control.command == command && control.enabled)
+                .map(|control| control.rect)
+                .collect()
+        };
+        let mutes = of("deck.stem.mute.toggle");
+        let volumes = of("deck.stem.volume.set");
+        let sends = of("deck.stem.send.toggle");
+        assert_eq!(
+            (mutes.len(), volumes.len(), sends.len()),
+            (4, 4, 4),
+            "{language:?}"
+        );
+        // One lane under the other, inside the waveform zone of the deck.
+        for pair in mutes.windows(2) {
+            assert!(pair[0].bottom() <= pair[1].top(), "{language:?}: {pair:?}");
+        }
+        let painted = placed_texts(&shapes);
+        for (index, stem) in Stem::ALL.into_iter().enumerate() {
+            let name = texts.get(&format!("stems.{stem}")).to_owned();
+            assert!(
+                painted.iter().any(|(text, at)| *text == name
+                    && at.right() <= mutes[index].left()
+                    && at.center().y >= mutes[index].top()
+                    && at.center().y <= mutes[index].bottom()),
+                "{language:?}: {name} is not beside its mute key"
+            );
+            let mute = texts.get("stems.mute");
+            assert!(
+                painted
+                    .iter()
+                    .any(|(text, at)| text == mute && mutes[index].contains_rect(*at)),
+                "{language:?}: {mute} does not fit its key"
+            );
+        }
+        assert!(
+            painted
+                .iter()
+                .any(|(text, _)| text == texts.get("deck.kind_stems")),
+            "{language:?}: the header does not say Stems"
+        );
+    }
+}
+
+/// The keys of a stem lane send the commands of that stem, and the menu of its send key
+/// sets the amount and the filter.
+#[test]
+fn the_keys_of_a_stem_lane_send_the_commands_of_their_stem() {
+    let state = state_named("stem-deck");
+    let mut stage = Stage::new(&state);
+    let mutes: Vec<Rect> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "deck.stem.mute.toggle")
+        .map(|control| control.rect)
+        .collect();
+    assert_eq!(
+        stage.click(mutes[1].center()),
+        [Action::Engine(Command::DeckStemMuteToggle {
+            deck: DeckId::C,
+            stem: Stem::Bass,
+        })]
+    );
+    let mut stage = Stage::new(&state);
+    let send = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "deck.stem.send.toggle")
+        .nth(3)
+        .unwrap();
+    stage.click_with(send.rect.center(), PointerButton::Secondary);
+    stage.frame(Vec::new());
+    let items = stage.controls();
+    for command in [
+        "deck.stem.send.set",
+        "deck.stem.filter.toggle",
+        "deck.stem.filter.set",
+    ] {
+        assert!(
+            items.iter().any(|control| control.command == command),
+            "{command} is not in the menu of the send key"
+        );
+    }
+}
+
+/// In the two-deck layout the parallel lane of a stem deck keeps the mute keys of its stems on
+/// screen, each with its name, and its fold key shows the four lanes of the stems in its place:
+/// `docs/behavior/stems.md`, *Lanes and mute buttons*.
+#[test]
+fn the_parallel_lane_of_a_stem_deck_keeps_its_mute_keys_and_unfolds_its_lanes() {
+    for language in Language::ALL {
+        let texts = Texts::load(language).unwrap();
+        let state = state_named("two-deck-stems");
+        let mut stage = Stage::with_texts(&state, texts.clone());
+        let (_, shapes) = stage.frame(Vec::new());
+        let enabled = |stage: &Stage, command: &str| -> Vec<Rect> {
+            stage
+                .controls()
+                .iter()
+                .filter(|control| control.command == command && control.enabled)
+                .map(|control| control.rect)
+                .collect()
+        };
+        let mutes = enabled(&stage, "deck.stem.mute.toggle");
+        assert_eq!(mutes.len(), 4, "{language:?}");
+        assert!(enabled(&stage, "deck.stem.volume.set").is_empty());
+        let painted = placed_texts(&shapes);
+        for (index, stem) in Stem::ALL.into_iter().enumerate() {
+            let name = texts.get(&format!("stems.{stem}")).to_owned();
+            assert!(
+                painted
+                    .iter()
+                    .any(|(text, at)| *text == name && mutes[index].contains_rect(*at)),
+                "{language:?}: {name} does not fit its mute key"
+            );
+        }
+        let folds = enabled(&stage, "waveform.stem_lanes.toggle");
+        assert_eq!(folds.len(), 1, "only the stem deck has a fold key");
+        let actions = stage.click(folds[0].center());
+        let unfold = AppCommand::WaveformStemLanesToggle { deck: DeckId::B };
+        assert_eq!(actions, vec![Action::App(unfold.clone())]);
+        stage.shell.apply(&unfold);
+        stage.frame(Vec::new());
+        assert_eq!(
+            (
+                enabled(&stage, "deck.stem.mute.toggle").len(),
+                enabled(&stage, "deck.stem.volume.set").len(),
+                enabled(&stage, "deck.stem.send.toggle").len(),
+            ),
+            (4, 4, 4),
+            "{language:?}"
+        );
+    }
 }

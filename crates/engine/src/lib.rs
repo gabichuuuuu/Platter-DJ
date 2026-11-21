@@ -14,7 +14,9 @@ mod peaks;
 mod recorder;
 mod render;
 pub mod rt;
+pub mod separation;
 mod stretch;
+mod stretch_pool;
 mod tap;
 mod wav;
 
@@ -31,7 +33,7 @@ pub use command::{
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
     FINE_MOVE_SECONDS, LoopRecorderSnapshot, MaximiserControls, MixerControls, PreviewSnapshot,
-    Recall, Snapshot, TEMPO_RANGES, TrackInfo,
+    Recall, Snapshot, StemRecall, TEMPO_RANGES, TrackInfo,
 };
 pub use effects::{EffectControls, FxRouting, FxUnit, MixerEffectControls, UnitControls};
 pub use peaks::WaveformPeaks;
@@ -41,7 +43,13 @@ pub use platter_dsp::effects::unit::{UnitMode, UnitValues};
 pub use platter_dsp::effects::{Controls, EffectKind};
 pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
+pub use platter_stems::{
+    InstallError, SPLEETER_SHA256, SPLEETER_URL, SeparationError, Separator, Spleeter,
+    WeightsError, install_spleeter, load_spleeter,
+};
 pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
-pub use rt::{LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor};
+pub use rt::{
+    LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
+};
 pub use wav::WavWriter;

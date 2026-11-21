@@ -19,7 +19,7 @@ use platter_decode::{CoverPicture, MAX_COVER_IMPORT_BYTES, TagEdit, probe_file, 
 use platter_library::{
     Column, EntryId, Library, LibraryError, M3uEntry, MAX_COLLECTION_BYTES, MAX_M3U_BYTES,
     MAX_NAME_CHARS, MAX_PAGE, NodeId, NodeKind, Page, Query, Reading, Rule, Session, SessionId,
-    SharedNode, Source, TagReader, Timestamp, Track, TrackId, TrackTags, import_file,
+    SharedNode, Source, TagReader, Timestamp, Track, TrackId, TrackTags, find_stems, import_file,
     import_folder, read_collection, read_m3u, read_pls, read_xspf, relocate_missing, rules_text,
     write_m3u,
 };
@@ -140,6 +140,10 @@ enum Change {
     Played(Played),
     /// The play count of a track goes back to zero.
     ResetPlayed(TrackId),
+    /// The audio files of a folder named after the stems become the stems of a track.
+    AttachStems(TrackId, PathBuf),
+    /// A track forgets its stems; their files stay.
+    RemoveStems(TrackId),
     /// A track leaves the collection and every playlist.
     DeleteTrack(TrackId),
     SetColour(TrackId, u8),
@@ -246,6 +250,8 @@ enum Reply {
     NotWritten(Vec<String>),
     /// Covers were written into files; why the files named kept theirs.
     Covers(Vec<String>),
+    /// A folder gave no set of stems, for this reason.
+    Unattached(String),
     /// The session of this run is open since that moment; sent once, before any page.
     Session(SessionId, Timestamp),
     /// A playlist was created; sent before the tree that follows the change.
@@ -473,6 +479,14 @@ fn apply(
             Ok(None)
         }
         Change::ResetPlayed(track) => library.reset_played(track).map(|()| None),
+        Change::AttachStems(track, folder) => match find_stems(&folder, is_audio) {
+            Ok(stems) => library.set_stems(track, Some(&stems)).map(|()| None),
+            Err(why) => Ok(Some(Reply::Unattached(format!(
+                "{}: {why}",
+                folder.display()
+            )))),
+        },
+        Change::RemoveStems(track) => library.set_stems(track, None).map(|()| None),
         Change::DeleteTrack(track) => library.remove_track(track).map(|()| None),
         Change::SetColour(track, colour) => library.set_colour(track, colour).map(|()| None),
         Change::Details(tracks, details, fields, mode) => {
@@ -1210,6 +1224,7 @@ fn row_of(track: Track, session: Option<Timestamp>, prepared: &HashSet<TrackId>)
             genre: tags.genre,
             comment: track.comment,
             key: track.key,
+            stems: track.stems,
         }),
         path: track.path,
     }
@@ -1251,6 +1266,7 @@ pub struct Collection {
     tag_writing: TagWriting,
     /// Why files kept what they had, until the window asks.
     unwritten: Vec<String>,
+    unattached: Vec<String>,
     /// Covers were written into files since the window last asked.
     covers_changed: bool,
 }
@@ -1300,6 +1316,7 @@ impl Collection {
             created: None,
             tag_writing: TagWriting::default(),
             unwritten: Vec::new(),
+            unattached: Vec::new(),
             covers_changed: false,
         };
         collection.send(Request::Read(Lookup::default()));
@@ -1679,6 +1696,7 @@ impl Collection {
                     self.missing_total = Some(total);
                 }
                 Reply::NotWritten(why) => self.unwritten.extend(why),
+                Reply::Unattached(why) => self.unattached.push(why),
                 Reply::Covers(why) => {
                     self.covers_changed = true;
                     self.unwritten.extend(why);
@@ -1807,6 +1825,22 @@ impl Collection {
     /// Sets the play count of a track to zero; it is no longer marked as played.
     pub fn reset_played(&mut self, track: TrackId) {
         self.change(Change::ResetPlayed(track));
+    }
+
+    /// Links the audio files of `folder` named after the stems to a track as its stems:
+    /// `docs/behavior/stems.md`.
+    pub fn attach_stems(&mut self, track: TrackId, folder: PathBuf) {
+        self.change(Change::AttachStems(track, folder));
+    }
+
+    /// Forgets the stems of a track; no file is deleted.
+    pub fn remove_stems(&mut self, track: TrackId) {
+        self.change(Change::RemoveStems(track));
+    }
+
+    /// Why folders gave no set of stems since the last call.
+    pub fn take_unattached(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.unattached)
     }
 
     /// The library is opening, importing or searching: answers are still to come.

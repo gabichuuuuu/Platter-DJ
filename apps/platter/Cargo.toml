@@ -16,6 +16,7 @@ platter-control = { path = "../../crates/control" }
 platter-core = { path = "../../crates/core" }
 platter-device-io = { path = "../../crates/device-io" }
 platter-library = { path = "../../crates/library" }
+platter-mcp = { path = "../../crates/mcp" }
 platter-engine = { path = "../../crates/engine" }
 platter-ui-egui = { path = "../../crates/ui-egui" }
 toml.workspace = true

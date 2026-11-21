@@ -306,8 +306,14 @@ impl Processor {
             RtCommand::FilterModel { model } => {
                 for channel in &mut self.channels {
                     channel.strip.set_filter_model(model);
+                    channel.player.set_stem_filter_model(model);
                 }
             }
+            RtCommand::Stem {
+                deck,
+                stem,
+                settings,
+            } => self.channels[deck.index()].player.set_stem(stem, settings),
             RtCommand::CrossfaderCurve { curve } => {
                 self.crossfader_curve = curve;
                 self.retarget_crossfader();
@@ -412,8 +418,10 @@ impl Processor {
             // The tempo master follows nothing: the clock follows it.
             let clock = (master != Some(deck)).then_some(pulse);
             channel.player.follow(clock, self.keep_beat);
-            let played = channel.player.next(&mut self.retired);
-            let strip = channel.strip.process(played, |stage, frame| {
+            let stems = channel.player.has_stems();
+            let next = channel.player.next(&mut self.retired);
+            let played = [0, 1].map(|side| next.sent[side] + next.around[side]);
+            let strip = channel.strip.process(next, stems, |stage, frame| {
                 effects.process(deck, stage, frame, metered_outside)
             });
             before_faders[index] = strip.pre;

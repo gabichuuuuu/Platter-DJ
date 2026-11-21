@@ -1,8 +1,9 @@
 # Dependencies
 
-Every external dependency is temporary: it can stay or be replaced by project code, and the
-maintainer decides that piece by piece. Until then each one is confined to a single crate or
-module, so replacing it touches one place.
+The goal is a program written entirely by the project; today it is not. Every external
+dependency is temporary: it is to be replaced by project code, and the maintainer decides when,
+piece by piece. Until then each one is confined to a single crate or module, so replacing it
+touches one place.
 
 ## In use
 
@@ -11,6 +12,7 @@ dependency has no row or a row has no dependency.
 
 | Crate | Use | Licence | Confined to | Possible replacement |
 | --- | --- | --- | --- | --- |
+| `audio_thread_priority` | Raises the worker threads of key lock to the priority of audio: MMCSS on Windows, the time-constraint policy on macOS, SCHED_FIFO on Linux; its feature `with_dbus` stays off. Brings mach2 on macOS | MPL-2.0, used unmodified; its source is at <https://github.com/mozilla/audio_thread_priority>; mach2 BSD-2-Clause OR MIT OR Apache-2.0 | `platter-engine`, module `stretch_pool` (`docs/decisions/0039-key-lock-threads.md`) | Own calls to each system API, which would need `unsafe` in a crate of its own |
 | `cargo_metadata` | Reads the workspace graph for the layer rules and the dependency registry | MIT | `xtask` (not distributed) | Parse the JSON of `cargo metadata` with project code |
 | `cpal` | Lists the output devices and runs the output stream: WASAPI, CoreAudio, ALSA | Apache-2.0 | `platter-audio-io`, module `device`; none of its types is public (`docs/decisions/0010-audio-output.md`) | Own bindings to each system API, which would need `unsafe` |
 | `eframe` | Opens the window, runs the event loop and puts the frames of egui on the screen through `wgpu` | MIT OR Apache-2.0 | `platter` (the application); its `accesskit` feature stays off (`docs/behavior/interface.md`) | An own window and GPU layer over the system APIs, which would need `unsafe` |

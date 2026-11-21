@@ -2027,3 +2027,38 @@ fn a_collection_file_brings_its_tracks_their_cues_and_its_playlists() {
         Some(PlaylistFileOutcome::Failed)
     );
 }
+
+/// The stems of a folder become those of the selected track, which the list marks, and the
+/// track forgets them again: `docs/behavior/stems.md`.
+#[test]
+fn the_stems_of_a_folder_are_attached_to_the_selected_track_and_removed() {
+    let root = place("stems-attach");
+    let mut browser = browser(&root, root.join("library.sqlite"));
+    wait(&mut browser, |browser| !browser.collection_busy());
+    import(&mut browser, root.join("music"));
+    show_collection(&mut browser);
+    wait(&mut browser, |browser| !browser.collection_busy());
+    let stems = root.join("separated");
+    std::fs::create_dir_all(&stems).unwrap();
+    for name in ["drums.wav", "bass.wav", "other.wav"] {
+        std::fs::write(stems.join(name), wav()).unwrap();
+    }
+    let has_stems = |browser: &FileBrowser| matches!(&browser.view().rows[0].kind, RowKind::Track(track) if track.stems);
+    // Without the vocals the folder is no set.
+    change(
+        &mut browser,
+        AppCommand::BrowserStemsAttach {
+            path: stems.clone(),
+        },
+    );
+    assert!(!has_stems(&browser));
+    let why = browser.take_unattached();
+    assert!(why.len() == 1 && why[0].contains("vocals"), "{why:?}");
+
+    std::fs::write(stems.join("Vocals.wav"), wav()).unwrap();
+    change(&mut browser, AppCommand::BrowserStemsAttach { path: stems });
+    assert!(has_stems(&browser));
+    assert!(browser.take_unattached().is_empty());
+    change(&mut browser, AppCommand::BrowserStemsRemove);
+    assert!(!has_stems(&browser));
+}

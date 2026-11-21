@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use platter_core::{DeckId, TrackMemory};
+use platter_core::{DeckId, Stem, TrackMemory};
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Row, Transaction, params, params_from_iter,
 };
@@ -12,13 +12,13 @@ use crate::text::{contains, fold, positive, tag};
 use crate::{
     CheckReport, Column, Entry, EntryId, Hit, Library, LibraryError, MAX_COLOUR, MAX_KEY,
     MAX_NAME_CHARS, MAX_PAGE, MAX_RATING, MAX_RULES, Node, NodeId, NodeKind, Page, Played, Query,
-    Rule, Session, SessionId, Source, Timestamp, Track, TrackId, TrackTags,
+    Rule, Session, SessionId, Source, StemPaths, Timestamp, Track, TrackId, TrackTags,
 };
 
 /// Marks the file as a library of Platter: "PLTR".
 const APPLICATION_ID: i64 = 0x504C_5452;
 /// The version of the tables this code writes. A file at a higher one is refused.
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 /// How long a call waits for a file another program is writing.
 const BUSY_WAIT: Duration = Duration::from_secs(2);
 
@@ -66,9 +66,9 @@ CREATE INDEX played_session ON played(session);
 ";
 
 /// What each version adds to the one before, from version 2 on: the preparation list, the
-/// favourites, the colour, rating and comment of a track, what a deck learned of it, then the
-/// rules of the smart playlists.
-const UPGRADES: [&str; 5] = [
+/// favourites, the colour, rating and comment of a track, what a deck learned of it, the rules
+/// of the smart playlists, then the stems of a track.
+const UPGRADES: [&str; 6] = [
     "
 CREATE TABLE preparation (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -102,11 +102,19 @@ CREATE TABLE rule (
 );
 CREATE INDEX rule_smart ON rule(smart, position);
 ",
+    "
+CREATE TABLE stem (
+    track INTEGER NOT NULL REFERENCES track(id) ON DELETE CASCADE,
+    part INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    PRIMARY KEY (track, part)
+);
+",
 ];
 
 const TRACK_COLUMNS: &str = "t.id, t.path, t.title, t.artist, t.album, t.genre, t.seconds, \
      t.sample_rate, t.bpm, t.imported, t.play_count, t.last_played, t.missing, t.colour, t.rating, \
-     t.comment, t.key, t.loudness";
+     t.comment, t.key, t.loudness, EXISTS (SELECT 1 FROM stem s WHERE s.track = t.id)";
 
 /// The library in one SQLite file.
 pub struct SqliteLibrary {
@@ -314,6 +322,7 @@ fn track_from(row: &Row<'_>, first: usize) -> rusqlite::Result<Track> {
         loudness: row
             .get::<_, Option<f64>>(column(17))?
             .filter(|lufs| lufs.is_finite()),
+        stems: row.get(column(18))?,
     })
 }
 
@@ -615,6 +624,56 @@ impl Library for SqliteLibrary {
         if changed == 0 {
             return Err(LibraryError::NoSuchTrack);
         }
+        Ok(())
+    }
+
+    fn stems(&self, track: TrackId) -> Result<Option<StemPaths>, LibraryError> {
+        let mut select = self
+            .connection
+            .prepare("SELECT part, path FROM stem WHERE track = ?1")?;
+        let rows = select
+            .query_map([track.0], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut paths: [Option<PathBuf>; Stem::COUNT] = Default::default();
+        for (part, path) in rows {
+            if let Some(slot) = usize::try_from(part)
+                .ok()
+                .and_then(|part| paths.get_mut(part))
+            {
+                *slot = Some(PathBuf::from(path));
+            }
+        }
+        // A set written by hand with a part missing is no set.
+        let [Some(drums), Some(bass), Some(other), Some(vocals)] = paths else {
+            return Ok(None);
+        };
+        Ok(Some([drums, bass, other, vocals]))
+    }
+
+    fn set_stems(&mut self, track: TrackId, stems: Option<&StemPaths>) -> Result<(), LibraryError> {
+        let texts = match stems {
+            Some(paths) => Some(
+                paths
+                    .iter()
+                    .map(|path| text_of(path))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            None => None,
+        };
+        if !self.has_track(track)? {
+            return Err(LibraryError::NoSuchTrack);
+        }
+        let transaction = self.connection.transaction()?;
+        transaction.execute("DELETE FROM stem WHERE track = ?1", [track.0])?;
+        for (part, path) in texts.iter().flatten().enumerate() {
+            transaction.execute(
+                "INSERT INTO stem (track, part, path) VALUES (?1, ?2, ?3)",
+                params![track.0, part as i64, path],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 

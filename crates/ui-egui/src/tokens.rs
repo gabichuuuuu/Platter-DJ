@@ -199,6 +199,8 @@ pub struct Tokens {
     pub text: TextStyles,
     /// The colours of the eight hotcue slots, in their order.
     pub hotcue: [Color32; 8],
+    /// The colours of the four stems, in the order of `platter_core::Stem::ALL`.
+    pub stem: [Color32; 4],
     /// Every colour of the file by its name, including those no panel uses yet.
     pub all_colors: BTreeMap<String, Color32>,
 }
@@ -346,8 +348,13 @@ impl Tokens {
         for (index, slot) in hotcue.iter_mut().enumerate() {
             *slot = resolve_color(colors, &format!("hotcue-{}", index + 1), 0)?;
         }
+        let mut stem = [Color32::TRANSPARENT; 4];
+        for (slot, name) in stem.iter_mut().zip(["drums", "bass", "other", "vocals"]) {
+            *slot = resolve_color(colors, &format!("stem-{name}"), 0)?;
+        }
         Ok(Self {
             hotcue,
+            stem,
             color,
             space: Spacing::read(&source)?,
             radius: Radius::read(&source)?,

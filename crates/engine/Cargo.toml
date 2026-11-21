@@ -10,10 +10,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+audio_thread_priority.workspace = true
 platter-analysis = { path = "../analysis" }
 platter-core = { path = "../core" }
 platter-decode = { path = "../decode" }
 platter-dsp = { path = "../dsp" }
+platter-stems = { path = "../stems" }
 rtrb.workspace = true
 timestretch.workspace = true
 

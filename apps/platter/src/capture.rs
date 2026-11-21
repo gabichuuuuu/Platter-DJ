@@ -27,10 +27,12 @@ const GIVE_UP_FRAMES: u32 = 120;
 /// Decks, Mixer, Recording, Layouts and Library pages of the preferences with the maintenance of
 /// the collection, a playlist and a history shown in the browser, and the details of one track
 /// and of two.
-pub const STATES: [&str; 19] = [
+pub const STATES: [&str; 21] = [
     "main",
     "compact",
     "four-decks",
+    "stems",
+    "stems-lanes",
     "layout-preparation",
     "layout-browser",
     "four-units",
@@ -58,6 +60,7 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
             Some((scene, None))
         }
         "four-decks" => Some((sample::four_decks(), None)),
+        "stems" | "stems-lanes" => Some((sample::two_deck_stems(), None)),
         "layout-preparation" => Some((sample::in_layout(BuiltIn::Preparation), None)),
         "layout-browser" => Some((sample::in_layout(BuiltIn::Browser), None)),
         "four-units" => Some((sample::four_units(), None)),
@@ -186,6 +189,7 @@ pub fn run(state: &str, file: PathBuf, size: Option<egui::Vec2>) -> Result<(), S
     let mut shell = Shell::new(scene.settings.language).map_err(|error| error.to_string())?;
     shell.state.settings_page = page;
     shell.state.maintenance = state == "maintenance";
+    shell.state.stem_lanes[1] = state == "stems-lanes";
     shell.state.details_wanted = state.starts_with("details");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

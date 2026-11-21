@@ -57,6 +57,8 @@ pub struct ViewState {
     pub zoom: [usize; DeckId::COUNT],
     /// The large time of each deck is the time that remains.
     pub remaining_large: [bool; DeckId::COUNT],
+    /// The parallel lane of each stem deck shows the four lanes of its stems.
+    pub stem_lanes: [bool; DeckId::COUNT],
     /// The page of the advanced panel each deck shows.
     pub deck_page: [DeckPage; DeckId::COUNT],
     /// The hotcues of each deck are in the mapping mode: the next one pressed takes the
@@ -89,6 +91,7 @@ impl Default for ViewState {
             settings_page: None,
             zoom: [DEFAULT_ZOOM; DeckId::COUNT],
             remaining_large: [true; DeckId::COUNT],
+            stem_lanes: [false; DeckId::COUNT],
             deck_page: [DeckPage::default(); DeckId::COUNT],
             cue_map: [false; DeckId::COUNT],
             meters: [MeterMemory::default(); MeterId::ALL.len()],
@@ -317,6 +320,9 @@ impl Shell {
                 let step = &mut state.zoom[deck.index()];
                 *step = (*step + 1).min(ZOOM_SECONDS.len() - 1);
             }
+            AppCommand::WaveformStemLanesToggle { deck } => {
+                state.stem_lanes[deck.index()] ^= true;
+            }
             AppCommand::DeckTimeDisplayToggle { deck } => {
                 state.remaining_large[deck.index()] ^= true;
             }
@@ -411,7 +417,14 @@ impl Shell {
             }
             if let Some(lanes) = zones.lanes {
                 let shown = view.settings.shown_decks();
-                waveform::lanes(&mut cx, lanes, shown, &engine.decks, state.zoom);
+                waveform::lanes(
+                    &mut cx,
+                    lanes,
+                    shown,
+                    &engine.decks,
+                    state.zoom,
+                    state.stem_lanes,
+                );
             }
             for (deck_id, rect) in zones.decks.iter().copied() {
                 match view.settings.deck_layout {

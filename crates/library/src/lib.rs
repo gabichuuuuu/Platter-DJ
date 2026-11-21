@@ -13,6 +13,7 @@ mod folder;
 mod m3u;
 mod rekordbox;
 mod smart;
+mod stems;
 mod store;
 mod text;
 mod xml;
@@ -36,6 +37,7 @@ pub use rekordbox::{
     SharedCollection, SharedNode, SharedTrack, read_collection,
 };
 pub use smart::{MAX_RULES, RangeField, Rule, TagField, parse_rules, rules_text};
+pub use stems::{StemFolderError, find_stems};
 pub use store::SqliteLibrary;
 
 /// Longest tag kept, in characters; longer tags are cut.
@@ -147,7 +149,12 @@ pub struct Track {
     pub key: Option<u8>,
     /// The loudness the analysis measured, in LUFS.
     pub loudness: Option<f64>,
+    /// A set of stems is linked to the track: `docs/behavior/stems.md`.
+    pub stems: bool,
 }
+
+/// The files of the stems of a track, in the order of [`platter_core::Stem::ALL`].
+pub type StemPaths = [PathBuf; platter_core::Stem::COUNT];
 
 /// The highest number of a key, B minor.
 pub const MAX_KEY: u8 = 23;
@@ -336,6 +343,11 @@ pub trait Library: Send {
     fn missing(&self) -> Result<Vec<Track>, LibraryError>;
     /// Points a track at another file, keeping everything else.
     fn relocate(&mut self, id: TrackId, path: &Path) -> Result<(), LibraryError>;
+    /// The files of the stems linked to a track, if it has a set.
+    fn stems(&self, track: TrackId) -> Result<Option<StemPaths>, LibraryError>;
+    /// Links a set of stems to a track, in place of the one before, or with `None` forgets
+    /// the link. No file is touched.
+    fn set_stems(&mut self, track: TrackId, stems: Option<&StemPaths>) -> Result<(), LibraryError>;
 
     fn create(
         &mut self,

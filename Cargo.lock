@@ -150,6 +150,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "audio_thread_priority"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0b30b2f3d2da482d0faeaafd8f88a38fbc62abb58d3b402cfa195793f4c92ab"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "log",
+ "mach2 0.4.3",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -542,7 +555,7 @@ dependencies = [
  "jni 0.22.4",
  "js-sys",
  "libc",
- "mach2",
+ "mach2 0.6.0",
  "ndk",
  "ndk-context",
  "num-derive",
@@ -1523,6 +1536,15 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "mach2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "mach2"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
@@ -2237,6 +2259,7 @@ dependencies = [
  "platter-device-io",
  "platter-engine",
  "platter-library",
+ "platter-mcp",
  "platter-ui-egui",
  "toml",
 ]
@@ -2310,10 +2333,12 @@ dependencies = [
 name = "platter-engine"
 version = "0.6.0"
 dependencies = [
+ "audio_thread_priority",
  "platter-analysis",
  "platter-core",
  "platter-decode",
  "platter-dsp",
+ "platter-stems",
  "platter-testkit",
  "proptest",
  "rtrb",
@@ -2327,6 +2352,20 @@ dependencies = [
  "platter-core",
  "proptest",
  "rusqlite",
+]
+
+[[package]]
+name = "platter-mcp"
+version = "0.6.0"
+dependencies = [
+ "platter-engine",
+]
+
+[[package]]
+name = "platter-stems"
+version = "0.6.0"
+dependencies = [
+ "platter-core",
 ]
 
 [[package]]

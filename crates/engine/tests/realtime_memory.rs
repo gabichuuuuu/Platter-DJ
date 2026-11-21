@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
 use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
@@ -543,6 +543,55 @@ fn process_neither_allocates_nor_frees() {
         run(&mut rig, blocks);
     }
     rig.send(Command::DeckPause { deck: DeckId::A });
+    // A stem deck: its four stems arrive with their stretches, play through key lock with
+    // their controls moving, and go back when a plain track replaces them while it plays.
+    let stems =
+        Stem::ALL.map(|stem| sine_file(&format!("memory-stem-{stem}"), 330.0, 2.0, 0.2, RATE));
+    rig.send(Command::DeckLoadStems {
+        deck: DeckId::B,
+        path: sine_file("memory-stem-track", 330.0, 2.0, 0.5, RATE),
+        stems: Box::new(stems),
+    });
+    rig.engine.wait_for_loads();
+    rig.send(Command::DeckPlay { deck: DeckId::B });
+    rig.send(Command::DeckKeyLockToggle { deck: DeckId::B });
+    rig.send(Command::DeckTempoSet {
+        deck: DeckId::B,
+        ratio: 1.05,
+    });
+    run(&mut rig, 20);
+    for stem in Stem::ALL {
+        rig.send(Command::DeckStemFilterToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        rig.send(Command::DeckStemSendSet {
+            deck: DeckId::B,
+            stem,
+            amount: 0.3,
+        });
+        rig.send(Command::DeckStemSendToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        rig.send(Command::DeckStemMuteToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        run(&mut rig, 3);
+    }
+    rig.send(Command::DeckBeatjump {
+        deck: DeckId::B,
+        direction: Direction::Forward,
+    });
+    run(&mut rig, 10);
+    rig.load(
+        DeckId::B,
+        sine_file("memory-after-stems", 220.0, 1.0, 0.5, RATE),
+    );
+    run(&mut rig, 10);
+    rig.send(Command::DeckEject { deck: DeckId::B });
+    run(&mut rig, 5);
     // Replacing a track while it plays is the case where a buffer changes hands: the old
     // one must travel back to this thread instead of being freed by the processor.
     rig.send(Command::DeckPlay { deck: DeckId::A });
@@ -627,6 +676,41 @@ fn process_neither_allocates_nor_frees() {
         let (_, counted) = count(|| rig.processor.process(&mut block, 4));
         events += counted;
     }
+
+    // Key lock on worker threads, run between the blocks: the audio thread only takes what the
+    // workers rendered, through a seek and a change of tempo. Its pitch shows it was stretched.
+    rig.engine.set_key_lock_pumped();
+    rig.load(DeckId::A, sine_file("memory-e", 440.0, 4.0, 0.5, RATE));
+    // The shift of the key the deck kept from above is taken back.
+    rig.send(Command::DeckKeySet {
+        deck: DeckId::A,
+        semitones: 0.0,
+    });
+    rig.send(Command::DeckPlay { deck: DeckId::A });
+    let mut pumped = |rig: &mut Rig, blocks: usize| {
+        let mut heard = Vec::new();
+        for _ in 0..blocks {
+            let (_, counted) = count(|| rig.processor.process(&mut block, 4));
+            events += counted;
+            rig.engine.pump_key_lock();
+            heard.extend(block.iter().step_by(4).copied());
+        }
+        heard
+    };
+    pumped(&mut rig, 40);
+    rig.send(Command::DeckTempoSet {
+        deck: DeckId::A,
+        ratio: 1.04,
+    });
+    let heard = pumped(&mut rig, 80);
+    let hz = frequency(&heard[heard.len() / 2..]);
+    assert!(
+        (1200.0 * (hz / 440.0).log2()).abs() < 5.0,
+        "key lock on worker threads did not hold: {hz:.2} Hz"
+    );
+    assert_eq!(rig.engine.key_lock_starved(), 0);
+    rig.send(Command::DeckEject { deck: DeckId::A });
+    pumped(&mut rig, 5);
 
     assert_eq!(
         events, 0,

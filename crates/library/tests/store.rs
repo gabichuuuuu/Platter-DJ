@@ -6,10 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
-use platter_core::{DeckId, TrackMemory};
+use platter_core::{DeckId, Stem, TrackMemory};
 use platter_library::{
     Column, Library, LibraryError, MAX_KEY, MAX_TAG_CHARS, NodeId, NodeKind, Query, SessionId,
-    Source, SqliteLibrary, Timestamp, TrackId, TrackTags,
+    Source, SqliteLibrary, StemFolderError, Timestamp, TrackId, TrackTags, find_stems,
 };
 
 /// A fresh directory for one test; names are unique among the tests, which run in parallel.
@@ -510,12 +510,12 @@ fn a_library_from_a_newer_version_is_refused_unchanged() {
     drop(SqliteLibrary::open(&file).unwrap());
     {
         let connection = rusqlite::Connection::open(&file).unwrap();
-        connection.pragma_update(None, "user_version", 7).unwrap();
+        connection.pragma_update(None, "user_version", 8).unwrap();
     }
     let before = std::fs::read(&file).unwrap();
     assert!(matches!(
         SqliteLibrary::open(&file),
-        Err(LibraryError::Newer { version: 7 })
+        Err(LibraryError::Newer { version: 8 })
     ));
     assert_eq!(std::fs::read(&file).unwrap(), before);
 }
@@ -537,7 +537,7 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE rule; DROP TABLE preparation; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 1;",
+                "DROP TABLE stem; DROP TABLE rule; DROP TABLE preparation; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 1;",
             )
             .unwrap();
     }
@@ -557,21 +557,21 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap()
     };
-    assert_eq!(version(&file), 6);
+    assert_eq!(version(&file), 7);
 
     // A file of the second version keeps its preparation list and gains the favourites.
     {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE rule; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 2;",
+                "DROP TABLE stem; DROP TABLE rule; DROP TABLE favourite; ALTER TABLE track DROP COLUMN colour; ALTER TABLE track DROP COLUMN rating; ALTER TABLE track DROP COLUMN comment; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 2;",
             )
             .unwrap();
     }
     let library = SqliteLibrary::open(&file).unwrap();
     assert_eq!(library.preparation().unwrap(), Some(list));
     assert!(library.favourites().unwrap().is_empty());
-    assert_eq!(version(&file), 6);
+    assert_eq!(version(&file), 7);
 
     // A file of the fourth version keeps its colours and gains what a deck learns.
     let track = library.track_at(Path::new("/a")).unwrap().unwrap().id;
@@ -580,12 +580,12 @@ fn a_library_of_the_first_version_is_brought_up_to_date_with_what_it_held() {
         let connection = rusqlite::Connection::open(&file).unwrap();
         connection
             .execute_batch(
-                "DROP TABLE rule; UPDATE track SET colour = 3; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 4;",
+                "DROP TABLE stem; DROP TABLE rule; UPDATE track SET colour = 3; ALTER TABLE track DROP COLUMN memory; ALTER TABLE track DROP COLUMN key; ALTER TABLE track DROP COLUMN loudness; ALTER TABLE track DROP COLUMN analysed; PRAGMA user_version = 4;",
             )
             .unwrap();
     }
     let mut library = SqliteLibrary::open(&file).unwrap();
-    assert_eq!(version(&file), 6);
+    assert_eq!(version(&file), 7);
     let kept = library.track_at(Path::new("/a")).unwrap().unwrap();
     assert_eq!((kept.colour, kept.key, kept.loudness), (3, None, None));
     library.set_analysis(track, Some(21), Some(-8.5)).unwrap();
@@ -892,4 +892,74 @@ fn deleting_a_session_forgets_its_history_and_keeps_the_tracks_and_their_counts(
     // A session the library does not have: nothing changes.
     library.delete_session(first).unwrap();
     assert_eq!(library.sessions().unwrap().len(), 1);
+}
+
+fn stem_paths(folder: &str) -> [PathBuf; Stem::COUNT] {
+    Stem::ALL.map(|stem| PathBuf::from(format!("/{folder}/{stem}.wav")))
+}
+
+#[test]
+fn a_track_keeps_its_stems_until_they_are_forgotten_or_it_is_removed() {
+    let directory = directory("stems");
+    let file = directory.join("library.db");
+    let mut library = SqliteLibrary::open(&file).unwrap();
+    let a = add(&mut library, "/a", "A", "X");
+    let b = add(&mut library, "/b", "B", "X");
+    assert_eq!(library.stems(a).unwrap(), None);
+    assert!(!library.track(a).unwrap().unwrap().stems);
+
+    library.set_stems(a, Some(&stem_paths("one"))).unwrap();
+    library.set_stems(a, Some(&stem_paths("two"))).unwrap();
+    drop(library);
+    let mut library = SqliteLibrary::open(&file).unwrap();
+    assert_eq!(library.stems(a).unwrap(), Some(stem_paths("two")));
+    assert!(library.track(a).unwrap().unwrap().stems);
+    assert!(library.search(&text("A")).unwrap().hits[0].track.stems);
+    assert!(!library.track(b).unwrap().unwrap().stems);
+
+    library.set_stems(a, None).unwrap();
+    assert_eq!(library.stems(a).unwrap(), None);
+    library.set_stems(b, Some(&stem_paths("b"))).unwrap();
+    library.remove_track(b).unwrap();
+    assert_eq!(library.stems(b).unwrap(), None);
+    assert!(matches!(
+        library.set_stems(b, Some(&stem_paths("b"))),
+        Err(LibraryError::NoSuchTrack)
+    ));
+}
+
+#[test]
+fn a_folder_gives_the_four_audio_files_named_after_the_stems() {
+    let folder = directory("stem-folder");
+    for name in [
+        "Drums.wav",
+        "bass.flac",
+        "other.wav",
+        "VOCALS.mp3",
+        "drums.png",
+        "mix.wav",
+    ] {
+        std::fs::write(folder.join(name), b"").unwrap();
+    }
+    std::fs::create_dir_all(folder.join("other")).unwrap();
+    let audio = |path: &Path| path.extension().is_some_and(|extension| extension != "png");
+    let found = find_stems(&folder, audio).unwrap();
+    let names = found.map(|path| path.file_name().unwrap().to_string_lossy().into_owned());
+    assert_eq!(names, ["Drums.wav", "bass.flac", "other.wav", "VOCALS.mp3"]);
+
+    std::fs::write(folder.join("Bass.wav"), b"").unwrap();
+    assert!(matches!(
+        find_stems(&folder, audio),
+        Err(StemFolderError::Twice(Stem::Bass))
+    ));
+    std::fs::remove_file(folder.join("Bass.wav")).unwrap();
+    std::fs::remove_file(folder.join("other.wav")).unwrap();
+    assert!(matches!(
+        find_stems(&folder, audio),
+        Err(StemFolderError::Missing(Stem::Other))
+    ));
+    assert!(matches!(
+        find_stems(&folder.join("absent"), audio),
+        Err(StemFolderError::Unreadable(_))
+    ));
 }

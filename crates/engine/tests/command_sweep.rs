@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
+use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS, Stem};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
@@ -84,6 +84,7 @@ fn later_command() -> impl Strategy<Value = Command> {
         prop::strategy::Just(Command::RecorderToggle),
         prop::strategy::Just(Command::RecorderCut),
         loop_recorder_command(),
+        stem_command(),
         grid_command(),
         loop_command(),
         cue_command(),
@@ -140,6 +141,23 @@ fn loop_recorder_command() -> impl Strategy<Value = Command> {
             .prop_map(|bars| Command::LoopRecorderSizeSet { bars }),
         1 => source.prop_map(|source| Command::LoopRecorderSourceSet { source }),
         1 => number().prop_map(|amount| Command::LoopRecorderDryWetSet { amount }),
+    ]
+}
+
+/// The controls of the stems, added in M4, with values in and out of range.
+fn stem_command() -> impl Strategy<Value = Command> {
+    let stem = || prop::sample::select(Stem::ALL.to_vec());
+    prop_oneof![
+        1 => (deck(), stem(), number())
+            .prop_map(|(deck, stem, volume)| Command::DeckStemVolumeSet { deck, stem, volume }),
+        1 => (deck(), stem()).prop_map(|(deck, stem)| Command::DeckStemMuteToggle { deck, stem }),
+        1 => (deck(), stem(), number())
+            .prop_map(|(deck, stem, position)| Command::DeckStemFilterSet { deck, stem, position }),
+        1 => (deck(), stem())
+            .prop_map(|(deck, stem)| Command::DeckStemFilterToggle { deck, stem }),
+        1 => (deck(), stem(), number())
+            .prop_map(|(deck, stem, amount)| Command::DeckStemSendSet { deck, stem, amount }),
+        1 => (deck(), stem()).prop_map(|(deck, stem)| Command::DeckStemSendToggle { deck, stem }),
     ]
 }
 

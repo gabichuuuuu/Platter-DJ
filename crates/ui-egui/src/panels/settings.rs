@@ -602,6 +602,19 @@ fn audio_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         );
     }
 
+    let top = section(cx, page, top + 47.0, "settings.processing");
+    switch(
+        cx,
+        page,
+        top,
+        Switch {
+            name: "settings.key_lock_threads",
+            help: "settings.key_lock_threads_help",
+            on: settings.key_lock_threads,
+            action: AppCommand::KeyLockThreadsToggle.into(),
+        },
+    );
+
     // The drop-downs last, so an open list lies over the controls below it.
     for (rect, slot, enabled) in routing_selects.into_iter().rev() {
         let name = texts.get(match slot {

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, ValueError};
+use platter_core::{Bpm, CueKind, DeckId, HotcueSlot, LoopSize, Stem, ValueError};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
 use platter_dsp::effects::EffectKind;
 use platter_dsp::effects::unit::{SLOTS, UnitMode};
@@ -34,10 +34,54 @@ pub enum Command {
     PreviewSeek {
         position: f64,
     },
-    /// Loads a file into a deck, in the background.
+    /// Loads a file into a deck, in the background, with the stems the collection links to
+    /// it when there are some: `docs/behavior/stems.md`.
     DeckLoad {
         deck: DeckId,
         path: PathBuf,
+    },
+    /// Loads a file into a deck without its stems.
+    DeckLoadTrack {
+        deck: DeckId,
+        path: PathBuf,
+    },
+    /// Loads a file with its four stems into a deck, in the background:
+    /// `docs/behavior/stems.md`. The stems are in the order of [`Stem::ALL`].
+    DeckLoadStems {
+        deck: DeckId,
+        path: PathBuf,
+        stems: Box<[PathBuf; Stem::COUNT]>,
+    },
+    /// Level of a stem, `0.0..=1.0`.
+    DeckStemVolumeSet {
+        deck: DeckId,
+        stem: Stem,
+        volume: f64,
+    },
+    /// Silences a stem, or brings it back at its level.
+    DeckStemMuteToggle {
+        deck: DeckId,
+        stem: Stem,
+    },
+    /// Knob position of the filter of a stem, `-1.0..=1.0`.
+    DeckStemFilterSet {
+        deck: DeckId,
+        stem: Stem,
+        position: f64,
+    },
+    DeckStemFilterToggle {
+        deck: DeckId,
+        stem: Stem,
+    },
+    /// Share of a stem the effects get while its send is on, `0.0..=1.0`.
+    DeckStemSendSet {
+        deck: DeckId,
+        stem: Stem,
+        amount: f64,
+    },
+    DeckStemSendToggle {
+        deck: DeckId,
+        stem: Stem,
     },
     DeckEject {
         deck: DeckId,
@@ -545,6 +589,18 @@ const DECK: ParamSpec = ParamSpec {
     kind: ParamKind::Deck,
 };
 
+const STEM: ParamSpec = ParamSpec {
+    name: "stem",
+    kind: ParamKind::Choice(&Stem::NAMES),
+};
+
+const fn path(name: &'static str) -> ParamSpec {
+    ParamSpec {
+        name,
+        kind: ParamKind::Path,
+    }
+}
+
 const fn number(name: &'static str, min: f64, max: f64) -> ParamSpec {
     ParamSpec {
         name,
@@ -801,6 +857,53 @@ const BUTTON_ACTION: ParamSpec = ParamSpec {
 
 /// Every command, in the order a list shows them.
 pub const SPECS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "deck.load_track",
+        label: "Load track without its stems",
+        params: &[DECK, path("path")],
+    },
+    CommandSpec {
+        id: "deck.load_stems",
+        label: "Load track with its stems",
+        params: &[
+            DECK,
+            path("path"),
+            path("drums"),
+            path("bass"),
+            path("other"),
+            path("vocals"),
+        ],
+    },
+    CommandSpec {
+        id: "deck.stem.volume.set",
+        label: "Set stem volume",
+        params: &[DECK, STEM, number("volume", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "deck.stem.mute.toggle",
+        label: "Mute stem",
+        params: &[DECK, STEM],
+    },
+    CommandSpec {
+        id: "deck.stem.filter.set",
+        label: "Set stem filter",
+        params: &[DECK, STEM, number("position", -1.0, 1.0)],
+    },
+    CommandSpec {
+        id: "deck.stem.filter.toggle",
+        label: "Turn stem filter on or off",
+        params: &[DECK, STEM],
+    },
+    CommandSpec {
+        id: "deck.stem.send.set",
+        label: "Set stem effect send",
+        params: &[DECK, STEM, number("amount", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "deck.stem.send.toggle",
+        label: "Turn stem effect send on or off",
+        params: &[DECK, STEM],
+    },
     CommandSpec {
         id: "preview.load",
         label: "Preview a track",
@@ -1622,6 +1725,10 @@ impl Reader<'_> {
         Ok(DeckId::parse(self.text("deck")?)?)
     }
 
+    fn stem(&self) -> Result<Stem, CommandError> {
+        Ok(Stem::parse(self.text("stem")?)?)
+    }
+
     fn loop_source(&self) -> Result<LoopSource, CommandError> {
         match self.text("source")? {
             "master" => Ok(LoopSource::Master),
@@ -1842,6 +1949,47 @@ impl Command {
             "deck.load" => Self::DeckLoad {
                 deck: read.deck()?,
                 path: PathBuf::from(read.text("path")?),
+            },
+            "deck.load_track" => Self::DeckLoadTrack {
+                deck: read.deck()?,
+                path: PathBuf::from(read.text("path")?),
+            },
+            "deck.load_stems" => Self::DeckLoadStems {
+                deck: read.deck()?,
+                path: PathBuf::from(read.text("path")?),
+                stems: Box::new([
+                    PathBuf::from(read.text("drums")?),
+                    PathBuf::from(read.text("bass")?),
+                    PathBuf::from(read.text("other")?),
+                    PathBuf::from(read.text("vocals")?),
+                ]),
+            },
+            "deck.stem.volume.set" => Self::DeckStemVolumeSet {
+                deck: read.deck()?,
+                stem: read.stem()?,
+                volume: read.number("volume")?,
+            },
+            "deck.stem.mute.toggle" => Self::DeckStemMuteToggle {
+                deck: read.deck()?,
+                stem: read.stem()?,
+            },
+            "deck.stem.filter.set" => Self::DeckStemFilterSet {
+                deck: read.deck()?,
+                stem: read.stem()?,
+                position: read.number("position")?,
+            },
+            "deck.stem.filter.toggle" => Self::DeckStemFilterToggle {
+                deck: read.deck()?,
+                stem: read.stem()?,
+            },
+            "deck.stem.send.set" => Self::DeckStemSendSet {
+                deck: read.deck()?,
+                stem: read.stem()?,
+                amount: read.number("amount")?,
+            },
+            "deck.stem.send.toggle" => Self::DeckStemSendToggle {
+                deck: read.deck()?,
+                stem: read.stem()?,
             },
             "deck.eject" => Self::DeckEject { deck: read.deck()? },
             "deck.play" => Self::DeckPlay { deck: read.deck()? },
@@ -2208,6 +2356,14 @@ impl Command {
             Self::PreviewPlayPause => "preview.play_pause",
             Self::PreviewSeek { .. } => "preview.seek",
             Self::DeckLoad { .. } => "deck.load",
+            Self::DeckLoadTrack { .. } => "deck.load_track",
+            Self::DeckLoadStems { .. } => "deck.load_stems",
+            Self::DeckStemVolumeSet { .. } => "deck.stem.volume.set",
+            Self::DeckStemMuteToggle { .. } => "deck.stem.mute.toggle",
+            Self::DeckStemFilterSet { .. } => "deck.stem.filter.set",
+            Self::DeckStemFilterToggle { .. } => "deck.stem.filter.toggle",
+            Self::DeckStemSendSet { .. } => "deck.stem.send.set",
+            Self::DeckStemSendToggle { .. } => "deck.stem.send.toggle",
             Self::DeckEject { .. } => "deck.eject",
             Self::DeckPlay { .. } => "deck.play",
             Self::DeckPause { .. } => "deck.pause",

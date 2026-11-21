@@ -3,19 +3,25 @@
 //! Behaviour notes: `docs/behavior/transport.md`; for the grid, `docs/behavior/beatgrid.md`;
 //! for loops and jumps, `docs/behavior/loops.md`; for the stored cues,
 //! `docs/behavior/cues.md`; for sync, `docs/behavior/sync.md`; for flux and reverse,
-//! `docs/behavior/flux.md`; for the beat tick, `docs/behavior/beatgrid.md`.
+//! `docs/behavior/flux.md`; for the beat tick, `docs/behavior/beatgrid.md`; for stems,
+//! `docs/behavior/stems.md`.
 
-use platter_core::{BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Tempo, TrackMemory};
+use platter_core::{
+    BeatGrid, Cue, CueKind, Cues, HotcueSlot, SampleRate, Stem, Tempo, TrackMemory,
+};
 use platter_dsp::Frame;
+use platter_dsp::filter::FilterModel;
 use platter_dsp::interpolate::cubic;
 use platter_dsp::smooth::Smoothed;
 use rtrb::Producer;
 
 use super::clock::{Candidate, Lead, Pulse};
-use super::lock::KeyLock;
+use super::lock::{KeyLock, Locked};
 use super::looper::{Looper, Region, Track};
+use super::stems::{Played, StemMix, StemSettings};
 use super::{
-    CueEdit, DeckTrack, GridEdit, LoopEdit, LoopState, MAX_KEY_SHIFT, Retired, Span, TrackAudio,
+    CueEdit, DeckStems, DeckTrack, GridEdit, LoopEdit, LoopState, MAX_KEY_SHIFT, Retired, Span,
+    TrackAudio,
 };
 
 /// Length of the fade applied on play, pause, seek and track change.
@@ -114,6 +120,12 @@ pub(super) struct DeckPlayer {
     /// on those of the clock.
     beat_to_keep: Option<f64>,
     lock: KeyLock,
+    /// The stems played in the place of the track, when it came with them.
+    stems: Option<Box<DeckStems>>,
+    /// Key lock of each stem, on and at the pitch of `lock`. On the heap, built one by one:
+    /// each keeps a tail of frames, too large to pass through the stack four at a time.
+    stem_locks: Box<[KeyLock]>,
+    stem_mix: Box<StemMix>,
     /// Shift of the key in semitones, played through key lock.
     key_shift: f64,
     /// A loop or a hotcue of a playing deck keeps the timeline.
@@ -160,6 +172,11 @@ impl DeckPlayer {
             quantize: false,
             beat_to_keep: None,
             lock: KeyLock::new(rate.as_f64()),
+            stems: None,
+            stem_locks: (0..Stem::COUNT)
+                .map(|_| KeyLock::new(rate.as_f64()))
+                .collect(),
+            stem_mix: Box::new(StemMix::new(rate)),
             key_shift: 0.0,
             flux: false,
             reverse: false,
@@ -430,6 +447,11 @@ impl DeckPlayer {
             if pressed && let Some(audio) = &self.audio {
                 let speed = f64::from(self.tempo.target()) * (1.0 + f64::from(self.nudge.target()));
                 self.lock.turn_back(audio.samples(), speed);
+                if let Some(stems) = &self.stems {
+                    for (lock, audio) in self.stem_locks.iter_mut().zip(&stems.audio) {
+                        lock.turn_back(audio.samples(), speed);
+                    }
+                }
             }
         }
     }
@@ -780,7 +802,7 @@ impl DeckPlayer {
     }
 
     pub(super) fn toggle_key_lock(&mut self) {
-        self.lock.toggle();
+        self.toggle_locks();
         // Turned on again, key lock keeps the original key.
         if !self.lock.is_on() {
             self.shift_key(0.0);
@@ -863,14 +885,45 @@ impl DeckPlayer {
             return;
         }
         if !self.lock.is_on() {
-            self.lock.toggle();
+            self.toggle_locks();
         }
         self.shift_key(semitones.clamp(-MAX_KEY_SHIFT, MAX_KEY_SHIFT));
     }
 
     fn shift_key(&mut self, semitones: f64) {
         self.key_shift = semitones;
-        self.lock.set_pitch((semitones / 12.0).exp2());
+        let pitch = (semitones / 12.0).exp2();
+        self.lock.set_pitch(pitch);
+        for lock in self.stem_locks.iter_mut() {
+            lock.set_pitch(pitch);
+        }
+    }
+
+    /// The key lock of the track and those of the stems are turned on and off together.
+    fn toggle_locks(&mut self) {
+        self.lock.toggle();
+        for lock in self.stem_locks.iter_mut() {
+            lock.toggle();
+        }
+    }
+
+    fn silence_locks(&mut self) {
+        self.lock.silence();
+        for lock in self.stem_locks.iter_mut() {
+            lock.silence();
+        }
+    }
+
+    pub(super) fn set_stem(&mut self, stem: Stem, settings: StemSettings) {
+        self.stem_mix.set(stem, settings);
+    }
+
+    pub(super) fn set_stem_filter_model(&mut self, model: FilterModel) {
+        self.stem_mix.set_filter_model(model);
+    }
+
+    pub(super) fn has_stems(&self) -> bool {
+        self.stems.is_some()
     }
 
     pub(super) fn key_shift(&self) -> f64 {
@@ -1058,7 +1111,7 @@ impl DeckPlayer {
     }
 
     /// Produces the next frame of the deck.
-    pub(super) fn next(&mut self, retired: &mut Producer<Retired>) -> Frame {
+    pub(super) fn next(&mut self, retired: &mut Producer<Retired>) -> Played {
         let audible = self.playing && self.pending_swap.is_none() && self.pending_seek.is_none();
         self.fade.set(if audible { 1.0 } else { 0.0 });
         let gain = self.fade.advance();
@@ -1068,11 +1121,11 @@ impl DeckPlayer {
         }
         if gain == 0.0 {
             self.tail = None;
-            self.lock.silence();
+            self.silence_locks();
             // A change of speed needs no ramp while nothing sounds.
             self.tempo.advance();
             self.apply_pending(retired);
-            return [0.0; 2];
+            return Played::default();
         }
         let reverse = self.reverse;
         // On a detour the timeline keeps the beat; the deck comes back to it.
@@ -1081,59 +1134,23 @@ impl DeckPlayer {
         } else {
             self.pull_to_the_beat()
         };
-        let Some(audio) = &self.audio else {
-            return [0.0; 2];
+        let Some((rate, end)) = self
+            .audio
+            .as_ref()
+            .map(|audio| (audio.rate().as_f64(), audio.frames() as f64))
+        else {
+            return Played::default();
         };
         let speed =
             f64::from(self.tempo.advance()) * (1.0 + f64::from(self.nudge.advance())) * pull;
-        let step = speed * audio.rate().as_f64() / self.engine_rate;
-        let locked = if reverse {
-            self.lock.silence();
-            None
-        } else {
-            self.lock.play(audio.samples(), self.position, step, speed)
-        };
-        let mut frame = match locked {
-            Some(locked) => {
-                // The stretch says where the deck is: its tempo is the one asked, its
-                // position is what is heard.
-                self.position = locked.position;
-                if locked.level >= 1.0 {
-                    locked.frame
-                } else {
-                    let plain = read(audio, self.position);
-                    [0, 1]
-                        .map(|side| plain[side] + (locked.frame[side] - plain[side]) * locked.level)
-                }
-            }
-            // Backwards at the start of the track there is nothing to read.
-            None if reverse && self.position <= 0.0 => [0.0; 2],
-            None => read(audio, self.position),
-        };
+        let step = speed * rate / self.engine_rate;
+        let mut frames = self.read_parts(step, speed);
         if audible {
             let heard = self.position;
-            self.on_beat = self.beat_tick
-                && self.passes_a_beat(heard, self.heard, step, audio.rate().as_f64());
+            self.on_beat = self.beat_tick && self.passes_a_beat(heard, self.heard, step, rate);
             self.heard = Some(heard);
         }
-        if let Some(tail) = &mut self.tail {
-            tail.level -= tail.decay;
-            if tail.level > 0.0 {
-                // What was heard before the jump: the stretch, when it was playing forward.
-                let old = if !tail.forward {
-                    read(audio, tail.position)
-                } else {
-                    self.lock
-                        .tail_frame()
-                        .unwrap_or_else(|| read(audio, tail.position))
-                };
-                frame = [0, 1].map(|side| frame[side] + (old[side] - frame[side]) * tail.level);
-                tail.position += if tail.forward { step } else { -step };
-            } else {
-                self.tail = None;
-            }
-        }
-        let end = audio.frames() as f64;
+        self.fade_tail(&mut frames, step);
         if let Some(timeline) = &mut self.timeline {
             *timeline = (*timeline + step).min(end);
         }
@@ -1163,22 +1180,117 @@ impl DeckPlayer {
             self.position = end;
             self.playing = false;
         }
-        [frame[0] * gain, frame[1] * gain]
+        let played = if self.stems.is_some() {
+            self.stem_mix.process(frames)
+        } else {
+            Played {
+                sent: frames[0],
+                around: [0.0; 2],
+            }
+        };
+        Played {
+            sent: played.sent.map(|sample| sample * gain),
+            around: played.around.map(|sample| sample * gain),
+        }
+    }
+
+    /// The frame of the track, or of each of its four stems, where the deck is, each read
+    /// through its own key lock. The stretch says where the deck is: its tempo is the one
+    /// asked, its position is what is heard; the stretches of the stems move alike.
+    fn read_parts(&mut self, step: f64, speed: f64) -> [Frame; Stem::COUNT] {
+        let mut frames = [[0.0f32; 2]; Stem::COUNT];
+        let Some(audio) = &self.audio else {
+            return frames;
+        };
+        let stems = self.stems.as_deref();
+        let mut locked: [Option<Locked>; Stem::COUNT] = [None; Stem::COUNT];
+        if self.reverse {
+            self.lock.silence();
+            for lock in self.stem_locks.iter_mut() {
+                lock.silence();
+            }
+        } else if let Some(stems) = stems {
+            let locks = self.stem_locks.iter_mut().zip(&stems.audio);
+            for (slot, (lock, audio)) in locked.iter_mut().zip(locks) {
+                *slot = lock.play(audio.samples(), self.position, step, speed);
+            }
+        } else {
+            locked[0] = self.lock.play(audio.samples(), self.position, step, speed);
+        }
+        if let Some(first) = locked[0] {
+            self.position = first.position;
+        }
+        for (index, frame) in frames.iter_mut().enumerate().take(parts(stems)) {
+            *frame = match locked[index] {
+                Some(locked) if locked.level >= 1.0 => locked.frame,
+                Some(locked) => {
+                    let plain = read_part(audio, stems, index, self.position);
+                    [0, 1]
+                        .map(|side| plain[side] + (locked.frame[side] - plain[side]) * locked.level)
+                }
+                // Backwards at the start of the track there is nothing to read.
+                None if self.reverse && self.position <= 0.0 => [0.0; 2],
+                None => read_part(audio, stems, index, self.position),
+            };
+        }
+        frames
+    }
+
+    /// Fades what was heard before the last jump out under `frames`.
+    fn fade_tail(&mut self, frames: &mut [Frame; Stem::COUNT], step: f64) {
+        let (Some(audio), Some(tail)) = (&self.audio, &mut self.tail) else {
+            return;
+        };
+        let stems = self.stems.as_deref();
+        tail.level -= tail.decay;
+        if tail.level <= 0.0 {
+            self.tail = None;
+            return;
+        }
+        for (index, frame) in frames.iter_mut().enumerate().take(parts(stems)) {
+            // What was heard before the jump: the stretch, when it was playing forward.
+            let old = if tail.forward {
+                let lock = if stems.is_some() {
+                    self.stem_locks.get_mut(index)
+                } else {
+                    Some(&mut self.lock)
+                };
+                lock.and_then(KeyLock::tail_frame)
+                    .unwrap_or_else(|| read_part(audio, stems, index, tail.position))
+            } else {
+                read_part(audio, stems, index, tail.position)
+            };
+            *frame = [0, 1].map(|side| frame[side] + (old[side] - frame[side]) * tail.level);
+        }
+        tail.position += if tail.forward { step } else { -step };
     }
 
     fn apply_pending(&mut self, retired: &mut Producer<Retired>) {
         if let Some(arriving) = self.pending_swap.take() {
-            let (audio, stretch, memory) = arriving.map_or((None, None, None), |track| {
-                (Some(track.audio), track.stretch, track.memory)
-            });
+            let (audio, stretch, memory, mut stems) = arriving
+                .map_or((None, None, None, None), |track| {
+                    (Some(track.audio), track.stretch, track.memory, track.stems)
+                });
             let previous = std::mem::replace(&mut self.audio, audio);
             let previous_stretch = self.lock.replace(stretch);
+            // The stretches of the stems that arrive go to the locks, and those of the stems
+            // that leave go back with them.
+            let mut previous_stems = self.stems.take();
+            for (index, lock) in self.stem_locks.iter_mut().enumerate() {
+                let arriving = stems.as_mut().and_then(|stems| stems.stretch[index].take());
+                let leaving = lock.replace(arriving);
+                if let Some(previous) = previous_stems.as_mut() {
+                    previous.stretch[index] = leaving;
+                }
+            }
+            self.stems = stems;
             retire(
                 previous.map(|audio| DeckTrack {
                     audio,
                     stretch: previous_stretch,
                     memory: None,
                     start: None,
+                    stems: previous_stems,
                 }),
                 memory,
                 retired,
@@ -1219,6 +1331,19 @@ impl DeckPlayer {
         self.audio
             .as_ref()
             .map_or(0.0, |audio| frame / audio.rate().as_f64())
+    }
+}
+
+/// How many parts a deck reads: the four stems, or the track.
+fn parts(stems: Option<&DeckStems>) -> usize {
+    if stems.is_some() { Stem::COUNT } else { 1 }
+}
+
+/// Part `index` of what the deck plays: a stem, or the track when it plays no stems.
+fn read_part(audio: &TrackAudio, stems: Option<&DeckStems>, index: usize, position: f64) -> Frame {
+    match stems.and_then(|stems| stems.audio.get(index)) {
+        Some(stem) => read(stem, position),
+        None => read(audio, position),
     }
 }
 

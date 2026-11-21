@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::ViewportCommand;
@@ -13,12 +14,14 @@ use platter_audio_io::{
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
-use platter_engine::command::SPECS;
+use platter_engine::command::{Args, CommandSpec, SPECS};
 use platter_engine::{
     Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
-    RecordingNames, TempoRange,
+    RecordingNames, StemRecall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
+use platter_mcp::json::Value as McpValue;
+use platter_mcp::{Host, Server};
 use platter_ui_egui::collection::Collection;
 use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
@@ -121,6 +124,16 @@ fn recall_from(file: PathBuf) -> Recall {
     })
 }
 
+/// Reads the stems the collection in `file` links to a track; it runs on the worker that loads
+/// the track. A library that cannot be read links none: `docs/behavior/stems.md`.
+fn stem_recall_from(file: PathBuf) -> StemRecall {
+    Arc::new(move |path: &Path| {
+        let library = SqliteLibrary::open(&file).ok()?;
+        let track = library.track_at(path).ok()??;
+        library.stems(track.id).ok().flatten()
+    })
+}
+
 /// Names each recording in `folder` by the moment it starts, in UTC, as the backups of the
 /// collection are: `mix-20261118-214105` (`docs/behavior/recording.md`, *Files*).
 /// Bytes in a MiB, the unit of the split size of the Recording page.
@@ -166,6 +179,10 @@ fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
 }
 
 pub struct PlatterApp {
+    /// The MCP server, when the application was started with `--mcp`.
+    mcp: Option<(Receiver<crate::mcp::Request>, Server)>,
+    /// Installing the separation model and separating tracks into stems.
+    separation: crate::separation::Jobs,
     /// The folder of the files of the user; without one nothing is saved.
     folder: Option<PathBuf>,
     /// Where the mix recorder writes when the user has chosen no folder.
@@ -237,6 +254,7 @@ impl PlatterApp {
         browser.set_columns(&settings.columns);
         let library = folder.as_ref().map(|folder| folder.join(LIBRARY_FILE));
         let recall = library.clone().map(recall_from);
+        let stem_recall = library.clone().map(stem_recall_from);
         let background = background::Shared::default();
         background.range.set(settings.bpm_range);
         let (background_sender, background_reports) = std::sync::mpsc::channel();
@@ -280,6 +298,9 @@ impl PlatterApp {
         if let Some(recall) = recall {
             engine.set_recall(recall);
         }
+        if let Some(recall) = stem_recall {
+            engine.set_stem_recall(recall);
+        }
         let home = config::home_dir();
         let default_recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
         let recordings = settings
@@ -296,7 +317,10 @@ impl PlatterApp {
         engine.set_recording_split(u64::from(settings.recording_split) * MIB);
         // A fresh queue has room for it, and the settings keep the decay in range.
         let _ = engine.set_loop_decay(f64::from(settings.loop_decay) / 100.0);
+        // Without its workers, key lock runs on the audio thread as it always could.
+        let _ = engine.set_key_lock_threads(settings.key_lock_threads);
         let settings_min_playtime = settings.min_playtime;
+        let separation = crate::separation::Jobs::new(folder.clone());
         let mut app = Self {
             folder,
             default_recordings,
@@ -310,6 +334,8 @@ impl PlatterApp {
             problem: None,
             devices: Vec::new(),
             last_device_scan: Instant::now(),
+            mcp: None,
+            separation,
             browser,
             notices: [None; DeckId::COUNT],
             fullscreen: false,
@@ -337,6 +363,7 @@ impl PlatterApp {
         );
         app.load_keymap();
         app.apply_tag_writing();
+        app.log_key_lock_priority();
         app.fullscreen_wanted = app.settings.fullscreen_at_start.then_some(true);
         app.starting = Some(Starting::new(
             &app.settings.music_folders,
@@ -411,6 +438,34 @@ impl PlatterApp {
 
     /// Gives the preferences of the Recording page to the engine and to the tree, for the next
     /// recording, and keeps them.
+    /// Runs key lock where the settings say, for the tracks loaded from then on.
+    fn apply_key_lock_threads(&mut self) {
+        let on = self.settings.key_lock_threads;
+        if let Err(error) = self.engine.set_key_lock_threads(on) {
+            self.log(
+                Level::Warning,
+                &format!("key lock stays on the audio thread: {error}"),
+            );
+        }
+        self.log_key_lock_priority();
+    }
+
+    /// Says in the log when a worker of key lock could not get the priority of audio: it may
+    /// then fall behind under load.
+    fn log_key_lock_priority(&mut self) {
+        if let Some((raised, workers)) = self.engine.key_lock_threads()
+            && raised < workers
+        {
+            self.log(
+                Level::Warning,
+                &format!(
+                    "{} of {workers} key lock workers run without the priority of audio",
+                    workers - raised
+                ),
+            );
+        }
+    }
+
     fn apply_loop_decay(&mut self) {
         let decay = f64::from(self.settings.loop_decay) / 100.0;
         if let Err(error) = self.engine.set_loop_decay(decay) {
@@ -892,9 +947,16 @@ impl PlatterApp {
         self.engine = engine;
         self.engine_rate = rate;
         for deck in DeckId::ALL {
-            if let Some(track) = &snapshot.decks[deck.index()].track {
+            let held = &snapshot.decks[deck.index()];
+            if let Some(track) = &held.track {
                 let path = track.path.clone();
-                self.dispatch(Command::DeckLoad { deck, path }.into());
+                // A track loaded without its stems comes back without them.
+                let command = if held.stem_peaks.is_some() {
+                    Command::DeckLoad { deck, path }
+                } else {
+                    Command::DeckLoadTrack { deck, path }
+                };
+                self.dispatch(command.into());
             }
         }
         processor
@@ -1090,10 +1152,33 @@ impl PlatterApp {
         }
     }
 
+    /// Answers the messages of the MCP client: `docs/behavior/mcp.md`.
+    pub fn serve_mcp(&mut self, requests: Receiver<crate::mcp::Request>) {
+        let server = Server {
+            name: "platter".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        };
+        self.mcp = Some((requests, server));
+    }
+
+    fn answer_mcp(&mut self) {
+        let Some((requests, server)) = self.mcp.take() else {
+            return;
+        };
+        while let Ok(request) = requests.try_recv() {
+            let answer = server.handle(&request.line, &mut McpHost(self));
+            // The reader may have given up waiting; then nobody takes the answer.
+            let _ = request.reply.send(answer);
+        }
+        self.mcp = Some((requests, server));
+    }
+
     fn run_engine(&mut self, command: Command) -> Result<(), EngineError> {
         match &command {
             // The rules of loading of the Decks page: a playing deck takes no track.
             Command::DeckLoad { deck, path }
+            | Command::DeckLoadTrack { deck, path }
+            | Command::DeckLoadStems { deck, path, .. }
                 if self.settings.load_stopped_only
                     && self.engine.snapshot().decks[deck.index()].playing =>
             {
@@ -1107,7 +1192,9 @@ impl PlatterApp {
                 );
                 return Ok(());
             }
-            Command::DeckLoad { deck, .. } => self.notices[deck.index()] = None,
+            Command::DeckLoad { deck, .. }
+            | Command::DeckLoadTrack { deck, .. }
+            | Command::DeckLoadStems { deck, .. } => self.notices[deck.index()] = None,
             Command::MixerCrossfaderCurveSet { curve }
                 if self.settings.crossfader_curve != *curve =>
             {
@@ -1170,6 +1257,18 @@ impl PlatterApp {
             self.save_settings();
         }
         match command {
+            AppCommand::BrowserStemsGenerate => {
+                if let Some((track, path, name)) = self.browser.selected_collection_track()
+                    && let Err(why) = self.separation.start(track, path, name)
+                {
+                    self.log(Level::Warning, &format!("stems: {why}"));
+                }
+            }
+            AppCommand::BrowserStemsCancel => self.separation.cancel(),
+            AppCommand::StemsModelInstall { ref path } => match self.separation.install(path) {
+                Ok(()) => self.log(Level::Info, "stems: installing the separation model"),
+                Err(why) => self.log(Level::Warning, &format!("stems: {why}")),
+            },
             AppCommand::SettingsOpen { .. } => {
                 // The page lists the devices: look for them now, not when it was last open.
                 self.devices = platter_audio_io::devices();
@@ -1345,6 +1444,11 @@ impl PlatterApp {
                 self.settings.load_stopped_only = !self.settings.load_stopped_only;
                 self.save_settings();
             }
+            AppCommand::KeyLockThreadsToggle => {
+                self.settings.key_lock_threads = !self.settings.key_lock_threads;
+                self.apply_key_lock_threads();
+                self.save_settings();
+            }
             AppCommand::AnalysisRangeSet { min, max } => {
                 match TempoRange::new(f64::from(min), f64::from(max)) {
                     Ok(range) => {
@@ -1518,6 +1622,34 @@ impl PlatterApp {
         for why in self.browser.take_unwritten() {
             self.log(Level::Warning, &format!("cannot write the tags of {why}"));
         }
+        for why in self.browser.take_unattached() {
+            self.log(Level::Warning, &format!("no stems attached: {why}"));
+        }
+        for finished in self.separation.poll() {
+            match finished {
+                crate::separation::Finished::Separated { track, folder } => {
+                    self.log(
+                        Level::Info,
+                        &format!("stems written to {}", folder.display()),
+                    );
+                    self.browser.attach_stems_to(track, folder);
+                }
+                crate::separation::Finished::Failed(why) => {
+                    self.log(Level::Warning, &format!("stems: {why}"));
+                }
+                crate::separation::Finished::Installed => {
+                    self.log(Level::Info, "stems: the separation model is installed");
+                }
+                crate::separation::Finished::InstallFailed(why) => {
+                    self.log(
+                        Level::Warning,
+                        &format!("stems: the model was not installed: {why}"),
+                    );
+                }
+            }
+        }
+        self.browser
+            .set_separation(self.separation.status(), self.separation.model_installed());
         while let Ok(report) = self.background_reports.try_recv() {
             match report {
                 background::Report::Progress { done, total } => self
@@ -1547,6 +1679,13 @@ impl PlatterApp {
                     self.log(
                         Level::Warning,
                         &format!("deck {}: {message}", deck.letter()),
+                    );
+                }
+                Event::StemsFailed { deck, message } => {
+                    self.notices[deck.index()] = Some(DeckNotice::StemsFailed);
+                    self.log(
+                        Level::Warning,
+                        &format!("deck {}: stems: {message}", deck.letter()),
                     );
                 }
                 Event::PreviewFailed { message } => {
@@ -1667,6 +1806,7 @@ impl PlatterApp {
                 self.settings.bpm_range.max().round() as u32,
             ),
             load_stopped_only: self.settings.load_stopped_only,
+            key_lock_threads: self.settings.key_lock_threads,
             recording_folder: self
                 .recordings()
                 .map(|folder| folder.display().to_string())
@@ -1681,6 +1821,32 @@ impl PlatterApp {
             controllers: self.manager_view(),
             tag_writing: self.settings.tag_writing,
         }
+    }
+}
+
+/// The application as the MCP server sees it: its commands, run as the keyboard runs them, and
+/// its state.
+struct McpHost<'a>(&'a mut PlatterApp);
+
+impl Host for McpHost<'_> {
+    fn commands(&self) -> Vec<&'static CommandSpec> {
+        Action::specs().collect()
+    }
+
+    fn run(&mut self, id: &str, args: &Args) -> Result<String, String> {
+        let action = Action::from_args(id, args).map_err(|error| error.to_string())?;
+        match action {
+            Action::Engine(command) => self
+                .0
+                .run_engine(command)
+                .map_err(|error| error.to_string())?,
+            Action::App(command) => self.0.dispatch_app(command),
+        }
+        Ok(format!("{id}: done"))
+    }
+
+    fn state(&mut self) -> McpValue {
+        crate::mcp::state_of(&self.0.engine.snapshot())
     }
 }
 
@@ -1708,6 +1874,7 @@ impl eframe::App for PlatterApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         let midi_waiting = self.take_midi();
         self.poll();
+        self.answer_mcp();
         let ctx = ui.ctx().clone();
         // A window narrower than the layout is designed for shows the whole interface
         // smaller; the layout itself has no narrow form yet.

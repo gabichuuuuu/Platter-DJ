@@ -23,7 +23,9 @@ use crate::command::{
     Action, AppCommand, BrowserNode, DetailFields, ListColumn, NewItem, SortColumn, TrackDetails,
 };
 use crate::covers::{COVERS_PER_LIST, Covers};
-use crate::model::{AnalysisStatus, BrowserView, FileRow, RowKind, TrackRow, TreeRow};
+use crate::model::{
+    AnalysisStatus, BrowserView, FileRow, RowKind, SeparationStatus, TrackRow, TreeRow,
+};
 use crate::played::Played;
 
 /// Extensions of the formats Platter plays. The content decides whether a file really is
@@ -205,6 +207,7 @@ fn probe(path: &Path) -> RowKind {
             genre: info.tags.genre,
             comment: None,
             key: None,
+            stems: false,
         }),
         Err(_) => RowKind::Unreadable,
     }
@@ -278,6 +281,8 @@ pub struct FileBrowser {
     recordings: Option<PathBuf>,
     analysis: Option<AnalysisStatus>,
     problem: Option<String>,
+    separation: Option<SeparationStatus>,
+    separation_model: bool,
     /// The tracks the decks hold, whose covers the deck headers show.
     deck_tracks: [Option<PathBuf>; DeckId::COUNT],
 }
@@ -311,6 +316,8 @@ impl FileBrowser {
             recordings: None,
             analysis: None,
             problem: None,
+            separation: None,
+            separation_model: false,
             deck_tracks: Default::default(),
         }
     }
@@ -591,6 +598,8 @@ impl FileBrowser {
             AppCommand::BrowserPlayedReset => collection.reset_played(track),
             AppCommand::BrowserTrackColourSet { colour } => collection.set_colour(track, *colour),
             AppCommand::BrowserTrackRatingSet { rating } => collection.set_rating(track, *rating),
+            AppCommand::BrowserStemsAttach { path } => collection.attach_stems(track, path.clone()),
+            AppCommand::BrowserStemsRemove => collection.remove_stems(track),
             _ => {}
         }
     }
@@ -677,6 +686,33 @@ impl FileBrowser {
 
     /// Says how far the analysis of the collection has gone, and why it stopped if it did.
     /// A step of the analysis changes what the rows of the collection show.
+    /// The separation into stems that runs, and whether the model is installed.
+    pub fn set_separation(&mut self, status: Option<SeparationStatus>, model: bool) {
+        self.separation = status;
+        self.separation_model = model;
+    }
+
+    /// The selected track of the collection, a playlist or a history: its identifier, its file
+    /// and the name the list gives it.
+    pub fn selected_collection_track(&self) -> Option<(TrackId, PathBuf, String)> {
+        let selected = self.selected?;
+        let collection = self.collection.as_ref().filter(|_| self.showing_library)?;
+        let track = collection.track(selected)?;
+        let row = collection.rows().get(selected)?;
+        let name = match &row.kind {
+            RowKind::Track(info) => info.title.clone().unwrap_or_else(|| row.name.clone()),
+            _ => row.name.clone(),
+        };
+        Some((track, row.path.clone(), name))
+    }
+
+    /// Links the stems written into `folder` to a track, whatever is selected now.
+    pub fn attach_stems_to(&mut self, track: TrackId, folder: PathBuf) {
+        if let Some(collection) = &mut self.collection {
+            collection.attach_stems(track, folder);
+        }
+    }
+
     pub fn set_analysis(&mut self, status: Option<AnalysisStatus>, problem: Option<String>) {
         if status.is_some_and(|status| Some(status) != self.analysis)
             && let Some(collection) = &mut self.collection
@@ -713,6 +749,14 @@ impl FileBrowser {
         self.collection
             .as_mut()
             .map(Collection::take_unwritten)
+            .unwrap_or_default()
+    }
+
+    /// Why folders gave no set of stems since the last call.
+    pub fn take_unattached(&mut self) -> Vec<String> {
+        self.collection
+            .as_mut()
+            .map(Collection::take_unattached)
             .unwrap_or_default()
     }
 
@@ -920,6 +964,9 @@ impl FileBrowser {
                 }
             }
             AppCommand::BrowserLoadSelected { deck } => return self.load_selected(*deck),
+            AppCommand::BrowserLoadSelectedTrack { deck } => {
+                return self.load_selected_track(*deck);
+            }
             AppCommand::PreviewLoadSelected => {
                 let row = self.selected_row()?;
                 return match row.kind {
@@ -1060,7 +1107,9 @@ impl FileBrowser {
             AppCommand::BrowserTrackDelete
             | AppCommand::BrowserPlayedReset
             | AppCommand::BrowserTrackColourSet { .. }
-            | AppCommand::BrowserTrackRatingSet { .. } => self.change_selected(command),
+            | AppCommand::BrowserTrackRatingSet { .. }
+            | AppCommand::BrowserStemsAttach { .. }
+            | AppCommand::BrowserStemsRemove => self.change_selected(command),
             _ => {}
         }
         None
@@ -1110,6 +1159,17 @@ impl FileBrowser {
                 path: row.path.clone(),
             })),
         }
+    }
+
+    /// The selected track into a deck without its stems: `docs/behavior/stems.md`.
+    fn load_selected_track(&self, deck: DeckId) -> Option<Action> {
+        let row = self.selected_row()?;
+        (!matches!(row.kind, RowKind::Folder)).then(|| {
+            Action::Engine(Command::DeckLoadTrack {
+                deck,
+                path: row.path.clone(),
+            })
+        })
     }
 
     fn tree_rows(&self, folder: &Path, name: String, depth: usize, rows: &mut Vec<TreeRow>) {
@@ -1200,6 +1260,8 @@ impl FileBrowser {
                 _ => self.reading,
             },
             analysis: self.analysis,
+            separation: self.separation.clone(),
+            separation_model: self.separation_model,
             problem: self.problem.clone(),
             deck_covers: self.deck_tracks.each_ref().map(|path| {
                 path.as_ref()

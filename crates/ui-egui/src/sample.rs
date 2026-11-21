@@ -325,6 +325,7 @@ fn rows() -> Vec<FileRow> {
                     genre: None,
                     comment: None,
                     key: KEYS[index],
+                    stems: false,
                 }),
             }
         })
@@ -490,6 +491,7 @@ fn settings() -> SettingsView {
         key_notation: KeyNotation::default(),
         bpm_range: (70, 180),
         load_stopped_only: false,
+        key_lock_threads: true,
         recording_folder: "Music/Platter DJ Recordings".to_owned(),
         recording_folder_chosen: false,
         recording_prefix: "mix".to_owned(),
@@ -545,6 +547,8 @@ fn browser() -> BrowserView {
         reading: false,
         // As the design system shows the status bar.
         analysis: Some(AnalysisStatus { done: 3, total: 12 }),
+        separation: None,
+        separation_model: false,
         problem: None,
         deck_covers: [None, None, None, None],
     }
@@ -714,6 +718,36 @@ pub fn four_decks() -> Scene {
         file: Some(PathBuf::from("mix-20261118-214105.wav")),
         ..RecorderSnapshot::default()
     };
+    scene
+}
+
+/// The four-deck state with deck C playing the stems of its track, as the M4 screen draws
+/// it: the other stem muted and the vocals sent to the effects at half.
+pub fn stem_deck() -> Scene {
+    let mut scene = four_decks();
+    let deck = &mut scene.engine.decks[2];
+    let (seconds, bpm) = deck.track.as_ref().map_or((240.0, 124.0), |track| {
+        (track.seconds, track.tags.bpm.unwrap_or(124.0))
+    });
+    deck.stem_peaks = Some(Arc::new([5, 6, 7, 8].map(|seed| peaks(seconds, bpm, seed))));
+    deck.controls.stems[2].muted = true;
+    deck.controls.stems[3].send_on = true;
+    deck.controls.stems[3].send = 0.5;
+    scene
+}
+
+/// The two-deck state with deck B playing the stems of its track: the other stem muted and
+/// the vocals sent to the effects at half.
+pub fn two_deck_stems() -> Scene {
+    let mut scene = playing();
+    let deck = &mut scene.engine.decks[1];
+    let (seconds, bpm) = deck.track.as_ref().map_or((240.0, 124.0), |track| {
+        (track.seconds, track.tags.bpm.unwrap_or(124.0))
+    });
+    deck.stem_peaks = Some(Arc::new([5, 6, 7, 8].map(|seed| peaks(seconds, bpm, seed))));
+    deck.controls.stems[2].muted = true;
+    deck.controls.stems[3].send_on = true;
+    deck.controls.stems[3].send = 0.5;
     scene
 }
 

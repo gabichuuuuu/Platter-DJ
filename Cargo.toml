@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/platter", "apps/platter-cli", "crates/analysis", "crates/audio-io", "crates/control", "crates/core", "crates/decode", "crates/device-io", "crates/dsp", "crates/engine", "crates/library", "crates/testkit", "crates/ui-egui", "xtask"]
+members = ["apps/platter", "apps/platter-cli", "crates/analysis", "crates/audio-io", "crates/control", "crates/core", "crates/decode", "crates/device-io", "crates/dsp", "crates/engine", "crates/library", "crates/mcp", "crates/stems", "crates/testkit", "crates/ui-egui", "xtask"]
 
 [workspace.package]
 version = "0.6.0"
@@ -24,6 +24,7 @@ cognitive_complexity = "deny"
 too_many_arguments = "deny"
 
 [workspace.dependencies]
+audio_thread_priority = { version = "0.38.0", default-features = false }
 cargo_metadata = "0.23.1"
 cpal = "0.18.2"
 midir = "0.11.1"
@@ -61,3 +62,15 @@ skrifa = { opt-level = 2 }
 smallvec = { opt-level = 2 }
 vello_common = { opt-level = 2 }
 vello_cpu = { opt-level = 2 }
+# The stretch of key lock and its FFT: on worker threads it has to keep up with the pace of a
+# device in the tests too (docs/decisions/0039-key-lock-threads.md).
+libm = { opt-level = 2 }
+num-complex = { opt-level = 2 }
+num-integer = { opt-level = 2 }
+num-traits = { opt-level = 2 }
+primal-check = { opt-level = 2 }
+rustfft = { opt-level = 2 }
+strength_reduce = { opt-level = 2 }
+timestretch = { opt-level = 2 }
+timestretch-core = { opt-level = 2 }
+transpose = { opt-level = 2 }

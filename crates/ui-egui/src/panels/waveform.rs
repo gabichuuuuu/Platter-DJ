@@ -18,6 +18,7 @@ use crate::cx::{ControlKind, Cx, id};
 use crate::i18n::Texts;
 use crate::icons::Glyph;
 use crate::paint;
+use crate::panels::stems;
 use crate::theme::Theme;
 use crate::widgets::key::{self, KeySpec, Press};
 
@@ -30,6 +31,9 @@ pub const DEFAULT_ZOOM: usize = 1;
 const TIMELINE_DIM: f32 = 0.45;
 const PLAYED_VEIL: f32 = 0.55;
 const GUTTER_WIDTH: f32 = 32.0;
+/// The keys of a gutter, zoom in, zoom out and the fold of the stems, from its top.
+const GUTTER_KEYS_TOP: f32 = 26.0;
+const GUTTER_KEY_STEP: f32 = 20.0;
 /// How much of the loop colour covers the waveform inside a loop.
 const LOOP_VEIL: f32 = 0.22;
 /// Length of the two ticks that turn the line at an end of a loop into a bracket.
@@ -380,14 +384,62 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
     playhead(cx, lane, lane.center().x);
 }
 
+/// The scrolling waveform of one stem in `lane`, in the colour of the stem, with the
+/// playhead in the middle, at the zoom of the deck.
+pub fn stem_lane(
+    cx: &Cx<'_>,
+    lane: Rect,
+    snapshot: &DeckSnapshot,
+    peaks: &WaveformPeaks,
+    ink: Color32,
+    zoom: usize,
+) {
+    let color = &cx.theme.tokens.color;
+    let painter = cx.painter().with_clip_rect(lane);
+    painter.rect_filled(lane, CornerRadius::ZERO, color.bg_app);
+    let window = ZOOM_SECONDS[zoom.min(ZOOM_SECONDS.len() - 1)];
+    let pixels_per_second = f64::from(lane.width()) / window;
+    let columns_per_pixel = 1.0 / (pixels_per_second * peaks.seconds_per_column());
+    let position = snapshot.position_seconds;
+    let centre = f64::from(lane.center().x);
+    let first = ((position - window / 2.0) * pixels_per_second).floor() as i64;
+    let last = ((position + window / 2.0) * pixels_per_second).ceil() as i64;
+    let mut mesh = Mesh::default();
+    for bar in first.max(0)..last {
+        let from = (bar as f64 * columns_per_pixel).floor() as usize;
+        if from >= peaks.columns().len() {
+            break;
+        }
+        let to = (((bar + 1) as f64 * columns_per_pixel).ceil() as usize).max(from + 1);
+        let left = centre + (bar as f64 - position * pixels_per_second);
+        add_column(
+            &mut mesh,
+            lane,
+            left as f32,
+            left as f32 + 1.0,
+            peak_over(peaks.columns(), from, to),
+            [ink; 3],
+        );
+    }
+    painter.add(mesh);
+    painter.vline(
+        lane.center().x,
+        lane.y_range(),
+        Stroke::new(cx.theme.tokens.stroke.playhead, color.playhead),
+    );
+}
+
 /// The two scrolling lanes of the main window: for each deck a gutter with its badge and
-/// zoom keys, and its lane.
+/// zoom keys, and its lane. A stem deck adds the fold key to its gutter and shows its mute
+/// keys beside its waveform, or the four lanes of its stems in its place
+/// (`docs/design/DESIGN.md`, *StemLanes*).
 pub fn lanes(
     cx: &mut Cx<'_>,
     rect: Rect,
     shown: &[DeckId],
     decks: &[DeckSnapshot; DeckId::COUNT],
     zoom: [usize; DeckId::COUNT],
+    stem_lanes: [bool; DeckId::COUNT],
 ) {
     let theme = cx.theme;
     let texts = cx.texts;
@@ -430,11 +482,15 @@ pub fn lanes(
                 zoom_step + 1 < ZOOM_SECONDS.len(),
             ),
         ];
-        for (index, (glyph, name, command, enabled)) in keys.into_iter().enumerate() {
-            let key_rect = Rect::from_min_size(
-                gutter.min + egui::vec2(5.0, 28.0 + 22.0 * index as f32),
+        let snapshot = &decks[deck.index()];
+        let gutter_key = |index: usize| {
+            Rect::from_min_size(
+                gutter.min + egui::vec2(5.0, GUTTER_KEYS_TOP + GUTTER_KEY_STEP * index as f32),
                 egui::vec2(22.0, 18.0),
-            );
+            )
+        };
+        for (index, (glyph, name, command, enabled)) in keys.into_iter().enumerate() {
+            let key_rect = gutter_key(index);
             let name = texts.format(name, &[("deck", &letter)]);
             key::key(
                 cx,
@@ -444,7 +500,37 @@ pub fn lanes(
                 Press::Click(command.into()),
             );
         }
-        scrolling(cx, lane, deck, &decks[deck.index()], zoom_step);
+        let unfolded = stem_lanes[deck.index()];
+        if snapshot.stem_peaks.is_some() {
+            let (glyph, name) = if unfolded {
+                (Glyph::ChevronUp, "stems.hide_name")
+            } else {
+                (Glyph::ChevronDown, "stems.show_name")
+            };
+            let name = texts.format(name, &[("deck", &letter)]);
+            key::key(
+                cx,
+                gutter_key(2),
+                id(("lane-stems", deck.index())),
+                KeySpec::icon(glyph, 12.0, &name),
+                Press::Click(AppCommand::WaveformStemLanesToggle { deck }.into()),
+            );
+            if unfolded {
+                stems::lanes(cx, lane, deck, snapshot, zoom_step);
+                continue;
+            }
+            let column = Rect::from_min_size(
+                lane.min,
+                egui::vec2(stems::MUTE_COLUMN_WIDTH, lane.height()),
+            );
+            cx.painter()
+                .rect_filled(column, CornerRadius::ZERO, color.surface_panel);
+            stems::mute_column(cx, column, deck, snapshot);
+            let wave = Rect::from_min_max(egui::pos2(column.right() + seam, lane.top()), lane.max);
+            scrolling(cx, wave, deck, snapshot, zoom_step);
+        } else {
+            scrolling(cx, lane, deck, snapshot, zoom_step);
+        }
         let name = texts.format("deck.lane", &[("deck", &letter)]);
         let response = cx
             .ui

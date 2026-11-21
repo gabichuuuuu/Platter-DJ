@@ -147,6 +147,8 @@ pub struct SettingsView {
     pub bpm_range: (u32, u32),
     /// A playing deck takes no track.
     pub load_stopped_only: bool,
+    /// Key lock runs on worker threads.
+    pub key_lock_threads: bool,
     /// The folder the mix recorder writes into, as the Recording page shows it, and whether
     /// it is one the user chose.
     pub recording_folder: String,
@@ -310,6 +312,8 @@ pub struct TrackRow {
     pub comment: Option<String>,
     /// The key the analysis found, as the collection keeps it (`crate::keys`).
     pub key: Option<u8>,
+    /// A track of the collection with a set of stems linked to it: `docs/behavior/stems.md`.
+    pub stems: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -470,10 +474,21 @@ pub struct BrowserView {
     pub reading: bool,
     /// The analysis of the collection in the background, while it runs.
     pub analysis: Option<AnalysisStatus>,
+    /// A track being separated into stems: `docs/behavior/stems.md`, *Separation*.
+    pub separation: Option<SeparationStatus>,
+    /// The separation model is installed.
+    pub separation_model: bool,
     /// Why the analysis of the collection stopped, if it did.
     pub problem: Option<String>,
     /// The covers of the tracks the decks hold.
     pub deck_covers: [Option<CoverImage>; DeckId::COUNT],
+}
+
+/// The track being separated into stems and the share done, from 0 to 1.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SeparationStatus {
+    pub track: String,
+    pub done: f32,
 }
 
 /// How far the analysis of the collection in the background has gone.
@@ -498,6 +513,8 @@ impl BrowserView {
 pub enum DeckNotice {
     /// The last file sent to the deck could not be read.
     LoadFailed,
+    /// The stems of the last track could not be played; the track plays alone.
+    StemsFailed,
 }
 
 /// The MIDI controllers of the settings, for the indicator of the status header.
