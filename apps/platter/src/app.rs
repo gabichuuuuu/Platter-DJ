@@ -16,6 +16,7 @@ use platter_audio_io::{
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::command::{Args, CommandSpec, SPECS};
+use platter_engine::midi_clock::ClockFeed;
 use platter_engine::{
     Command, Engine, EngineError, Event, FxUnit, InputFeed, InputTarget, PlatterAnalyser,
     Processor, Recall, RecordingNames, StemRecall, TempoRange,
@@ -38,6 +39,7 @@ use platter_ui_egui::played::{MAX_PLAYTIME, MIN_PLAYTIME, PlayClock};
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
 use crate::background;
+use crate::clock_sender::{self, ClockSender};
 use crate::config::{
     self, BACKUP_FOLDER, Controller, InputSettings, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE,
     MAX_CONTROLLERS, MAX_MUSIC_FOLDERS, SETTINGS_FILE, Settings, TEMPO_RANGE_PERCENTS,
@@ -212,6 +214,13 @@ pub struct PlatterApp {
     input_problem: Option<AudioProblem>,
     input_devices: Vec<DeviceInfo>,
     last_input_scan: Instant,
+    /// The thread that sends the MIDI clock, while its output is open:
+    /// `docs/behavior/midi-clock.md`.
+    clock_sender: Option<ClockSender>,
+    /// What the processor gives the sender, between two outputs; a new engine gives a new one.
+    clock_feed: Option<ClockFeed>,
+    /// The MIDI outputs of the system, as the last look found them.
+    midi_outputs: Vec<String>,
     browser: FileBrowser,
     notices: [Option<DeckNotice>; DeckId::COUNT],
     /// The window covers the whole screen, as the window last said.
@@ -353,6 +362,9 @@ impl PlatterApp {
             input_problem: None,
             input_devices: Vec::new(),
             last_input_scan: Instant::now(),
+            clock_sender: None,
+            clock_feed: None,
+            midi_outputs: Vec::new(),
             mcp: None,
             separation,
             browser,
@@ -960,9 +972,11 @@ impl PlatterApp {
         for (path, kept) in self.keeping.flush() {
             self.browser.keep(path, kept);
         }
-        // The input fed the old engine; the new one gives its own.
+        // The input fed the old engine and the clock came from it; the new one gives its own.
         self.close_input();
         self.input_sink = None;
+        self.close_clock();
+        self.clock_feed = None;
         let snapshot = self.engine.snapshot();
         let rate = self.settings.sample_rate;
         let (engine, processor) = Engine::with_controls_of(rate_of(rate), &self.engine);
@@ -1035,6 +1049,62 @@ impl PlatterApp {
         self.output = output;
         self.problem = problem;
         self.open_input();
+        self.open_clock();
+    }
+
+    /// The delay of the MIDI clock: the latency of the output and the offset of the settings.
+    fn clock_delay(&self) -> Duration {
+        let latency_ms = self
+            .output
+            .as_ref()
+            .filter(|output| output.is_audible())
+            .map_or(0.0, |output| output.info().latency_ms());
+        let latency = Duration::from_secs_f64((latency_ms / 1_000.0).max(0.0));
+        clock_sender::signed_delay(latency, self.settings.clock.offset_ms)
+    }
+
+    /// Opens the MIDI output the settings name for the clock and starts its sender; one that
+    /// runs only takes the delay of the output as it now is.
+    fn open_clock(&mut self) {
+        self.midi_outputs = platter_device_io::outputs().unwrap_or_default();
+        let delay = self.clock_delay();
+        if let Some(sender) = &self.clock_sender {
+            sender.set_delay(delay);
+            return;
+        }
+        let Some(name) = self.settings.clock.output.clone() else {
+            return;
+        };
+        let Some(feed) = self
+            .clock_feed
+            .take()
+            .or_else(|| self.engine.take_clock_feed())
+        else {
+            self.log(Level::Error, "MIDI clock: the engine has no clock to send");
+            return;
+        };
+        let output = match platter_device_io::Output::open(&name) {
+            Ok(output) => output,
+            Err(error) => {
+                self.log(Level::Warning, &format!("MIDI clock: {error}"));
+                self.clock_feed = Some(feed);
+                return;
+            }
+        };
+        match ClockSender::start(feed, output, self.engine_rate, delay) {
+            Ok(sender) => {
+                self.log(Level::Info, &format!("MIDI clock: sending to `{name}`"));
+                self.clock_sender = Some(sender);
+            }
+            // The feed went with the thread that could not start: this engine sends no clock.
+            Err(error) => self.log(Level::Error, &format!("MIDI clock: {error}")),
+        }
+    }
+
+    fn close_clock(&mut self) {
+        if let Some(sender) = self.clock_sender.take() {
+            self.clock_feed = sender.stop();
+        }
     }
 
     /// Opens the input device of the settings, if one is chosen, at the sample rate and the
@@ -1231,6 +1301,11 @@ impl PlatterApp {
                 settings.maximiser.on,
                 Command::MasterLimiterToggle,
             ),
+            (
+                self.engine.snapshot().clock.midi_clock,
+                settings.clock.send,
+                Command::ClockMidiSendToggle,
+            ),
         ] {
             if now != wanted {
                 commands.push(toggle);
@@ -1359,6 +1434,7 @@ impl PlatterApp {
             Command::MixerAuxSet { .. } => Some(false),
             _ => None,
         };
+        let clock_setting = matches!(command, Command::ClockMidiSendToggle);
         let id = command.id();
         let effect = id.starts_with("fx.")
             || id.starts_with("mixer.fx_assign")
@@ -1377,6 +1453,13 @@ impl PlatterApp {
         }
         if let Some(save) = input_setting {
             self.keep_input_settings(save);
+        }
+        if clock_setting {
+            let send = self.engine.snapshot().clock.midi_clock;
+            if send != self.settings.clock.send {
+                self.settings.clock.send = send;
+                self.save_settings();
+            }
         }
         if effect {
             self.settings.effects = crate::effects_config::kept(&self.engine.snapshot().effects);
@@ -1417,7 +1500,25 @@ impl PlatterApp {
                 self.last_device_scan = Instant::now();
                 self.input_devices = platter_audio_io::input_devices();
                 self.last_input_scan = Instant::now();
+                self.midi_outputs = platter_device_io::outputs().unwrap_or_default();
                 self.scan_midi();
+            }
+            AppCommand::ClockMidiOutputSet { port } => {
+                if self.settings.clock.output != port {
+                    self.settings.clock.output = port;
+                    self.save_settings();
+                    self.close_clock();
+                    self.open_clock();
+                }
+            }
+            AppCommand::ClockMidiOffsetSet { ms } => {
+                if ms.abs() <= config::MAX_CLOCK_OFFSET_MS && ms != self.settings.clock.offset_ms {
+                    self.settings.clock.offset_ms = ms;
+                    self.save_settings();
+                    if let Some(sender) = &self.clock_sender {
+                        sender.set_delay(self.clock_delay());
+                    }
+                }
             }
             AppCommand::InputDeviceSet { device } => {
                 if self.settings.input.device != device {
@@ -1870,6 +1971,10 @@ impl PlatterApp {
             }
         }
         self.watch_input();
+        if self.clock_sender.as_ref().is_some_and(ClockSender::is_gone) {
+            self.log(Level::Warning, "MIDI clock: the output went away");
+            self.close_clock();
+        }
     }
 
     /// Opens again an input whose stream ended, and the one the settings name when the input
@@ -1967,6 +2072,10 @@ impl PlatterApp {
         SettingsView {
             device: self.settings.device.clone(),
             input_device: self.settings.input.device.clone(),
+            clock_outputs: self.midi_outputs.clone(),
+            clock_output: self.settings.clock.output.clone(),
+            clock_output_open: self.clock_sender.is_some(),
+            clock_offset_ms: self.settings.clock.offset_ms,
             sample_rate: self.settings.sample_rate,
             buffer_frames: self.settings.buffer_frames,
             routing: [

@@ -32,6 +32,7 @@ use crate::widgets::key::{self, KeySpec, Press};
 use crate::widgets::value::{self, Steps, ValueSpec};
 
 mod input;
+mod sync;
 
 pub const DIALOG_SIZE: egui::Vec2 = egui::vec2(880.0, 620.0);
 const NAV_WIDTH: f32 = 200.0;
@@ -159,6 +160,7 @@ pub fn settings(
         let name = texts.get(match entry {
             SettingsPage::Audio => "settings.audio",
             SettingsPage::Input => "settings.input",
+            SettingsPage::Sync => "settings.sync",
             SettingsPage::General => "settings.general",
             SettingsPage::Decks => "settings.decks",
             SettingsPage::Mixer => "settings.mixer",
@@ -209,6 +211,7 @@ pub fn settings(
     match page {
         SettingsPage::Audio => audio_page(cx, page_rect, view),
         SettingsPage::Input => input::input_page(cx, page_rect, view),
+        SettingsPage::Sync => sync::sync_page(cx, page_rect, view),
         SettingsPage::General => general_page(cx, page_rect, view),
         SettingsPage::Keyboard => keyboard_page(cx, page_rect, view, memory),
         SettingsPage::Decks => scrolled(

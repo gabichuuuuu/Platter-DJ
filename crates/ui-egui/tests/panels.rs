@@ -339,6 +339,11 @@ fn states() -> Vec<State> {
             Some(SettingsPage::Input),
         ),
         state(
+            "preferences-sync",
+            sample::playing(),
+            Some(SettingsPage::Sync),
+        ),
+        state(
             "preferences-general",
             sample::playing(),
             Some(SettingsPage::General),
@@ -1420,6 +1425,8 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     // The folder and the prefix of the recordings, as the Recording page shows them.
     data.insert(scene.settings.recording_folder.clone());
     data.insert(scene.settings.recording_prefix.clone());
+    // The MIDI outputs the Sync page offers for the clock.
+    data.extend(scene.settings.clock_outputs.iter().cloned());
     data
 }
 

@@ -124,8 +124,14 @@ impl AudioView {
 pub struct SettingsView {
     /// Name of the chosen device; `None` is the default device of the system.
     pub device: Option<String>,
-    /// Name of the chosen input device; None opens no input.
+    /// Name of the chosen input device; `None` opens no input.
     pub input_device: Option<String>,
+    /// The MIDI outputs of the system, the one the clock goes to, whether it is open and the
+    /// offset of the clock in milliseconds: `docs/behavior/midi-clock.md`.
+    pub clock_outputs: Vec<String>,
+    pub clock_output: Option<String>,
+    pub clock_output_open: bool,
+    pub clock_offset_ms: i32,
     pub sample_rate: u32,
     pub buffer_frames: u32,
     /// Output of the device for master left, master right, headphones left and right.

@@ -145,6 +145,7 @@ pub enum SettingsPage {
     #[default]
     Audio,
     Input,
+    Sync,
     General,
     Decks,
     Mixer,
@@ -156,9 +157,10 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Audio,
         Self::Input,
+        Self::Sync,
         Self::General,
         Self::Decks,
         Self::Mixer,
@@ -173,6 +175,7 @@ impl SettingsPage {
         match self {
             Self::Audio => "audio",
             Self::Input => "input",
+            Self::Sync => "sync",
             Self::General => "general",
             Self::Decks => "decks",
             Self::Mixer => "mixer",
@@ -297,6 +300,15 @@ pub enum AppCommand {
     /// The input device; `None` opens no input (`docs/behavior/live-input.md`).
     InputDeviceSet {
         device: Option<String>,
+    },
+    /// The MIDI output the clock goes to; `None` sends it nowhere
+    /// (`docs/behavior/midi-clock.md`).
+    ClockMidiOutputSet {
+        port: Option<String>,
+    },
+    /// Milliseconds the MIDI clock goes out later (positive) or earlier than the audio.
+    ClockMidiOffsetSet {
+        ms: i32,
     },
     /// Puts one side of an output pair on an output of the device, counted from zero.
     AudioRoutingSet {
@@ -764,6 +776,7 @@ const fn choice(name: &'static str, choices: &'static [&'static str]) -> ParamSp
 const PAGES: &[&str] = &[
     "audio",
     "input",
+    "sync",
     "general",
     "decks",
     "mixer",
@@ -1538,6 +1551,19 @@ pub const APP_SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "clock.midi.output.set",
+        label: "Set MIDI clock output",
+        params: &[ParamSpec {
+            name: "port",
+            kind: ParamKind::Text,
+        }],
+    },
+    CommandSpec {
+        id: "clock.midi.offset.set",
+        label: "Set MIDI clock offset",
+        params: &[number("ms", -50.0, 50.0)],
+    },
+    CommandSpec {
         id: "audio.sample_rate.set",
         label: "Set sample rate",
         params: &[number("hz", 8_000.0, 384_000.0)],
@@ -2244,6 +2270,15 @@ impl AppCommand {
                     device: (!device.is_empty()).then(|| device.to_owned()),
                 }
             }
+            "clock.midi.output.set" => {
+                let port = read.text("port")?;
+                Self::ClockMidiOutputSet {
+                    port: (!port.is_empty()).then(|| port.to_owned()),
+                }
+            }
+            "clock.midi.offset.set" => Self::ClockMidiOffsetSet {
+                ms: read.integer("ms")? as i32,
+            },
             "audio.sample_rate.set" => Self::AudioSampleRateSet {
                 hz: read.integer("hz")? as u32,
             },
@@ -2577,6 +2612,8 @@ impl AppCommand {
             Self::TagWritingSet { .. } => "library.tag_writing.set",
             Self::AudioDeviceSet { .. } => "audio.device.set",
             Self::InputDeviceSet { .. } => "input.device.set",
+            Self::ClockMidiOutputSet { .. } => "clock.midi.output.set",
+            Self::ClockMidiOffsetSet { .. } => "clock.midi.offset.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",
             Self::AudioRoutingSet { .. } => "audio.routing.set",

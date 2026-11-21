@@ -86,7 +86,7 @@ features = [
   { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test settings_mixer; nobody has listened to it with real tracks yet, see ROADMAP.md" },
   { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
-  { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
+  { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "in_progress" },
   { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
 ]
 

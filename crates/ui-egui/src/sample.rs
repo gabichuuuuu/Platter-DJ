@@ -461,6 +461,10 @@ fn settings() -> SettingsView {
     SettingsView {
         device: Some("USB audio interface".to_owned()),
         input_device: Some("USB audio interface".to_owned()),
+        clock_outputs: vec!["USB MIDI interface".to_owned()],
+        clock_output: Some("USB MIDI interface".to_owned()),
+        clock_output_open: true,
+        clock_offset_ms: 0,
         sample_rate: 48_000,
         buffer_frames: 256,
         routing: [0, 1, 2, 3],
