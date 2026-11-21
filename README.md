@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="#why-platter">Why Platter</a> ·
   <a href="#status">Status</a> ·
   <a href="#download">Download</a> ·
   <a href="#building">Building</a> ·
@@ -30,6 +31,33 @@
 Platter is an independent, open-source DJ application written in Rust. The goal is a complete
 desktop program for DJs, with the functions expected of professional DJ software, written with
 its own code, graphics and sounds.
+
+## Why Platter
+
+The professional DJ applications in wide use are closed programs sold by their vendors. Platter
+differs in these ways; each one is enforced by the code or was measured, and none is a promise.
+
+- **Open.** The whole program is under `MIT OR Apache-2.0`, with no paid tier. Controller
+  mappings and keyboard shortcuts are TOML files the user edits, and every action is a command
+  with a stable identifier, so the keyboard, the window, the command line and the MCP server
+  drive the same functions.
+- **Private.** No telemetry, no account and no automatic reports; the application opens no
+  network connection without an explicit action of the user. Stem separation runs on the
+  computer, with no service and no native library.
+- **Built not to crash.** The workspace lints deny `unwrap`, `expect`, `panic!` and `unsafe` in
+  shipped code, and files, MIDI messages and command parameters are treated as untrusted input.
+  `cargo xtask ci` checks this on every change.
+- **Steady audio.** The audio thread does not allocate, lock or wait, and a test fails if it
+  allocates or frees memory (`crates/engine/tests/realtime_memory.rs`). Rust has no garbage
+  collector, so nothing pauses the audio to reclaim memory. Decoding, analysis and separation
+  run on worker threads.
+- **Measured** (Windows x64, release build): 30 s of audio separated into four stems in 3.0 s
+  on 20 threads; the application uses half the processors for it.
+
+Latency, CPU per deck, memory with four decks and start-up time have not been measured yet,
+against Platter or any other program, so no claim of speed against other software is made. Rust
+compiles to native code like the C++ most DJ software is written in; a difference will come
+from design and has to be shown by measurement.
 
 ## Status
 
