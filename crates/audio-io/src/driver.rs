@@ -102,7 +102,7 @@ impl StreamStats {
         }
     }
 
-    fn record(&self, took: Duration, frames: usize, sample_rate: u32) {
+    pub(crate) fn record(&self, took: Duration, frames: usize, sample_rate: u32) {
         let callback = self.callbacks.fetch_add(1, ORDER) + 1;
         if frames == 0 || sample_rate == 0 {
             return;
