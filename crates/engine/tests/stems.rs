@@ -170,10 +170,32 @@ fn key_lock_plays_the_stems_together_at_another_tempo() {
 }
 
 #[test]
-fn stems_at_another_rate_leave_the_track_playing_alone() {
+fn a_stem_at_another_rate_is_brought_to_that_of_the_track() {
     let mut rig = Rig::new();
     rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    // The drums at 44.1 kHz, as the separation writes them, under a track at 48 kHz.
     let (path, stems) = stem_files("stems-rate", 44_100);
+    rig.send(Command::DeckLoadStems {
+        deck: A,
+        path,
+        stems,
+    });
+    let events = rig.engine.wait_for_loads();
+    assert!(
+        matches!(events.as_slice(), [Event::Loaded { .. }]),
+        "{events:?}"
+    );
+    assert!(rig.engine.snapshot().decks[0].stem_peaks.is_some());
+    rig.send(Command::DeckPlay { deck: A });
+    assert!((level(&mut rig) - FULL).abs() < 0.01);
+}
+
+#[test]
+fn stems_that_cannot_be_read_leave_the_track_playing_alone() {
+    let mut rig = Rig::new();
+    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    let (path, mut stems) = stem_files("stems-missing", RATE);
+    stems[1] = PathBuf::from("no-such-bass.wav");
     rig.send(Command::DeckLoadStems {
         deck: A,
         path,

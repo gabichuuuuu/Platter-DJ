@@ -2379,9 +2379,9 @@ fn prepare(
     }
 }
 
-/// Decodes the four stems of `track` and builds what the deck plays them with. A stem has
-/// to be at the rate of the track; a shorter one is completed with silence and a longer one
-/// cut at the length of the track.
+/// Decodes the four stems of `track` and builds what the deck plays them with. A stem at
+/// another rate is brought to that of the track; a shorter one is completed with silence and a
+/// longer one cut at the length of the track.
 fn prepare_stems(
     track: &TrackAudio,
     paths: &[PathBuf; Stem::COUNT],
@@ -2392,14 +2392,9 @@ fn prepare_stems(
     let mut stretch = Vec::with_capacity(Stem::COUNT);
     for (stem, path) in Stem::ALL.into_iter().zip(paths) {
         let decoded = decode_file(path).map_err(|error| format!("{stem}: {error}"))?;
-        if decoded.sample_rate != track.rate() {
-            return Err(format!(
-                "{stem}: {} Hz, the track is at {} Hz",
-                decoded.sample_rate.hz(),
-                track.rate().hz()
-            ));
-        }
-        let mut stereo = decoded.into_stereo();
+        let from = decoded.sample_rate.hz();
+        let mut stereo =
+            crate::separation::resample(&decoded.into_stereo(), from, track.rate().hz());
         stereo.resize(track.frames() * 2, 0.0);
         peaks.push(WaveformPeaks::compute(&stereo, track.rate()));
         let part = TrackAudio::new(track.rate(), stereo);

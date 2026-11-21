@@ -3,7 +3,7 @@
 A stem deck plays a track as four parts, the stems, that sound together as the whole track: drums,
 bass, other and vocals. Each stem has its own volume, mute, filter and effect send. This note
 covers the stem deck, the controls of each stem and the mute buttons; the separation of a track
-into stems is a function of its own, still to come.
+into stems has its section below, *Separation*.
 
 ## What the public manual says
 
@@ -58,9 +58,10 @@ names its own. By default the four stems play at full volume and sound like the 
   For such a track the context menu has *Load without stems on <deck>* for each deck shown
   (`browser.load_selected_track`, which sends `deck.load_track`). `deck.load_stems` loads a track
   with four files given, for the command line and remote control. The four files are
-  decoded with the track on the load worker. Each stem has to have the sample rate of the track;
-  a shorter one is completed with silence and a longer one is cut at the length of the track.
-  When a stem cannot be read or its rate differs, the track loads alone and the deck says why.
+  decoded with the track on the load worker. A stem at another sample rate is brought to that
+  of the track, with cubic interpolation; a shorter one is completed with silence and a longer
+  one is cut at the length of the track. When a stem cannot be read, the track loads alone and
+  the deck says why.
 - **The deck.** A stem deck is a track deck: transport, cues, loops, sync, key lock, flux and the
   mixer channel act on it as on a track. The waveform, the stripe, the analysis and the tempo
   are those of the track; the stems are not analysed. Key lock stretches each stem with its own
@@ -88,11 +89,51 @@ names its own. By default the four stems play at full volume and sound like the 
   are reached through the commands. A muted stem lights its mute key in its colour and dims
   its volume bar.
 
+## Separation
+
+What the public manual says, from the sections read on 21 November 2026 (*Generating and deleting
+Stem files*): a track is separated from its context menu (*Generate Stems*); the progress shows in
+the status bar of the browser and the job can be cancelled; it takes from a third to two thirds
+of the playing time of the track, depending on the processor, and can run while the track plays.
+The stems are kept apart from the collection, linked to their track; *Delete Associated Stems*
+removes their file. The preferences choose the folder of the stems.
+
+What Platter does (choices: `docs/decisions/0038-stem-separation.md`):
+
+- **The model.** Platter separates with its own code, in the crate `platter-stems`: the short-time
+  transform, the networks and the masks. The trained weights are not Platter's: they are those of
+  the 4-stem Spleeter model of Deezer, release v1.4.0, which the user downloads from its original
+  publication (<https://github.com/deezer/spleeter/releases/tag/v1.4.0>, file `4stems.tar.gz`,
+  146 MB). Platter neither hosts nor packages them, and says why: the paper of its authors states
+  the MIT licence for the models (<https://doi.org/10.21105/joss.02154>), their repository states it
+  for the code only, and the publisher has not confirmed it (`docs/legal-notes.md`). Platter opens
+  no connection for it: the user downloads the file with the browser.
+- **Installing it.** With the folder of the downloaded file in the explorer, the context menu of a
+  track of the collection has *Install the separation model from <folder>*
+  (`stems.model.install`). Platter checks `4stems.tar.gz` of that folder against the SHA-256 the
+  release publishes for it and refuses any other file, then reads its weights into a file of its
+  own, `Models/separation.weights` in the folder of the settings, so that a model trained later
+  for Platter can take its place. The downloaded file can then be deleted. The log says when the
+  model is installed, or why not.
+- **Separating.** *Separate into stems* in the context menu of a track of the collection, or
+  `browser.stems.generate`, separates it on a worker: the track is decoded, brought to 44.1 kHz,
+  the rate the model works at, separated into drums, bass, other and vocals, and written as four
+  WAV files of 16 bits at 44.1 kHz into `Stems` in the folder of the settings, a folder per
+  track; the four are then attached to the track as stems a user attaches. One track is separated
+  at a time, on half the processors, so the audio and the window keep the rest; the status bar
+  shows the progress, and the menu of a track stops it.
+- **The result.** The model works on the first 11 kHz of the spectrum: what is above goes to no
+  stem (as the model does), so the four stems played together sound like the track without its
+  highest frequencies. The quality is that of the model: about 6 dB of signal to distortion on
+  vocals and drums and 4 to 5 dB on bass and other on the test set of its authors.
+
 ## Differences
 
-- Platter does not write or read a container of its own for stems yet: a set is four files the
-  user attaches. Separation by Platter (`generate`) will write the same four files and attach
-  them.
+- Platter does not write or read a container of its own for stems: a set is four files, attached
+  by the user or written by the separation. They are WAV files of 16 bits, larger than a
+  compressed container.
+- The separation model is downloaded by the user, not by Platter: the licence of its weights is
+  not confirmed by their publisher.
 - What a stem does not send skips the mixer effect too, not only the effect units: the channel
   has one path after the effects, and keeping a second path through the mixer effect would need a
   second instance of it.
@@ -106,5 +147,6 @@ names its own. By default the four stems play at full volume and sound like the 
 ## Edge cases
 
 - A stem shorter than the track is silent past its end; one longer is cut.
-- A stem at another sample rate is refused and the track loads alone.
+- A stem at another sample rate is brought to that of the track; one that cannot be read leaves
+  the track playing alone.
 - `deck.stem.*` with a stem name that is not `drums`, `bass`, `other` or `vocals` is refused.
