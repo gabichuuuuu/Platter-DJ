@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use platter_library::{M3uEntry, M3uError, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, write_m3u};
+use platter_library::{
+    M3uEntry, M3uError, MAX_M3U_BYTES, MAX_M3U_ENTRIES, read_m3u, read_pls, read_xspf, write_m3u,
+};
 
 fn folder() -> PathBuf {
     PathBuf::from("lists")
@@ -327,4 +329,63 @@ fn an_empty_list_writes_only_the_header() {
     let reading = read("#EXTM3U\n");
     assert!(reading.entries.is_empty());
     assert_eq!(reading.skipped, 0);
+}
+
+/// `docs/behavior/library.md`, *M3U files*, PLS and XSPF.
+#[test]
+fn pls_entries_come_in_the_order_of_their_numbers_with_their_titles() {
+    let reading = read_pls(
+        b"[playlist]\r\nFile2=b.mp3\r\nTitle2=Second\r\nFile1=C:\\Music\\a.mp3\r\n\
+          Length1=184\r\nFile3=http://radio.example/stream\r\nNumberOfEntries=3\r\n",
+        &folder(),
+    )
+    .expect("small input");
+    assert_eq!(reading.skipped, 1, "the stream");
+    let paths: Vec<_> = reading
+        .entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+    assert_eq!(
+        paths,
+        [PathBuf::from("C:\\Music\\a.mp3"), folder().join("b.mp3")]
+    );
+    assert_eq!(reading.entries[0].seconds, Some(184.0));
+    assert_eq!(reading.entries[1].title.as_deref(), Some("Second"));
+}
+
+#[test]
+fn xspf_tracks_give_their_location_title_creator_and_duration() {
+    let reading = read_xspf(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<playlist version="1" xmlns="http://xspf.org/ns/0/">
+  <title>Set</title>
+  <trackList>
+    <track><location>file:///C:/Music/Night%20Drive.flac</location>
+      <title>Night Drive</title><creator>Ana</creator><duration>201500</duration></track>
+    <track><location>sub/Two%20Words.mp3</location></track>
+    <track><title>No place</title></track>
+  </trackList>
+</playlist>"#,
+        &folder(),
+    )
+    .expect("small input");
+    assert_eq!(reading.skipped, 1, "the track without a location");
+    let first = &reading.entries[0];
+    assert_eq!(first.path, PathBuf::from("C:/Music/Night Drive.flac"));
+    assert_eq!(
+        (
+            first.title.as_deref(),
+            first.artist.as_deref(),
+            first.seconds
+        ),
+        (Some("Night Drive"), Some("Ana"), Some(201.5))
+    );
+    assert_eq!(
+        reading.entries[1].path,
+        folder().join("sub").join("Two Words.mp3")
+    );
+    // A file that is not XML gives nothing, counted once.
+    let broken = read_xspf(b"<playlist><trackList>", &folder()).expect("small input");
+    assert_eq!((broken.entries.len(), broken.skipped), (0, 1));
 }
