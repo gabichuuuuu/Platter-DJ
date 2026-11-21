@@ -20,7 +20,9 @@ transport, *Discover*, *Tools*; <https://modelcontextprotocol.io/specification/2
 - **Messages.** One JSON-RPC 2.0 message per line, in UTF-8, up to 1 MiB; a longer line is
   answered with a parse error and skipped. The window answers each message between two frames,
   so a message waits for the window to draw; after 10 s without an answer the client gets an
-  error. Closing the input closes Platter.
+  error for its request, and a notification still gets nothing. The message stays with the
+  window: a command the client was told had failed may still run when the window draws again.
+  Closing the input closes Platter.
 - **Revisions.** A request that carries its version in `_meta` is served by the revision
   2026-07-28, with `server/discover`; a version the server does not speak is refused with the
   error -32022 and the versions it speaks. A client of the revision 2025-11-25 starts with

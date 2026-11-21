@@ -12,7 +12,7 @@ use std::time::Duration;
 use eframe::egui;
 use platter_core::{DeckId, Stem};
 use platter_engine::{DeckSnapshot, Snapshot};
-use platter_mcp::json::{MAX_MESSAGE_BYTES, Value};
+use platter_mcp::json::{self, MAX_MESSAGE_BYTES, Value};
 
 /// How long the reader waits for the window to answer a message. A window that does not
 /// draw, minimised on some systems, answers when it draws again; the client gets an error
@@ -40,6 +40,10 @@ pub fn start(ctx: egui::Context) -> std::io::Result<Receiver<Request>> {
                 let answer = match line {
                     Line::Message(line) if line.trim().is_empty() => continue,
                     Line::Message(line) => {
+                        // A notification is never answered, not even when the window is late.
+                        let id = json::parse(&line)
+                            .ok()
+                            .and_then(|message| message.get("id").cloned());
                         let (reply, answer) = sync_channel(1);
                         if sender.send(Request { line, reply }).is_err() {
                             break;
@@ -47,7 +51,7 @@ pub fn start(ctx: egui::Context) -> std::io::Result<Receiver<Request>> {
                         ctx.request_repaint();
                         match answer.recv_timeout(ANSWER_WAIT) {
                             Ok(answer) => answer,
-                            Err(_) => Some(busy()),
+                            Err(_) => id.map(|id| busy(&id)),
                         }
                     }
                     Line::TooLong => Some(too_long()),
@@ -113,26 +117,28 @@ fn finish(mut bytes: Vec<u8>, too_long: bool) -> Line {
     Line::Message(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn error(code: f64, message: &str) -> String {
-    Value::object([
-        ("jsonrpc", Value::text("2.0")),
-        (
-            "error",
-            Value::object([
-                ("code", Value::Number(code)),
-                ("message", Value::text(message)),
-            ]),
-        ),
-    ])
-    .to_line()
+fn error(id: Option<&Value>, code: f64, message: &str) -> String {
+    let mut members = vec![("jsonrpc".to_owned(), Value::text("2.0"))];
+    if let Some(id) = id {
+        members.push(("id".to_owned(), id.clone()));
+    }
+    members.push((
+        "error".to_owned(),
+        Value::object([
+            ("code", Value::Number(code)),
+            ("message", Value::text(message)),
+        ]),
+    ));
+    Value::Object(members).to_line()
 }
 
 fn too_long() -> String {
-    error(-32700.0, "the message is too long")
+    error(None, -32700.0, "the message is too long")
 }
 
-fn busy() -> String {
-    error(-32603.0, "the window did not answer in time")
+/// The window did not answer in time. The command may still run once it draws again.
+fn busy(id: &Value) -> String {
+    error(Some(id), -32603.0, "the window did not answer in time")
 }
 
 /// What `get_state` gives: the decks, the mixer and the clock. Tracks are named by their
