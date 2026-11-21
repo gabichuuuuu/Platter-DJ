@@ -308,5 +308,5 @@ title = "Platter's own"
 features = [
   { id = "deviceless-render", name = "Render without a sound card", milestone = "M1", status = "done", evidence = "cargo test -p platter-engine --test render; cargo test -p platter-cli --test example" },
   { id = "progress-page", name = "Progress page, published when the repository is public", milestone = "M1", status = "done", evidence = "cargo test -p xtask site; cargo xtask parity --site <folder>" },
-  { id = "mcp-server", name = "MCP server", milestone = "M4", status = "done", evidence = "cargo test -p platter-mcp; cargo test -p platter --bin platter mcp; run once as a server on the standard input and output with a script of messages, no MCP client tried yet, see docs/behavior/mcp.md" },
+  { id = "mcp-server", name = "MCP server", milestone = "M4", status = "done", evidence = "cargo test -p platter-mcp; cargo test -p platter --bin platter mcp; run with a script of messages and with Claude Code as the client, which answered the ten questions of crates/mcp/evaluation.xml, see docs/behavior/mcp.md" },
 ]

@@ -139,7 +139,7 @@ Everything known to be missing, unfinished or not yet listened to.
   tempo is then heard about 17 ms later. Without that preference, four stem decks with key lock
   would drop out. The workers have been measured on Windows only; on Linux they need the right to
   real-time scheduling (`docs/behavior/keylock.md`, *Worker threads*).
-- The MCP server has been run with a script of messages, not with an MCP client yet.
+- The MCP server has been tried with one MCP client, Claude Code, on Windows only.
 - The file selector does not list the drives of a Windows machine by itself; a drive is named
   in the settings file.
 - Decoding of WAV, AIFF and FLAC is tested with files synthesised in the tests. MP3, M4A (AAC)

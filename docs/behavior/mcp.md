@@ -50,7 +50,9 @@ transport, *Discover*, *Tools*; <https://modelcontextprotocol.io/specification/2
 
 - **Evaluation.** `crates/mcp/evaluation.xml` holds ten questions an assistant answers with
   these tools alone, reading the commands, to measure whether the descriptions let it find its
-  way. Their answers were read from the commands on 21 November 2026.
+  way. Their answers were read from the commands on 21 November 2026; a model of the Sonnet
+  family, through Claude Code as the client, answered the ten right the same day
+  (`docs/decisions/0037-mcp-server.md`, *How it was measured*).
 
 ## Edge cases
 
