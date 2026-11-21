@@ -174,7 +174,7 @@ features = [
 id = "stems"
 title = "Stems"
 features = [
-  { id = "generate", name = "Stem generation", milestone = "M4", status = "planned" },
+  { id = "generate", name = "Stem generation", milestone = "M4", status = "in_progress" },
   { id = "stem-controls", name = "Stem deck: volume, mute, filter and effect send per stem", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test stems; cargo test -p platter-ui-egui --test panels; the filter and the amount of the send are in the menu of the send key, see docs/behavior/stems.md" },
   { id = "mute-buttons", name = "Always visible mute buttons", milestone = "M4", status = "in_progress" },
 ]

@@ -510,7 +510,15 @@ fn status_bar(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView) {
         egui::vec2(half - tokens.space.s3, inner.height()),
     );
     let right = Rect::from_min_max(egui::pos2(inner.left() + half, inner.top()), inner.max);
+    let separating = browser.separation.as_ref().map(|status| {
+        let percent = format!("{:.0}", status.done * 100.0);
+        texts.format(
+            "browser.separating",
+            &[("track", &status.track), ("percent", &percent)],
+        )
+    });
     let state = match (&browser.analysis, &browser.problem) {
+        _ if separating.is_some() => separating,
         (Some(status), _) => Some(texts.format(
             "browser.analysing",
             &[
@@ -564,13 +572,48 @@ fn status_bar(cx: &mut Cx<'_>, rect: Rect, browser: &BrowserView) {
 /// The entries of the stems of the selected track: those of the folder the explorer shows,
 /// and for a track that has some, loading it without them on each deck shown and forgetting
 /// them (`docs/behavior/stems.md`).
+/// The texts of the entries of the separation.
+struct SeparationLabels<'a> {
+    generate: &'a str,
+    cancel: &'a str,
+    /// Installing the model from the folder the explorer shows, when there is one.
+    install: Option<&'a str>,
+}
+
 fn stem_entries<'a>(
     browser: &BrowserView,
     folder: Option<(&PathBuf, &'a str)>,
     load_labels: &'a [(DeckId, String)],
     remove_label: &'a str,
+    labels: &SeparationLabels<'a>,
 ) -> Vec<(Item<'a>, Then)> {
     let mut entries = Vec::new();
+    // Separating, or installing the model to separate with.
+    if browser.separation.is_some() {
+        entries.push((
+            Item {
+                label: labels.cancel,
+                action: Some(AppCommand::BrowserStemsCancel.into()),
+            },
+            Then::Nothing,
+        ));
+    } else if browser.separation_model {
+        entries.push((
+            Item {
+                label: labels.generate,
+                action: Some(AppCommand::BrowserStemsGenerate.into()),
+            },
+            Then::Nothing,
+        ));
+    } else if let (Some((path, _)), Some(install)) = (folder, labels.install) {
+        entries.push((
+            Item {
+                label: install,
+                action: Some(AppCommand::StemsModelInstall { path: path.clone() }.into()),
+            },
+            Then::Nothing,
+        ));
+    }
     if let Some((path, label)) = folder {
         entries.push((
             Item {
@@ -651,6 +694,9 @@ fn context_menu(
     let stems_label = explorer_name
         .as_deref()
         .map(|name| texts.format("browser.menu_stems_attach", &[("folder", name)]));
+    let install_label = explorer_name
+        .as_deref()
+        .map(|name| texts.format("browser.menu_stems_install", &[("folder", name)]));
     let load_track_labels: Vec<(DeckId, String)> = options
         .decks
         .iter()
@@ -953,6 +999,11 @@ fn context_menu(
                 explorer.zip(stems_label.as_deref()),
                 &load_track_labels,
                 texts.get("browser.menu_stems_remove"),
+                &SeparationLabels {
+                    generate: texts.get("browser.menu_stems_generate"),
+                    cancel: texts.get("browser.menu_stems_cancel"),
+                    install: install_label.as_deref(),
+                },
             ));
             entries.push(opens(
                 "browser.menu_delete_track",

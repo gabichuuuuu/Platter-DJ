@@ -470,6 +470,14 @@ pub enum AppCommand {
     },
     /// The selected track forgets its stems; their files stay.
     BrowserStemsRemove,
+    /// Separates the selected track into stems: `docs/behavior/stems.md`, *Separation*.
+    BrowserStemsGenerate,
+    /// Stops the separation that runs.
+    BrowserStemsCancel,
+    /// Installs the separation model from `4stems.tar.gz` in a folder.
+    StemsModelInstall {
+        path: PathBuf,
+    },
     /// Shows a fixed node of the tree, such as the collection, in the list.
     BrowserNodeSelect {
         node: BrowserNode,
@@ -1736,6 +1744,21 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "browser.stems.generate",
+        label: "Separate the selected track into stems",
+        params: &[],
+    },
+    CommandSpec {
+        id: "browser.stems.cancel",
+        label: "Stop the separation into stems",
+        params: &[],
+    },
+    CommandSpec {
+        id: "stems.model.install",
+        label: "Install the separation model from a folder",
+        params: &[PATH],
+    },
+    CommandSpec {
         id: "browser.preparation.select",
         label: "Use playlist as preparation list",
         params: &[PLAYLIST],
@@ -2400,6 +2423,11 @@ impl AppCommand {
                 path: PathBuf::from(read.text("path")?),
             },
             "browser.stems.remove" => Self::BrowserStemsRemove,
+            "browser.stems.generate" => Self::BrowserStemsGenerate,
+            "browser.stems.cancel" => Self::BrowserStemsCancel,
+            "stems.model.install" => Self::StemsModelInstall {
+                path: PathBuf::from(read.text("path")?),
+            },
             "browser.preparation.select" => Self::BrowserPreparationSelect {
                 playlist: read.playlist()?,
             },
@@ -2568,6 +2596,9 @@ impl AppCommand {
             Self::BrowserLoadSelectedTrack { .. } => "browser.load_selected_track",
             Self::BrowserStemsAttach { .. } => "browser.stems.attach",
             Self::BrowserStemsRemove => "browser.stems.remove",
+            Self::BrowserStemsGenerate => "browser.stems.generate",
+            Self::BrowserStemsCancel => "browser.stems.cancel",
+            Self::StemsModelInstall { .. } => "stems.model.install",
             Self::BrowserPreparationSelect { .. } => "browser.preparation.select",
             Self::BrowserPreparationAppend => "browser.preparation.append",
             Self::BrowserFavouriteSet { .. } => "browser.favourite.set",

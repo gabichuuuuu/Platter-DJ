@@ -313,6 +313,17 @@ fn states() -> Vec<State> {
         target: MenuTarget::Entry,
         at: egui::pos2(1000.0, 560.0),
     });
+    // The same menu with the separation model installed, and while a track is separated: the
+    // status bar says how far it has gone.
+    let mut separate = stem_entry.clone();
+    separate.name = "separation-menu";
+    separate.scene.browser.separation_model = true;
+    let mut separating = separate.clone();
+    separating.name = "separating-menu";
+    separating.scene.browser.separation = Some(platter_ui_egui::model::SeparationStatus {
+        track: "Glasshouse".to_owned(),
+        done: 0.42,
+    });
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -358,6 +369,8 @@ fn states() -> Vec<State> {
         bands,
         stems,
         stem_entry,
+        separate,
+        separating,
         state("effects-single", single_unit(), None),
         state("four-units", sample::four_units(), None),
         state(

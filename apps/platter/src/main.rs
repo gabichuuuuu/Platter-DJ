@@ -17,6 +17,7 @@ mod manager;
 mod mcp;
 mod midi;
 mod png;
+mod separation;
 mod starting;
 
 use std::path::PathBuf;

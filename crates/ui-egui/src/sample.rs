@@ -546,6 +546,8 @@ fn browser() -> BrowserView {
         reading: false,
         // As the design system shows the status bar.
         analysis: Some(AnalysisStatus { done: 3, total: 12 }),
+        separation: None,
+        separation_model: false,
         problem: None,
         deck_covers: [None, None, None, None],
     }

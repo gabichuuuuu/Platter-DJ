@@ -181,6 +181,8 @@ fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
 pub struct PlatterApp {
     /// The MCP server, when the application was started with `--mcp`.
     mcp: Option<(Receiver<crate::mcp::Request>, Server)>,
+    /// Installing the separation model and separating tracks into stems.
+    separation: crate::separation::Jobs,
     /// The folder of the files of the user; without one nothing is saved.
     folder: Option<PathBuf>,
     /// Where the mix recorder writes when the user has chosen no folder.
@@ -316,6 +318,7 @@ impl PlatterApp {
         // A fresh queue has room for it, and the settings keep the decay in range.
         let _ = engine.set_loop_decay(f64::from(settings.loop_decay) / 100.0);
         let settings_min_playtime = settings.min_playtime;
+        let separation = crate::separation::Jobs::new(folder.clone());
         let mut app = Self {
             folder,
             default_recordings,
@@ -330,6 +333,7 @@ impl PlatterApp {
             devices: Vec::new(),
             last_device_scan: Instant::now(),
             mcp: None,
+            separation,
             browser,
             notices: [None; DeckId::COUNT],
             fullscreen: false,
@@ -1222,6 +1226,18 @@ impl PlatterApp {
             self.save_settings();
         }
         match command {
+            AppCommand::BrowserStemsGenerate => {
+                if let Some((track, path, name)) = self.browser.selected_collection_track()
+                    && let Err(why) = self.separation.start(track, path, name)
+                {
+                    self.log(Level::Warning, &format!("stems: {why}"));
+                }
+            }
+            AppCommand::BrowserStemsCancel => self.separation.cancel(),
+            AppCommand::StemsModelInstall { ref path } => match self.separation.install(path) {
+                Ok(()) => self.log(Level::Info, "stems: installing the separation model"),
+                Err(why) => self.log(Level::Warning, &format!("stems: {why}")),
+            },
             AppCommand::SettingsOpen { .. } => {
                 // The page lists the devices: look for them now, not when it was last open.
                 self.devices = platter_audio_io::devices();
@@ -1573,6 +1589,31 @@ impl PlatterApp {
         for why in self.browser.take_unattached() {
             self.log(Level::Warning, &format!("no stems attached: {why}"));
         }
+        for finished in self.separation.poll() {
+            match finished {
+                crate::separation::Finished::Separated { track, folder } => {
+                    self.log(
+                        Level::Info,
+                        &format!("stems written to {}", folder.display()),
+                    );
+                    self.browser.attach_stems_to(track, folder);
+                }
+                crate::separation::Finished::Failed(why) => {
+                    self.log(Level::Warning, &format!("stems: {why}"));
+                }
+                crate::separation::Finished::Installed => {
+                    self.log(Level::Info, "stems: the separation model is installed");
+                }
+                crate::separation::Finished::InstallFailed(why) => {
+                    self.log(
+                        Level::Warning,
+                        &format!("stems: the model was not installed: {why}"),
+                    );
+                }
+            }
+        }
+        self.browser
+            .set_separation(self.separation.status(), self.separation.model_installed());
         while let Ok(report) = self.background_reports.try_recv() {
             match report {
                 background::Report::Progress { done, total } => self

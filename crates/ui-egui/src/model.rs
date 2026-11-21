@@ -472,10 +472,21 @@ pub struct BrowserView {
     pub reading: bool,
     /// The analysis of the collection in the background, while it runs.
     pub analysis: Option<AnalysisStatus>,
+    /// A track being separated into stems: `docs/behavior/stems.md`, *Separation*.
+    pub separation: Option<SeparationStatus>,
+    /// The separation model is installed.
+    pub separation_model: bool,
     /// Why the analysis of the collection stopped, if it did.
     pub problem: Option<String>,
     /// The covers of the tracks the decks hold.
     pub deck_covers: [Option<CoverImage>; DeckId::COUNT],
+}
+
+/// The track being separated into stems and the share done, from 0 to 1.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SeparationStatus {
+    pub track: String,
+    pub done: f32,
 }
 
 /// How far the analysis of the collection in the background has gone.
