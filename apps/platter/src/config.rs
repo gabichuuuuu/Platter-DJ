@@ -275,6 +275,8 @@ pub struct Settings {
     /// playing deck takes no track.
     pub load_marker: bool,
     pub load_stopped_only: bool,
+    /// Key lock runs on worker threads, from the Audio page.
+    pub key_lock_threads: bool,
     /// The music folders of the Library page, whose music is imported at start while
     /// `import_at_start` says so; the collection is checked at start while `check_at_start`
     /// says so.
@@ -343,6 +345,7 @@ impl Default for Settings {
             bpm_range: TempoRange::default(),
             load_marker: true,
             load_stopped_only: false,
+            key_lock_threads: true,
             music_folders: Vec::new(),
             import_at_start: true,
             recording_folder: None,
@@ -504,6 +507,7 @@ impl Settings {
             load_marker: flag(table("decks"), "load_marker").unwrap_or(defaults.load_marker),
             load_stopped_only: flag(table("decks"), "stopped_only")
                 .unwrap_or(defaults.load_stopped_only),
+            key_lock_threads: flag(audio, "key_lock_threads").unwrap_or(defaults.key_lock_threads),
             columns: table("browser")
                 .and_then(|table| table.get("columns"))
                 .and_then(toml::Value::as_array)
@@ -623,6 +627,10 @@ impl Settings {
         audio.insert("sample_rate".to_owned(), integer(self.sample_rate));
         audio.insert("buffer_frames".to_owned(), integer(self.buffer_frames));
         audio.insert("routing".to_owned(), toml::Value::Table(routing));
+        audio.insert(
+            "key_lock_threads".to_owned(),
+            toml::Value::Boolean(self.key_lock_threads),
+        );
         let mut mixer = toml::Table::new();
         mixer.insert(
             "crossfader_curve".to_owned(),
@@ -871,6 +879,7 @@ mod tests {
             bpm_range: TempoRange::new(90.0, 180.0).unwrap(),
             load_marker: false,
             load_stopped_only: true,
+            key_lock_threads: false,
             music_folders: vec![PathBuf::from("Music"), PathBuf::from("Sets with ñ")],
             import_at_start: false,
             columns: vec![ListColumn::Genre, ListColumn::Comment],

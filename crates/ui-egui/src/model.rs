@@ -147,6 +147,8 @@ pub struct SettingsView {
     pub bpm_range: (u32, u32),
     /// A playing deck takes no track.
     pub load_stopped_only: bool,
+    /// Key lock runs on worker threads.
+    pub key_lock_threads: bool,
     /// The folder the mix recorder writes into, as the Recording page shows it, and whether
     /// it is one the user chose.
     pub recording_folder: String,

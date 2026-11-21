@@ -88,6 +88,28 @@ pitch of the speed, 12 * log2(speed), otherwise: without key lock, on a track be
 in reverse and at a speed out of the range of the stretch. A track whose key the analysis did not find
 has no resulting key.
 
+### Worker threads
+
+A preference of the Audio page, *Key lock on several cores* (`app.key_lock_threads.toggle`), on
+by default, runs the stretch of every key-locked deck, and of every stem of a stem deck, on worker
+threads at the priority of audio instead of on the audio thread, so that four stem decks with key
+lock fit (`docs/decisions/0039-key-lock-threads.md`).
+
+- One worker for every four processors, from one to four. Each worker renders about 16 ms ahead
+  of what plays; the audio thread only takes what was rendered.
+- A change of tempo or of pitch is heard about 17 ms later than on the audio thread, the same for
+  the four stems of a deck: it is asked on the same boundary of 64 frames of every stretch of the
+  deck and applies at the same frame of each.
+- A worker that falls behind leaves its deck without stretched audio: the deck goes to the plain
+  read of the track at once, without a fade, so the pitch follows the speed for the 32 ms the
+  stretch takes to be ready again. A stem whose stretch started again alone keeps the changes of
+  tempo of the others, on the same frames.
+- The preference applies to the tracks loaded after it changes; a loaded track keeps where its
+  stretch runs, and its worker, until it is loaded again. A new sample rate of the device starts
+  the workers again at that rate.
+- When the system refuses the priority of audio (Linux without the right to real-time
+  scheduling), the workers run at the normal priority and may fall behind under load.
+
 ### In the interface
 
 - At the right of the row of SYNC of each deck, as the design system draws it: key lock, lit
@@ -127,7 +149,8 @@ has no resulting key.
 | `deck.keylock.toggle` on an empty deck | Key lock changes; the next track plays with it |
 | A new track loaded with key lock on | Key lock stays on |
 | Key lock on at a speed of 1 | The track sounds as without key lock |
-| The tempo fader moved while key lock is on | The tempo follows within about 12 ms; the pitch does not move |
+| The tempo fader moved while key lock is on | The tempo follows within about 12 ms, and 17 ms later on worker threads (not measured as a whole); the pitch does not move |
+| *Key lock on several cores* changed while a track plays | The track keeps where its stretch runs until it is loaded again |
 | A loop shorter than 32 ms | The loop plays with the pitch following the speed |
 | A track at 22.05 kHz with key lock on | It plays with the pitch following the speed |
 | The end of the track | The deck stops at the end, as without key lock |
@@ -153,6 +176,14 @@ shift of 1, -2, +12 and -12 semitones at tempos 1 and 1.08, the position with an
 shift, a shift changed while playing, the position against a gap heard in the track, a synced
 deck with a shift, a step without a click, key lock off and on, the range of the commands,
 persist, a 44.1 kHz track, a 22.05 kHz track, the next track and a new device rate, and the
-resulting key. `crates/engine/tests/realtime_memory.rs` runs the callback with key lock on
+resulting key. `crates/engine/src/stretch_pool.rs` for the worker threads on a stand-in
+stretch: what plays after a seek, a change of tempo reaching four stretches on the same frame
+whatever the order of their workers, a stem that started again alone through a glide of tempo,
+the lead of a change, seeks faster than a worker takes them, the end of a stretch whose deck let
+it go, and a worker that keeps running for a stretch once the engine let the workers go;
+`crates/engine/tests/keylock.rs` and `crates/engine/tests/stems.rs` with the stretch the engine
+ships on workers run between the blocks: the pitch and the tempo, and four stems that stay
+together through changes of tempo; `crates/engine/tests/realtime_memory.rs` checks that the
+audio thread allocates nothing with them. `crates/engine/tests/realtime_memory.rs` runs the callback with key lock on
 both decks through its jumps, loops and sync, a step, a set and a persist of the key, then
 with key lock held long enough to check its pitch.

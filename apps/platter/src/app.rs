@@ -317,6 +317,8 @@ impl PlatterApp {
         engine.set_recording_split(u64::from(settings.recording_split) * MIB);
         // A fresh queue has room for it, and the settings keep the decay in range.
         let _ = engine.set_loop_decay(f64::from(settings.loop_decay) / 100.0);
+        // Without its workers, key lock runs on the audio thread as it always could.
+        let _ = engine.set_key_lock_threads(settings.key_lock_threads);
         let settings_min_playtime = settings.min_playtime;
         let separation = crate::separation::Jobs::new(folder.clone());
         let mut app = Self {
@@ -361,6 +363,7 @@ impl PlatterApp {
         );
         app.load_keymap();
         app.apply_tag_writing();
+        app.log_key_lock_priority();
         app.fullscreen_wanted = app.settings.fullscreen_at_start.then_some(true);
         app.starting = Some(Starting::new(
             &app.settings.music_folders,
@@ -435,6 +438,34 @@ impl PlatterApp {
 
     /// Gives the preferences of the Recording page to the engine and to the tree, for the next
     /// recording, and keeps them.
+    /// Runs key lock where the settings say, for the tracks loaded from then on.
+    fn apply_key_lock_threads(&mut self) {
+        let on = self.settings.key_lock_threads;
+        if let Err(error) = self.engine.set_key_lock_threads(on) {
+            self.log(
+                Level::Warning,
+                &format!("key lock stays on the audio thread: {error}"),
+            );
+        }
+        self.log_key_lock_priority();
+    }
+
+    /// Says in the log when a worker of key lock could not get the priority of audio: it may
+    /// then fall behind under load.
+    fn log_key_lock_priority(&mut self) {
+        if let Some((raised, workers)) = self.engine.key_lock_threads()
+            && raised < workers
+        {
+            self.log(
+                Level::Warning,
+                &format!(
+                    "{} of {workers} key lock workers run without the priority of audio",
+                    workers - raised
+                ),
+            );
+        }
+    }
+
     fn apply_loop_decay(&mut self) {
         let decay = f64::from(self.settings.loop_decay) / 100.0;
         if let Err(error) = self.engine.set_loop_decay(decay) {
@@ -1413,6 +1444,11 @@ impl PlatterApp {
                 self.settings.load_stopped_only = !self.settings.load_stopped_only;
                 self.save_settings();
             }
+            AppCommand::KeyLockThreadsToggle => {
+                self.settings.key_lock_threads = !self.settings.key_lock_threads;
+                self.apply_key_lock_threads();
+                self.save_settings();
+            }
             AppCommand::AnalysisRangeSet { min, max } => {
                 match TempoRange::new(f64::from(min), f64::from(max)) {
                     Ok(range) => {
@@ -1770,6 +1806,7 @@ impl PlatterApp {
                 self.settings.bpm_range.max().round() as u32,
             ),
             load_stopped_only: self.settings.load_stopped_only,
+            key_lock_threads: self.settings.key_lock_threads,
             recording_folder: self
                 .recordings()
                 .map(|folder| folder.display().to_string())

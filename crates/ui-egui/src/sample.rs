@@ -491,6 +491,7 @@ fn settings() -> SettingsView {
         key_notation: KeyNotation::default(),
         bpm_range: (70, 180),
         load_stopped_only: false,
+        key_lock_threads: true,
         recording_folder: "Music/Platter DJ Recordings".to_owned(),
         recording_folder_chosen: false,
         recording_prefix: "mix".to_owned(),

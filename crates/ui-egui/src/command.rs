@@ -372,6 +372,9 @@ pub enum AppCommand {
     },
     /// Turns on or off the rule that a playing deck takes no track.
     LoadStoppedOnlyToggle,
+    /// Runs key lock on worker threads, or on the audio thread: `docs/behavior/keylock.md`,
+    /// *Worker threads*.
+    KeyLockThreadsToggle,
     /// The layouts of the window: `docs/behavior/interface.md`, *Layouts*.
     LayoutSelect {
         index: usize,
@@ -1491,6 +1494,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "app.key_lock_threads.toggle",
+        label: "Key lock on several cores",
+        params: &[],
+    },
+    CommandSpec {
         id: "app.key_notation.set",
         label: "Key notation",
         params: &[choice("notation", KEY_NOTATIONS)],
@@ -2150,6 +2158,7 @@ impl AppCommand {
             "midi.learn.toggle" => Self::MidiLearnToggle,
             "midi.target.set" => Self::MidiTargetSet { deck: read.deck()? },
             "app.load_stopped_only.toggle" => Self::LoadStoppedOnlyToggle,
+            "app.key_lock_threads.toggle" => Self::KeyLockThreadsToggle,
             "layout.select" => Self::LayoutSelect {
                 index: read.index("index")?,
             },
@@ -2512,6 +2521,7 @@ impl AppCommand {
             Self::KeyNotationSet { .. } => "app.key_notation.set",
             Self::AnalysisRangeSet { .. } => "app.analysis_range.set",
             Self::LoadStoppedOnlyToggle => "app.load_stopped_only.toggle",
+            Self::KeyLockThreadsToggle => "app.key_lock_threads.toggle",
             Self::LayoutSelect { .. } => "layout.select",
             Self::LayoutDuplicate => "layout.duplicate",
             Self::LayoutRename { .. } => "layout.rename",

@@ -135,6 +135,10 @@ Everything known to be missing, unfinished or not yet listened to.
 - The separation into stems has been checked on invented mixtures, not listened to on real music.
   Its model, the 4-stem Spleeter model, is downloaded by the user: the licence of its weights is
   not confirmed by their publisher (`docs/legal-notes.md`).
+- Key lock runs on worker threads by default, so four stem decks with key lock fit; a change of
+  tempo is then heard about 17 ms later. Without that preference, four stem decks with key lock
+  would drop out. The workers have been measured on Windows only; on Linux they need the right to
+  real-time scheduling (`docs/behavior/keylock.md`, *Worker threads*).
 - The MCP server has been run with a script of messages, not with an MCP client yet.
 - The file selector does not list the drives of a Windows machine by itself; a drive is named
   in the settings file.
