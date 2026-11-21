@@ -735,6 +735,21 @@ pub fn stem_deck() -> Scene {
     scene
 }
 
+/// The two-deck state with deck B playing the stems of its track: the other stem muted and
+/// the vocals sent to the effects at half.
+pub fn two_deck_stems() -> Scene {
+    let mut scene = playing();
+    let deck = &mut scene.engine.decks[1];
+    let (seconds, bpm) = deck.track.as_ref().map_or((240.0, 124.0), |track| {
+        (track.seconds, track.tags.bpm.unwrap_or(124.0))
+    });
+    deck.stem_peaks = Some(Arc::new([5, 6, 7, 8].map(|seed| peaks(seconds, bpm, seed))));
+    deck.controls.stems[2].muted = true;
+    deck.controls.stems[3].send_on = true;
+    deck.controls.stems[3].send = 0.5;
+    scene
+}
+
 /// The four-deck state with four effect units shown: the left panel shows unit 3, deck C goes
 /// through units 1 and 3 and deck D through unit 4.
 pub fn four_units() -> Scene {

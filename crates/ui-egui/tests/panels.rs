@@ -297,6 +297,7 @@ fn states() -> Vec<State> {
     bands.settings.wave_colour = WaveColour::Bands;
     let bands = state("wave-bands", bands, None);
     let stems = state("stem-deck", sample::stem_deck(), None);
+    let two_deck_stems = state("two-deck-stems", sample::two_deck_stems(), None);
     // The menu of a track with stems, with a folder in the explorer to take stems from.
     let mut stem_entry = sample::playlist();
     stem_entry.browser.explorer = Some(PathBuf::from("Music/Stems/Glasshouse"));
@@ -368,6 +369,7 @@ fn states() -> Vec<State> {
         state("four-decks", sample::four_decks(), None),
         bands,
         stems,
+        two_deck_stems,
         stem_entry,
         separate,
         separating,
@@ -2571,6 +2573,56 @@ fn the_keys_of_a_stem_lane_send_the_commands_of_their_stem() {
         assert!(
             items.iter().any(|control| control.command == command),
             "{command} is not in the menu of the send key"
+        );
+    }
+}
+
+/// In the two-deck layout the parallel lane of a stem deck keeps the mute keys of its stems on
+/// screen, each with its name, and its fold key shows the four lanes of the stems in its place:
+/// `docs/behavior/stems.md`, *Lanes and mute buttons*.
+#[test]
+fn the_parallel_lane_of_a_stem_deck_keeps_its_mute_keys_and_unfolds_its_lanes() {
+    for language in Language::ALL {
+        let texts = Texts::load(language).unwrap();
+        let state = state_named("two-deck-stems");
+        let mut stage = Stage::with_texts(&state, texts.clone());
+        let (_, shapes) = stage.frame(Vec::new());
+        let enabled = |stage: &Stage, command: &str| -> Vec<Rect> {
+            stage
+                .controls()
+                .iter()
+                .filter(|control| control.command == command && control.enabled)
+                .map(|control| control.rect)
+                .collect()
+        };
+        let mutes = enabled(&stage, "deck.stem.mute.toggle");
+        assert_eq!(mutes.len(), 4, "{language:?}");
+        assert!(enabled(&stage, "deck.stem.volume.set").is_empty());
+        let painted = placed_texts(&shapes);
+        for (index, stem) in Stem::ALL.into_iter().enumerate() {
+            let name = texts.get(&format!("stems.{stem}")).to_owned();
+            assert!(
+                painted
+                    .iter()
+                    .any(|(text, at)| *text == name && mutes[index].contains_rect(*at)),
+                "{language:?}: {name} does not fit its mute key"
+            );
+        }
+        let folds = enabled(&stage, "waveform.stem_lanes.toggle");
+        assert_eq!(folds.len(), 1, "only the stem deck has a fold key");
+        let actions = stage.click(folds[0].center());
+        let unfold = AppCommand::WaveformStemLanesToggle { deck: DeckId::B };
+        assert_eq!(actions, vec![Action::App(unfold.clone())]);
+        stage.shell.apply(&unfold);
+        stage.frame(Vec::new());
+        assert_eq!(
+            (
+                enabled(&stage, "deck.stem.mute.toggle").len(),
+                enabled(&stage, "deck.stem.volume.set").len(),
+                enabled(&stage, "deck.stem.send.toggle").len(),
+            ),
+            (4, 4, 4),
+            "{language:?}"
         );
     }
 }

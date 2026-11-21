@@ -36,6 +36,47 @@ const SEND_STEPS: [f64; 5] = [1.0, 0.75, 0.5, 0.25, 0.0];
 /// The keys of the names of the stems, in the order of [`Stem::ALL`].
 const NAMES: [&str; Stem::COUNT] = ["stems.drums", "stems.bass", "stems.other", "stems.vocals"];
 
+/// The width of the column of mute keys beside the waveform of a stem deck in the parallel
+/// lanes.
+pub const MUTE_COLUMN_WIDTH: f32 = 56.0;
+const STRIP: f32 = 3.0;
+
+/// The four mute keys of the stems of `deck`, stacked in `rect`: each with a strip of the
+/// colour of its stem and its name, lit in that colour while the stem is muted.
+pub fn mute_column(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapshot) {
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let texts = cx.texts;
+    let count = Stem::COUNT as f32;
+    let height = KEY_HEIGHT * count + LANE_GAP * (count - 1.0);
+    let top = rect.center().y - height / 2.0;
+    for stem in Stem::ALL {
+        let ink = tokens.stem[stem.index()];
+        let settings = snapshot.controls.stems[stem.index()];
+        let name = texts.get(NAMES[stem.index()]);
+        let key_rect = Rect::from_min_size(
+            egui::pos2(
+                rect.left(),
+                top + stem.index() as f32 * (KEY_HEIGHT + LANE_GAP),
+            ),
+            egui::vec2(rect.width(), KEY_HEIGHT),
+        );
+        let mute_name = texts.format("stems.mute_name", &[("stem", name)]);
+        let mut spec = KeySpec::text(name).lit(settings.muted.then_some(ink));
+        spec.name = &mute_name;
+        spec.text = Some(tokens.text.label);
+        key::key(
+            cx,
+            key_rect,
+            id(("stem-mute", deck.index(), stem.index())),
+            spec,
+            Press::Click(Command::DeckStemMuteToggle { deck, stem }.into()),
+        );
+        let strip = Rect::from_min_size(key_rect.min, egui::vec2(STRIP, KEY_HEIGHT));
+        cx.painter().rect_filled(strip, CornerRadius::ZERO, ink);
+    }
+}
+
 /// The four lanes of the stems of `deck` in `rect`.
 pub fn lanes(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoom: usize) {
     let height = (rect.height() - LANE_GAP * (Stem::COUNT as f32 - 1.0)) / Stem::COUNT as f32;

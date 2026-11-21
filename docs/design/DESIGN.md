@@ -122,7 +122,7 @@ The first complete version is milestone M3; every component it needs has its sec
 Everything below belongs to M4 and M5, after the first public version:
 
 - **Waveform colour modes 2 to 4 (M4).**
-- **Components for M4:** stem lanes, mix and loop recorders. `screens/M4-effects.html` places them; their component sections are written before they are built. The four-deck layout, the effect units, the effect assignment and the mixer effect have theirs.
+- **Components for M4:** mix and loop recorders. `screens/M4-effects.html` places them; their component sections are written before they are built. Stem lanes have theirs (`StemLanes`). The four-deck layout, the effect units, the effect assignment and the mixer effect have theirs.
 - **Components for M5:** remix deck grid, pattern sequencer, timecode setup.
 - **Icons for M4 and later:** effects, stems, recording and layouts.
 
@@ -747,6 +747,40 @@ The GRID page of the advanced panel (milestone M3): correct the tempo and the be
 
 - While Lock is on, analysis and edits cannot change BPM, grid or cues; the controls show as disabled.
 - Commands: `deck.grid.bpm.set`, `deck.grid.tap`, `deck.grid.bpm.scale`, `deck.grid.bpm.step`, `deck.grid.marker.*`, `deck.grid.reset`, `deck.grid.lock.toggle`, `deck.grid.tick.toggle`.
+
+#### StemLanes
+
+The stems of a stem deck (milestone M4): one lane per stem, and mute keys that are always on screen. Written on 21 November 2026,
+with the maintainer's approval, from what the four-deck layout already draws (`M4-effects.html`).
+
+##### Anatomy
+
+- **Lane**, one per stem in the order drums, bass, other, vocals, 2px apart: a 6 × 6 swatch of the stem colour (`stem-drums` …)
+  with the stem name beside it (44px column, `label` style, `text-primary`); the mute key `M` (20 × 18); the volume bar (44px wide,
+  a 4px bar in `bg-app` with a `line-key` hairline, filled in `text-primary`, in `text-secondary` while the stem is muted); the send
+  key `FX` (24 × 18); the scrolling waveform of the stem in its colour, to the right edge. Columns 6px apart.
+- **Mute column** (two-deck layout, lanes folded): 56px wide, between the gutter and the waveform of the deck lane, four keys of
+  56 × 18, 2px apart, centred vertically. Each key carries a 3px strip of its stem colour along its left edge and the stem name
+  (`label` style).
+- A muted stem lights its mute key in the stem colour, in the lane and in the column alike.
+- **Fold key** (two-deck layout): a 22 × 18 key with `chevron-down` (lanes folded) or `chevron-up` (lanes shown), in the gutter of
+  the deck lane, under the zoom keys. The gutter places its three keys at 26, 46 and 66px from its top on every deck; the fold key
+  is drawn only on a stem deck.
+
+##### Placement
+
+- **Four-deck layout:** the four lanes take the place of the waveform and the stripe of the deck (88px), as `M4-effects.html` draws
+  them.
+- **Two-deck layout:** the parallel lane of a stem deck shows its waveform with the mute column, or, with the fold key, the four
+  lanes in the place of that waveform, in the same 88px. The overview in the deck stays.
+
+##### Behaviour
+
+- The mute keys emit `deck.stem.mute.toggle`; the volume bar `deck.stem.volume.set` (drag, arrows, double click back to the top);
+  the send key `deck.stem.send.toggle`, and its context menu (or Shift+F10) sets the send in steps of a quarter and the filter
+  (`deck.stem.send.set`, `deck.stem.filter.toggle`, `deck.stem.filter.set`).
+- The fold key emits `waveform.stem_lanes.toggle` with the deck. Folding is kept per deck for the session, not in the settings.
+- Names for screen readers and tooltips: "Mute drums", "Volume of drums", "Send drums to the effects", "Show the stems of deck A".
 
 ### Mixer
 

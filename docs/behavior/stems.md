@@ -88,6 +88,11 @@ names its own. By default the four stems play at full volume and sound like the 
   quarter, turns the filter on or off and sets it to five positions; any amount and position
   are reached through the commands. A muted stem lights its mute key in its colour and dims
   its volume bar.
+- **Two-deck layout.** The parallel lane of a stem deck shows its waveform with a column of the
+  four mute keys beside it, each with the colour and the name of its stem, so the mute keys are
+  always on screen; a fold key in the gutter of the lane (`waveform.stem_lanes.toggle`) shows the
+  four stem lanes of the four-deck layout in the place of that waveform, and folds them back. The
+  fold is kept per deck for the session (`docs/design/DESIGN.md`, *StemLanes*).
 
 ## Separation
 
@@ -141,8 +146,9 @@ What Platter does (choices: `docs/decisions/0038-stem-separation.md`):
   the mute key, the volume and the send key.
 - The stem lanes take the place of the stripe of the whole track in the four-deck layout, as the
   layout draws them; the manual keeps the stripe.
-- The two-deck layout has no stem lanes yet: its design does not place them. A stem deck plays
-  there and its stems are driven through commands, the keyboard and MIDI.
+- In the two-deck layout the stem lanes are folded by default: the manual shows them open with
+  an arrow that hides their controls; Platter keeps the parallel lane of the deck its height and
+  the mute keys in view, and opens the lanes on demand.
 
 ## Edge cases
 

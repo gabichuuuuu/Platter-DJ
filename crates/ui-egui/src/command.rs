@@ -693,6 +693,11 @@ pub enum AppCommand {
     WaveformZoomOut {
         deck: DeckId,
     },
+    /// Shows the four lanes of the stems of a stem deck in its parallel lane, or folds them
+    /// back to its waveform with the mute keys.
+    WaveformStemLanesToggle {
+        deck: DeckId,
+    },
     /// Swaps remaining and elapsed time as the large reading of a deck.
     DeckTimeDisplayToggle {
         deck: DeckId,
@@ -1927,6 +1932,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "waveform.stem_lanes.toggle",
+        label: "Show or hide the stem lanes",
+        params: &[DECK],
+    },
+    CommandSpec {
         id: "deck.time_display.toggle",
         label: "Swap remaining and elapsed time",
         params: &[DECK],
@@ -2466,6 +2476,7 @@ impl AppCommand {
             },
             "waveform.zoom.in" => Self::WaveformZoomIn { deck: read.deck()? },
             "waveform.zoom.out" => Self::WaveformZoomOut { deck: read.deck()? },
+            "waveform.stem_lanes.toggle" => Self::WaveformStemLanesToggle { deck: read.deck()? },
             "deck.time_display.toggle" => Self::DeckTimeDisplayToggle { deck: read.deck()? },
             "deck.notice.dismiss" => Self::DeckNoticeDismiss { deck: read.deck()? },
             "deck.page.set" => Self::DeckPageSet {
@@ -2612,6 +2623,7 @@ impl AppCommand {
             Self::LibraryImportStop => "library.import.stop",
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",
+            Self::WaveformStemLanesToggle { .. } => "waveform.stem_lanes.toggle",
             Self::DeckTimeDisplayToggle { .. } => "deck.time_display.toggle",
             Self::DeckNoticeDismiss { .. } => "deck.notice.dismiss",
             Self::DeckPageSet { .. } => "deck.page.set",
