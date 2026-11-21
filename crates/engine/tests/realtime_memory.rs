@@ -371,6 +371,8 @@ fn commands() -> Vec<Command> {
         // The MIDI clock, whose queue nobody reads here: it fills and the rest is dropped.
         Command::ClockMidiSendToggle,
         Command::ClockMidiRestart,
+        Command::ClockSourceSet { external: true },
+        Command::ClockSourceSet { external: false },
         Command::DeckMasterSet { deck: B },
         Command::DeckSyncToggle { deck: A },
         Command::ClockModeSet {

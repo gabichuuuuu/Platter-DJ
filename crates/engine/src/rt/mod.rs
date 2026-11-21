@@ -431,6 +431,12 @@ pub enum RtCommand {
     },
     /// Stop and Start of the MIDI clock again on the next beat.
     MidiClockRestart,
+    /// The tempo of a clock the master clock follows, and its place in the beat for the next
+    /// frame.
+    ClockFollow {
+        bpm: Bpm,
+        phase: f64,
+    },
     /// Starts or stops sending the master to the recorder, for the recording with this
     /// number.
     Record {

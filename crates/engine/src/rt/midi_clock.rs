@@ -19,16 +19,30 @@ pub enum ClockMessage {
     Tick,
     /// Start, `FA`.
     Start,
+    /// Continue, `FB`: only received.
+    Continue,
     /// Stop, `FC`.
     Stop,
 }
 
 impl ClockMessage {
+    /// The message of a byte, if it is one of these.
+    pub fn of(byte: u8) -> Option<Self> {
+        match byte {
+            0xF8 => Some(Self::Tick),
+            0xFA => Some(Self::Start),
+            0xFB => Some(Self::Continue),
+            0xFC => Some(Self::Stop),
+            _ => None,
+        }
+    }
+
     /// The byte of the message.
     pub fn byte(self) -> u8 {
         match self {
             Self::Tick => 0xF8,
             Self::Start => 0xFA,
+            Self::Continue => 0xFB,
             Self::Stop => 0xFC,
         }
     }

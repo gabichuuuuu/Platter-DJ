@@ -111,9 +111,115 @@ impl FrameClock {
     }
 }
 
+/// Bandwidth of the loop that reads a received clock, in hertz: it takes a step of tempo in
+/// about a beat at the tempos DJs play.
+const FOLLOW_BANDWIDTH_HZ: f64 = 2.0;
+/// A tick later than this after the one before means the clock had stopped arriving.
+const SILENCE_SECONDS: f64 = 0.5;
+/// Ticks the follower waits for before it gives a tempo: one beat.
+const TICKS_TO_TRUST: u64 = TICKS_PER_BEAT as u64;
+/// Tempos a received clock may have: those of the master clock.
+const FOLLOW_BPM: std::ops::RangeInclusive<f64> = 20.0..=400.0;
+
+/// Reads a MIDI clock that arrives: its tempo and where it is in its beat, from the times its
+/// messages are received. The same loop as [`FrameClock`] runs over the ticks, so the jitter of
+/// the sender and of the system is smoothed: `docs/decisions/0041-midi-clock.md`.
+#[derive(Clone, Debug, Default)]
+pub struct ClockFollower {
+    /// Ticks since Start, and the time the loop puts the latest one at.
+    count: u64,
+    time: f64,
+    /// Seconds between two ticks, as the loop finds it; zero until two ticks came.
+    period: f64,
+    /// When the latest tick was received.
+    last: Option<f64>,
+    /// Start or Continue came and Stop has not.
+    running: bool,
+}
+
+impl ClockFollower {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Takes one message received at `time` seconds.
+    pub fn take(&mut self, time: f64, message: ClockMessage) {
+        if !time.is_finite() {
+            return;
+        }
+        match message {
+            ClockMessage::Start => {
+                self.running = true;
+                self.count = 0;
+                self.period = 0.0;
+                self.last = None;
+            }
+            ClockMessage::Continue => self.running = true,
+            ClockMessage::Stop => self.running = false,
+            ClockMessage::Tick => self.tick(time),
+        }
+    }
+
+    fn tick(&mut self, time: f64) {
+        let gap = self.last.map(|last| time - last);
+        self.last = Some(time);
+        if !self.running {
+            return;
+        }
+        match gap {
+            // The first tick after Start is the start of the first beat.
+            None => {
+                self.time = time;
+                return;
+            }
+            Some(gap) if gap > SILENCE_SECONDS || gap <= 0.0 => {
+                // The clock had stopped arriving: start the loop again from this tick.
+                self.count += 1;
+                self.time = time;
+                self.period = 0.0;
+                return;
+            }
+            Some(gap) if self.period == 0.0 => {
+                self.count += 1;
+                self.time = time;
+                self.period = gap;
+                return;
+            }
+            Some(_) => {}
+        }
+        self.count += 1;
+        let predicted = self.time + self.period;
+        let error = time - predicted;
+        let omega = 2.0 * PI * FOLLOW_BANDWIDTH_HZ * self.period;
+        self.time = predicted + SQRT_2 * omega * error;
+        self.period += omega * omega * error;
+    }
+
+    /// The tempo received, once a beat of ticks has come since Start and while they arrive.
+    pub fn bpm(&self, now: f64) -> Option<f64> {
+        let bpm = 60.0 / (self.period * f64::from(TICKS_PER_BEAT));
+        (self.is_arriving(now) && self.count >= TICKS_TO_TRUST && self.period > 0.0)
+            .then_some(bpm)
+            .filter(|bpm| FOLLOW_BPM.contains(bpm))
+    }
+
+    /// Where the clock received is in its beat at `time`, from zero up to one.
+    pub fn phase_at(&self, time: f64) -> Option<f64> {
+        (self.period > 0.0 && self.running).then(|| {
+            let ticks = self.count as f64 + (time - self.time) / self.period;
+            (ticks / f64::from(TICKS_PER_BEAT)).rem_euclid(1.0)
+        })
+    }
+
+    /// Started, and a tick came less than half a second before `now`.
+    pub fn is_arriving(&self, now: f64) -> bool {
+        self.running && self.last.is_some_and(|last| now - last <= SILENCE_SECONDS)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::FrameClock;
+    use super::{ClockFollower, ClockMessage, FrameClock, TICKS_PER_BEAT};
 
     /// A pseudo-random lateness from zero up to `most`, the same on every run.
     fn lateness(index: u64, most: f64) -> f64 {
@@ -149,6 +255,58 @@ mod tests {
         // The line sits at the mean lateness; what matters is that it does not wobble.
         assert!(high - low < 0.000_25, "spread {} s", high - low);
         assert!(low > -0.000_1 && high < most + 0.000_1, "{low} {high}");
+    }
+
+    /// Sends Start and then ticks at `bpm` from `from` for `seconds`, each up to `jitter` late.
+    fn send(follower: &mut ClockFollower, from: f64, bpm: f64, seconds: f64, jitter: f64) -> f64 {
+        let period = 60.0 / (bpm * f64::from(TICKS_PER_BEAT));
+        let count = (seconds / period) as u64;
+        for index in 0..count {
+            let time = from + index as f64 * period;
+            follower.take(time + lateness(index, jitter), ClockMessage::Tick);
+        }
+        from + count as f64 * period
+    }
+
+    #[test]
+    fn the_tempo_and_the_beat_of_a_received_clock_are_found_through_jitter() {
+        let mut follower = ClockFollower::new();
+        follower.take(0.0, ClockMessage::Start);
+        let end = send(&mut follower, 0.0, 120.0, 1.0, 0.002);
+        // Two beats in: within a tenth of a BPM.
+        let bpm = follower.bpm(end).unwrap_or(0.0);
+        assert!((bpm - 120.0).abs() < 0.1, "{bpm}");
+        let end = send(&mut follower, end, 120.0, 4.0, 0.002);
+        // The ticks started on a beat; every half second is a beat at 120 BPM.
+        let phase = follower.phase_at(end).unwrap_or(f64::NAN);
+        let gap = (phase + 0.5).rem_euclid(1.0) - 0.5;
+        assert!(gap.abs() < 0.02, "{phase}");
+    }
+
+    #[test]
+    fn a_step_of_tempo_is_followed_within_two_beats() {
+        let mut follower = ClockFollower::new();
+        follower.take(0.0, ClockMessage::Start);
+        let end = send(&mut follower, 0.0, 120.0, 4.0, 0.002);
+        // Two beats at 126 BPM.
+        let end = send(&mut follower, end, 126.0, 2.0 * 60.0 / 126.0, 0.002);
+        let bpm = follower.bpm(end).unwrap_or(0.0);
+        assert!((bpm - 126.0).abs() < 0.5, "{bpm}");
+    }
+
+    #[test]
+    fn a_clock_that_stops_arriving_gives_no_tempo() {
+        let mut follower = ClockFollower::new();
+        assert_eq!(follower.bpm(0.0), None, "nothing before Start");
+        follower.take(0.0, ClockMessage::Start);
+        let end = send(&mut follower, 0.0, 128.0, 0.2, 0.0);
+        assert_eq!(follower.bpm(end), None, "less than a beat");
+        let end = send(&mut follower, end, 128.0, 2.0, 0.0);
+        assert!(follower.bpm(end).is_some());
+        assert!(!follower.is_arriving(end + 0.6));
+        assert_eq!(follower.bpm(end + 0.6), None);
+        follower.take(end + 0.7, ClockMessage::Stop);
+        assert!(follower.phase_at(end + 0.7).is_none());
     }
 
     #[test]

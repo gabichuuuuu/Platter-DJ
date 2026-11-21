@@ -537,6 +537,10 @@ pub enum Command {
     ClockMidiSendToggle,
     /// Stop and Start of the MIDI clock again on the next beat.
     ClockMidiRestart,
+    /// The master clock runs on its own, or follows a received MIDI clock.
+    ClockSourceSet {
+        external: bool,
+    },
     GlobalSyncModeSet {
         mode: SyncMode,
     },
@@ -685,6 +689,7 @@ const MOVE_MODES: &[&str] = &["beatjump", "loop", "loop_in", "loop_out"];
 const CUE_STEPS: &[&str] = &["previous", "next"];
 const CUE_TYPES: &[&str] = &["cue", "fade_in", "fade_out", "load", "loop"];
 const CLOCK_MODES: &[&str] = &["auto", "master"];
+const CLOCK_SOURCES: &[&str] = &["internal", "external"];
 const SYNC_MODES: &[&str] = &["tempo", "beat"];
 
 /// The sources of the loop recorder, by name: the mix, then the decks.
@@ -1612,6 +1617,14 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "clock.source.set",
+        label: "Clock source",
+        params: &[ParamSpec {
+            name: "source",
+            kind: ParamKind::Choice(CLOCK_SOURCES),
+        }],
+    },
+    CommandSpec {
         id: "global.snap.toggle",
         label: "Snap",
         params: &[],
@@ -2228,6 +2241,18 @@ impl Command {
             "clock.metronome.toggle" => Self::ClockMetronomeToggle,
             "clock.midi.send.toggle" => Self::ClockMidiSendToggle,
             "clock.midi.restart" => Self::ClockMidiRestart,
+            "clock.source.set" => Self::ClockSourceSet {
+                external: match read.text("source")? {
+                    "internal" => false,
+                    "external" => true,
+                    _ => {
+                        return Err(CommandError::Value(ValueError::UnknownChoice {
+                            name: "source",
+                            expected: "internal, external",
+                        }));
+                    }
+                },
+            },
             "global.sync.mode.set" => Self::GlobalSyncModeSet {
                 mode: read.sync_mode()?,
             },
@@ -2583,6 +2608,7 @@ impl Command {
             Self::ClockMetronomeToggle => "clock.metronome.toggle",
             Self::ClockMidiSendToggle => "clock.midi.send.toggle",
             Self::ClockMidiRestart => "clock.midi.restart",
+            Self::ClockSourceSet { .. } => "clock.source.set",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",

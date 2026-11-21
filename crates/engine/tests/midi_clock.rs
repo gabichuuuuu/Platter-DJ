@@ -116,3 +116,59 @@ fn stopping_sends_stop_and_the_setting_survives_a_new_engine() {
     assert!(engine.snapshot().clock.midi_clock);
     assert!(Command::from_args("clock.midi.restart", &Default::default()).is_ok());
 }
+
+#[test]
+fn an_external_source_takes_the_tempo_and_the_beat_it_is_given() {
+    let mut rig = Rig::new();
+    let mut feed = rig.engine.take_clock_feed().unwrap();
+    // Without the external source the tempo given is not taken.
+    rig.engine.follow_clock(126.0, 0.0).unwrap();
+    rig.run_stereo(0.1);
+    rig.engine.poll();
+    assert_eq!(rig.engine.snapshot().clock.bpm, 120.0);
+    rig.send(Command::ClockSourceSet { external: true });
+    rig.send(Command::ClockMidiSendToggle);
+    // A clock at 126 BPM whose beat starts a quarter of a second in: given before each block.
+    let block = 480;
+    let seconds_per_beat = 60.0 / 126.0;
+    let mut frame = 0usize;
+    let mut out = vec![0.0f32; block * 2];
+    while frame < 4 * 48_000 {
+        let time = frame as f64 / f64::from(RATE);
+        let phase = ((time - 0.25) / seconds_per_beat).rem_euclid(1.0);
+        rig.engine.follow_clock(126.0, phase).unwrap();
+        rig.processor.process(&mut out, 2);
+        frame += block;
+    }
+    rig.engine.poll();
+    let clock = rig.engine.snapshot().clock;
+    assert!(clock.external);
+    assert!((clock.bpm - 126.0).abs() < 1e-9, "{}", clock.bpm);
+    // After the first second, each tick sent falls on a 24th of the beat of the clock
+    // followed, within a tenth of a 24th.
+    let late: Vec<u64> = drain(&mut feed)
+        .iter()
+        .filter(|event| event.message == ClockMessage::Tick && event.frame > u64::from(RATE))
+        .map(|event| event.frame)
+        .collect();
+    assert!(late.len() > 2 * TICKS_PER_BEAT as usize);
+    for frame in &late {
+        let beat = (*frame as f64 / f64::from(RATE) - 0.25) / seconds_per_beat;
+        let ticks = beat * f64::from(TICKS_PER_BEAT);
+        let off = (ticks + 0.5).rem_euclid(1.0) - 0.5;
+        assert!(off.abs() < 0.1, "{off} of a 24th at frame {frame}");
+    }
+    // The tempo commands of the clock and the choice of a deck do nothing meanwhile.
+    rig.send(Command::ClockTempoSet { bpm: 90.0 });
+    rig.send(Command::DeckMasterSet { deck: DeckId::A });
+    rig.run_stereo(0.1);
+    rig.engine.poll();
+    let clock = rig.engine.snapshot().clock;
+    assert!((clock.bpm - 126.0).abs() < 1e-9);
+    assert_eq!(clock.master, None);
+    rig.send(Command::ClockSourceSet { external: false });
+    rig.send(Command::ClockTempoSet { bpm: 90.0 });
+    rig.run_stereo(0.1);
+    rig.engine.poll();
+    assert_eq!(rig.engine.snapshot().clock.bpm, 90.0);
+}

@@ -300,6 +300,8 @@ pub struct ClockSnapshot {
     /// next beat.
     pub midi_clock: bool,
     pub midi_clock_running: bool,
+    /// The master clock follows a received MIDI clock: `docs/behavior/midi-clock.md`.
+    pub external: bool,
 }
 
 impl Default for ClockSnapshot {
@@ -315,6 +317,7 @@ impl Default for ClockSnapshot {
             metronome: false,
             midi_clock: false,
             midi_clock_running: false,
+            external: false,
         }
     }
 }
@@ -626,6 +629,8 @@ pub struct Engine {
     quantize: bool,
     metronome: bool,
     midi_clock: bool,
+    /// The master clock follows a received MIDI clock.
+    external_clock: bool,
     /// A track with a cue of the type load starts at it.
     load_marker: bool,
     /// A deck crossing a fade-out cue starts its partner from its fade-in cue.
@@ -731,6 +736,18 @@ impl Engine {
         self.send(RtCommand::InputLatency { frames })
     }
 
+    /// Brings the master clock to the tempo of a received clock and to where that clock is in
+    /// its beat for the next block, while the source of the clock is external; nothing
+    /// otherwise.
+    pub fn follow_clock(&mut self, bpm: f64, phase: f64) -> Result<(), EngineError> {
+        if !self.external_clock {
+            return Ok(());
+        }
+        let bpm = Bpm::new(bpm)?;
+        let phase = ValueError::check("phase", phase, 0.0, 1.0)?;
+        self.send(RtCommand::ClockFollow { bpm, phase })
+    }
+
     /// Takes the reading end of the queue of the MIDI clock, for its sender:
     /// `docs/decisions/0041-midi-clock.md`. There is one per engine; it is None once
     /// taken.
@@ -806,6 +823,7 @@ impl Engine {
             quantize: false,
             metronome: false,
             midi_clock: false,
+            external_clock: false,
             load_marker: true,
             fade_markers: false,
             marker_positions: [None; DeckId::COUNT],
@@ -922,6 +940,7 @@ impl Engine {
         engine.quantize = previous.quantize;
         engine.metronome = previous.metronome;
         engine.midi_clock = previous.midi_clock;
+        engine.external_clock = previous.external_clock;
         engine.load_marker = previous.load_marker;
         engine.fade_markers = previous.fade_markers;
         // A fresh queue has room for all of it: see `docs/decisions/0033-effect-chain.md`.
@@ -1189,6 +1208,27 @@ impl Engine {
             },
             Command::DeckKeyPersist { deck } => RtCommand::KeyPersist { deck },
             Command::DeckFluxToggle { deck } => RtCommand::FluxToggle { deck },
+            // While the clock follows a received one, it is the tempo master and its tempo is
+            // that clock's: these do nothing.
+            Command::DeckMasterSet { .. }
+            | Command::ClockModeSet { .. }
+            | Command::ClockTempoSet { .. }
+            | Command::ClockTempoStep { .. }
+            | Command::ClockTap
+            | Command::ClockBend { .. }
+                if self.external_clock =>
+            {
+                return Ok(());
+            }
+            Command::ClockSourceSet { external } => {
+                if external {
+                    self.send(RtCommand::ClockAuto { on: false })?;
+                    self.send(RtCommand::ClockBend { amount: 0.0 })?;
+                    self.clock_auto = false;
+                }
+                self.external_clock = external;
+                return Ok(());
+            }
             Command::DeckMasterSet { deck } => RtCommand::Master { deck },
             Command::ClockModeSet { mode } => {
                 let on = mode == ClockMode::Auto;
@@ -2339,6 +2379,7 @@ impl Engine {
                 metronome: self.metronome,
                 midi_clock: self.midi_clock,
                 midi_clock_running: self.ends.shared.midi_clock.get(),
+                external: self.external_clock,
             },
             master_levels: [shared.master_levels[0].get(), shared.master_levels[1].get()],
             limiter_gain: shared.limiter_gain.get(),

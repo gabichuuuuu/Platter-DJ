@@ -1,7 +1,7 @@
 # MIDI clock
 
 Platter sends the tempo and the beats of its master clock to other devices and programs as
-MIDI clock. Following the MIDI clock of another device comes next. The master clock and the tempo
+MIDI clock, and can follow the MIDI clock of another device. The master clock and the tempo
 master are in `docs/behavior/sync.md`; the MIDI controllers in `docs/behavior/controllers.md`.
 How the clock is sent and read on time is in `docs/decisions/0041-midi-clock.md`.
 
@@ -48,6 +48,8 @@ The messages come from the MIDI 1.0 specification of the MIDI Association
 | `clock.midi.send.toggle` | Starts or stops sending the clock to that output |
 | `clock.midi.restart` | Sends Stop and then Start on the next beat, so the devices that follow start again on it |
 | `clock.midi.offset.set` | `ms` -50 to 50: how much earlier (negative) or later the clock is sent |
+| `clock.midi.input.set` | `port`: the MIDI input whose clock the master clock can follow, or none |
+| `clock.source.set` | `source` `internal` or `external`: the master clock runs on its own, or follows the clock of that input |
 
 ### Sending
 
@@ -67,9 +69,28 @@ The messages come from the MIDI 1.0 specification of the MIDI Association
 - The *Sync* page of the preferences holds the output, the Send switch, the Restart key and the
   offset.
 
+### Following
+
+- The input is opened for its clock alone: Timing Clock, Start, Continue and Stop, each stamped
+  with the time it arrives. It may be the input of a controller as well.
+- With the source `external` the master clock is the tempo master: the automatic choice is off,
+  a bend ends, and the commands that set, step, tap or bend its tempo, choose a deck as the
+  tempo master or change the mode of the clock do nothing.
+- Start makes the first Timing Clock after it the start of a beat; each 24th message after that
+  is the start of the next one. Continue goes on counting. Stop, or no message for half a
+  second, leaves the master clock running on its own at the last tempo it took.
+- The tempo is taken once a beat of messages has come, between 20 and 400 BPM, smoothed by a
+  loop that follows a step of tempo within about two beats.
+- The master clock takes that tempo and, about 60 times a second, where the clock received is
+  in its beat when the block it renders next is heard: a gap up to a quarter of a beat is closed
+  over 200 ms, a wider one at once.
+- A clock that follows is sent on as the master clock is, if sending is on.
+- The input and the source are kept with the settings, on the Sync page with what arrives.
+
 ### What the snapshot shows
 
-Whether sending is on, and whether Start has gone out and Stop has not.
+Whether sending is on, whether Start has gone out and Stop has not, and whether the source is
+external.
 
 ## Differences
 
@@ -81,9 +102,9 @@ Whether sending is on, and whether Start has gone out and Stop has not.
   next beat, so a device that follows starts in phase.
 - **No song position.** Platter does not send Song Position Pointer: a track has no bar number a
   sequencer could use.
-- **Following a received clock** (the EXT source of the manual) is not there yet. The input, the
-  measurement of its tempo and the phase of the master clock against it come next, behind the
-  same loop (`docs/decisions/0041-midi-clock.md`).
+- **The EXT key of the manual is the source of the master clock on the Sync page**, for the same
+  reason as the keys of sending. The offset of a received clock is set on its sender, as the
+  manual says.
 - **Link** is not part of this note: its public description is a project under the GPL, which
   Platter may not use as a guide.
 
@@ -95,11 +116,14 @@ Whether sending is on, and whether Start has gone out and Stop has not.
 | `clock.midi.send.toggle` without an output | Accepted: the switch is on and nothing is sent until an output opens |
 | A new sample rate or buffer size | The sender keeps its output and takes the new latency; a new engine gives it a new queue |
 | The same port as the output of the clock and as a controller | The clock uses a connection of its own |
+| The source `external` with no input, or no clock arriving | The master clock runs on its own at its tempo; the Sync page says it waits |
+| A received tempo outside 20 to 400 BPM | Not taken |
+| Two Start messages in a row | The second starts the count again |
 
 ## Tests
 
 `crates/engine/src/rt/midi_clock.rs` for where the messages fall in the frames;
-`crates/engine/src/midi_clock.rs` for the loop that times them;
+`crates/engine/src/midi_clock.rs` for the loop that times them and for the clock received;
 `crates/engine/tests/midi_clock.rs` for the clock of the engine, a bend and a deck as the tempo
 master; `crates/ui-egui/tests/settings_sync.rs` for the page; `apps/platter/src/config.rs` and
 `apps/platter/src/clock_sender.rs` for the settings and the delay.

@@ -56,9 +56,14 @@ does not move while the connection is open (`MidiInput::connect`).
   mean, which the offset of the preferences takes away.
 - A jump of the phase of the master clock by more than three 24ths in one frame is not sent as a
   burst: the count goes on from there.
-- Following a received clock is the next step: an input connection of its own that does not
-  ignore timing messages, the same loop over the timestamps `midir` gives, and the phase of the
-  master clock aligned to the count since Start.
+- A received clock comes through an input connection of its own that keeps the timing messages.
+  Its callback stamps each one with the same clock as the sender, rather than with the
+  timestamp of `midir`, whose zero is not that clock and whose unit on Windows is the
+  millisecond. A second loop of the same form runs over the ticks
+  (`platter_engine::midi_clock::ClockFollower`, 2 Hz), giving the tempo and the place in the
+  beat; the application sends them to the engine about 60 times a second, for the time the
+  next block is heard, and the master clock closes a gap of up to a quarter of a beat over
+  200 ms and a wider one at once.
 - `docs/dependencies.md` records that `midir` also opens outputs for this.
 
 ## How it was measured
@@ -71,8 +76,15 @@ With synthesised timings only, in the tests:
 - the loop fed with blocks of 256 frames at 48 kHz from a device clock 0.01 % fast, each seen up
   to a quarter of a buffer late: after ten seconds, the time it gives a frame varies by less
   than 0.25 ms (`src/midi_clock.rs`);
-- the processor sending the clock with nobody reading the queue does not allocate
-  (`realtime_memory`).
+- a received clock at 120 BPM with up to 2 ms of lateness on each message: the tempo found is
+  within 0.1 BPM after two beats and the beat within 0.02 of a beat after five seconds; a step
+  to 126 BPM is within 0.5 BPM two beats later (`src/midi_clock.rs`);
+- the engine following a clock at 126 BPM: it takes the tempo exactly, and after a second each
+  tick it sends falls within a tenth of a 24th of the beat of the clock followed
+  (`tests/midi_clock.rs`);
+- the processor sending the clock with nobody reading the queue, and switching the source, does
+  not allocate (`realtime_memory`).
 
-Not measured: a real MIDI output, the delay of the system between `send` and the cable, how long
-the thread oversleeps on each system, and a device following the clock.
+Not measured: a real MIDI output or input, the delay of the system between `send` and the cable
+or between the cable and the callback, how long the thread oversleeps on each system, and a
+device following the clock or sending one.
