@@ -66,8 +66,21 @@ changelog_include = [
   "platter-engine",
   "platter-library",
   "platter-mcp",
+  "platter-stems",
   "platter-ui-egui",
 ]
+
+# Crates added after the last tag: release-plz reads every crate at the tag `vX.Y.Z` and stops
+# with "cannot find package" when one is missing there. A tag name of their own, which never
+# exists, makes each a first release instead. Remove these sections once a tag contains the
+# crates, or every later merge, even of docs alone, raises the version (`docs/development.md`).
+[[package]]
+name = "platter-mcp"
+git_tag_name = "platter-mcp-v{{ version }}"
+
+[[package]]
+name = "platter-stems"
+git_tag_name = "platter-stems-v{{ version }}"
 
 # Development tools: their commits never release Platter.
 [[package]]
