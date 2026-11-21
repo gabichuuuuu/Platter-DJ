@@ -77,7 +77,9 @@ pub struct KeyLock {
     ahead_frames: f64,
     prepare_every: u32,
     /// What the stretch went on to play after the last jump, and how much of it was taken.
-    tail: [Frame; TAIL_CAPACITY],
+    /// On the heap: a deck holds five key locks, and the processor is built on the stack of
+    /// whatever thread builds the engine.
+    tail: Box<[Frame]>,
     tail_frames: usize,
     tail_length: usize,
     tail_taken: usize,
@@ -94,7 +96,7 @@ impl KeyLock {
             join_step: (1.0 / (JOIN_SECONDS * engine_rate).max(1.0)) as f32,
             ahead_frames: AHEAD_SECONDS * engine_rate,
             prepare_every: (AHEAD_SECONDS * engine_rate / FRAMES_PER_STEP_DIVISOR).max(1.0) as u32,
-            tail: [[0.0; 2]; TAIL_CAPACITY],
+            tail: vec![[0.0; 2]; TAIL_CAPACITY].into_boxed_slice(),
             tail_frames: ((TAIL_SECONDS * engine_rate).ceil() as usize + 2).min(TAIL_CAPACITY),
             tail_length: 0,
             tail_taken: 0,
