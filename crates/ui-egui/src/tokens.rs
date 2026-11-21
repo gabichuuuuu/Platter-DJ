@@ -121,6 +121,9 @@ token_group! {
         deck_d => "deck-d",
         deck_d_low => "deck-d-low",
         deck_d_high => "deck-d-high",
+        wave_low => "wave-low",
+        wave_mid => "wave-mid",
+        wave_high => "wave-high",
         status_ok => "status-ok",
         status_warn => "status-warn",
         status_error => "status-error",
@@ -373,8 +376,8 @@ mod tests {
         assert_eq!(tokens.text.time.size, 22.0);
         assert_eq!(tokens.text.time.weight, Weight::SemiBold);
         assert!(tokens.text.readout.tabular && !tokens.text.body.tabular);
-        // 49 colours in the file, later milestones included.
-        assert_eq!(tokens.all_colors.len(), 49);
+        // 52 colours in the file, later milestones included.
+        assert_eq!(tokens.all_colors.len(), 52);
     }
 
     #[test]

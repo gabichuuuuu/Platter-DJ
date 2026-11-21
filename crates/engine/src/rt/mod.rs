@@ -16,6 +16,7 @@ mod clock;
 mod deck;
 mod effects;
 mod lock;
+mod loop_recorder;
 mod looper;
 mod metronome;
 mod preview;
@@ -42,6 +43,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 pub use effects::{FxRouting, UNITS};
 
 pub use lock::Stretcher;
+pub use loop_recorder::{LOOP_BARS, LoopPhase, LoopSource, MAX_LOOP_SECONDS};
 pub use processor::Processor;
 pub use recorder::Recorded;
 pub use shared::{DeckShared, MasterChoice, Shared};
@@ -401,6 +403,25 @@ pub enum RtCommand {
     Record {
         on: bool,
         recording: u32,
+    },
+    /// Rec of the loop recorder: `docs/behavior/recording.md`, *Loop recorder*.
+    LoopRecord,
+    LoopPlay,
+    LoopUndo,
+    LoopRedo,
+    LoopDelete,
+    LoopBars {
+        bars: u32,
+    },
+    LoopSource {
+        source: LoopSource,
+    },
+    LoopDryWet {
+        amount: f32,
+    },
+    /// The share taken away on each pass of an overdub, 0 to 1.
+    LoopDecay {
+        decay: f32,
     },
 }
 

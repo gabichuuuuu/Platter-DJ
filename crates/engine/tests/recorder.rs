@@ -235,3 +235,30 @@ fn closing_finishes_the_file_while_the_device_plays() {
     assert_eq!(frames, files[0].1);
     std::fs::remove_dir_all(&folder).unwrap();
 }
+
+/// The note, *Split* and *Preferences*: the split size set before a recording closes its
+/// first file at that size and goes on in the next one without losing a frame.
+#[test]
+fn the_split_size_set_closes_a_file_at_that_size() {
+    let folder = folder("split-size");
+    let mut rig = rig_recording_into(&folder, "recorder-split-size");
+    rig.engine
+        .set_recording_split(platter_engine::MIN_SPLIT_BYTES);
+    rig.send(Command::RecorderToggle);
+    let sent = rig.run_stereo(2.8);
+    rig.send(Command::RecorderToggle);
+    rig.run_stereo(0.01);
+    let events = rig.engine.finish_recording(WAIT);
+
+    // Eight bytes a frame: two channels of 32-bit floats.
+    let split = platter_engine::MIN_SPLIT_BYTES / 8;
+    let total = (sent.len() / 2) as u64;
+    assert_eq!(
+        recorded(&events),
+        [
+            ("take.wav".to_owned(), split),
+            ("take-2.wav".to_owned(), total - split)
+        ]
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+}

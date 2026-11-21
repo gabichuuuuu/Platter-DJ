@@ -14,18 +14,22 @@ use platter_engine::{
 
 use crate::collection::TagWriting;
 use crate::command::{
-    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RouteSlot, SettingsPage,
+    Action, AppCommand, DeckLayout, DeckSize, EffectUnits, RECORDING_SPLITS, RouteSlot,
+    SettingsPage, WaveColour,
 };
 use crate::cx::{ControlKind, Cx, id};
 use crate::format;
 use crate::i18n::{Language, Texts};
 use crate::keymap::Chord;
 use crate::keys::KeyNotation;
+use crate::layout::{BuiltIn, Layouts, MAX_PERSONAL, Row as LayoutRow, Zone};
 use crate::model::{AudioState, ControlType, View};
 use crate::paint;
 use crate::panels::header::problem_keys;
 use crate::widgets::choice::{self, Choice, SelectSpec};
+use crate::widgets::field;
 use crate::widgets::key::{self, KeySpec, Press};
+use crate::widgets::value::{self, Steps, ValueSpec};
 
 pub const DIALOG_SIZE: egui::Vec2 = egui::vec2(880.0, 620.0);
 const NAV_WIDTH: f32 = 200.0;
@@ -91,6 +95,10 @@ pub struct SettingsMemory {
     pub shortcuts_scroll: f32,
     /// How far the Mixer page is scrolled.
     pub page_scroll: f32,
+    /// How far the Decks page is scrolled.
+    pub decks_scroll: f32,
+    /// How far the Layouts page is scrolled.
+    pub layouts_scroll: f32,
 }
 
 pub fn settings(
@@ -151,6 +159,8 @@ pub fn settings(
             SettingsPage::General => "settings.general",
             SettingsPage::Decks => "settings.decks",
             SettingsPage::Mixer => "settings.mixer",
+            SettingsPage::Recording => "settings.recording",
+            SettingsPage::Layouts => "settings.layouts",
             SettingsPage::Library => "settings.library",
             SettingsPage::Controllers => "settings.controllers",
             SettingsPage::Keyboard => "settings.keyboard",
@@ -197,12 +207,27 @@ pub fn settings(
         SettingsPage::Audio => audio_page(cx, page_rect, view),
         SettingsPage::General => general_page(cx, page_rect, view),
         SettingsPage::Keyboard => keyboard_page(cx, page_rect, view, memory),
-        SettingsPage::Decks => decks_page(cx, page_rect, view),
+        SettingsPage::Decks => scrolled(
+            cx,
+            page_rect,
+            (DECKS_PAGE_HEIGHT, &mut memory.decks_scroll),
+            |cx, page| decks_page(cx, page, view),
+        ),
         SettingsPage::Mixer => scrolled(
             cx,
             page_rect,
             (MIXER_PAGE_HEIGHT, &mut memory.page_scroll),
             |cx, page| mixer_page(cx, page, view),
+        ),
+        SettingsPage::Recording => recording_page(cx, page_rect, view),
+        SettingsPage::Layouts => scrolled(
+            cx,
+            page_rect,
+            (
+                layouts_page_height(&view.settings.layouts),
+                &mut memory.layouts_scroll,
+            ),
+            |cx, page| layouts_page(cx, page, view),
         ),
         SettingsPage::Library => library_page(cx, page_rect, view),
         SettingsPage::Controllers => controllers_page(cx, page_rect, view),
@@ -216,6 +241,8 @@ pub fn settings(
 
 /// The height of the content of the Mixer page, which scrolls.
 const MIXER_PAGE_HEIGHT: f32 = 960.0;
+/// The height of the content of the Decks page, which scrolls.
+const DECKS_PAGE_HEIGHT: f32 = 600.0;
 
 /// Draws a page taller than its room, scrolled by `scroll`: the wheel over it scrolls it, and
 /// a control of the page the keyboard focus reaches out of view is brought into view.
@@ -660,6 +687,8 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
 
     let top = section(cx, page, 210.0, "settings.layout_section");
     let control = setting(cx, page, top, "settings.deck_layout");
+    // A built-in layout keeps its arrangement: `docs/behavior/interface.md`, *Layouts*.
+    let personal = !view.settings.layouts.builtin_active();
     let labels = DeckLayout::ALL.map(|layout| {
         texts.get(match layout {
             DeckLayout::Two => "settings.decks_two",
@@ -670,7 +699,7 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         .iter()
         .map(|label| Choice {
             label,
-            enabled: true,
+            enabled: personal,
         })
         .collect();
     let drawn = choice::segmented(
@@ -690,7 +719,11 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     help(
         cx,
         Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
-        texts.get("settings.deck_layout_help"),
+        texts.get(if personal {
+            "settings.deck_layout_help"
+        } else {
+            "settings.layout_builtin_help"
+        }),
     );
 
     let top = top + 50.0;
@@ -705,7 +738,7 @@ fn general_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         .iter()
         .map(|label| Choice {
             label,
-            enabled: true,
+            enabled: personal,
         })
         .collect();
     let drawn = choice::segmented(
@@ -1083,7 +1116,478 @@ fn decks_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         Rect::from_min_max(select.min, egui::pos2(control.right(), select.bottom())),
         texts.get("settings.bpm_range_help"),
     );
+
+    // `docs/behavior/waveform.md`, *Colour modes*.
+    let top = section(cx, page, 500.0, "settings.waveform_section");
+    let control = setting(cx, page, top, "settings.wave_colour");
+    let labels = WaveColour::ALL.map(|mode| {
+        texts.get(match mode {
+            WaveColour::Deck => "settings.wave_deck",
+            WaveColour::Bands => "settings.wave_bands",
+            WaveColour::Mono => "settings.wave_mono",
+            WaveColour::Bass => "settings.wave_bass",
+        })
+    });
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let select = Rect::from_min_size(control.min, egui::vec2(120.0, control.height()));
+    let current = view.settings.wave_colour;
+    choice::select(
+        cx,
+        select,
+        id("settings-wave-colour"),
+        SelectSpec {
+            name: texts.get("settings.wave_colour"),
+            choices: &choices,
+            current: WaveColour::ALL.iter().position(|mode| *mode == current),
+            enabled: true,
+        },
+        |index| {
+            AppCommand::WaveColourSet {
+                mode: WaveColour::ALL[index],
+            }
+            .into()
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(select.min, egui::pos2(control.right(), select.bottom())),
+        texts.get("settings.wave_colour_help"),
+    );
 }
+
+/// The height of a row of the list of layouts.
+const LAYOUT_ROW: f32 = 28.0;
+/// Where the list of layouts starts on the Layouts page, and the room under it.
+const LAYOUT_LIST_TOP: f32 = 130.0;
+/// From the row of the name to the row of the keys under it.
+const LAYOUT_KEYS_STEP: f32 = 36.0;
+const LAYOUT_BELOW: f32 = 250.0;
+
+fn layouts_page_height(layouts: &Layouts) -> f32 {
+    LAYOUT_LIST_TOP + LAYOUT_ROW * layouts.len() as f32 + LAYOUT_BELOW
+}
+
+/// The name a layout shows: its own, or the translated one of a built-in layout.
+fn layout_name<'a>(texts: &'a Texts, row: &'a LayoutRow) -> &'a str {
+    match row {
+        LayoutRow::BuiltIn(built_in) => texts.get(built_in.text()),
+        LayoutRow::Personal(name) => name,
+    }
+}
+
+/// The Layouts page: `docs/behavior/interface.md`, *Layouts*.
+fn layouts_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
+    let texts = cx.texts;
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let color = &tokens.color;
+    let layouts = &view.settings.layouts;
+    let rows = layouts.rows();
+    let builtin = layouts.builtin_active();
+    let first_personal = BuiltIn::ALL.len();
+    let active_name = rows
+        .get(layouts.active)
+        .map(|row| layout_name(texts, row))
+        .unwrap_or_default()
+        .to_owned();
+    let top = section(cx, page, 20.0, "settings.layouts_section");
+
+    // The name of the active layout, which Rename and Enter keep.
+    let control = setting(cx, page, top, "settings.layout_name");
+    let rect = Rect::from_min_size(control.min, egui::vec2(220.0, tokens.size.button_h));
+    let field_id = id("settings-layout-name");
+    let mut draft = cx
+        .ui
+        .data(|data| data.get_temp::<String>(field_id))
+        .unwrap_or_else(|| active_name.clone());
+    if builtin {
+        paint::text_elided(
+            cx.painter(),
+            theme,
+            rect,
+            &active_name,
+            tokens.text.body,
+            color.text_secondary,
+        );
+    } else {
+        let was_focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+        field::text(
+            cx,
+            rect,
+            field_id,
+            &mut draft,
+            texts.get("settings.layout_name"),
+            "layout.rename",
+        );
+        let focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+        let enter = focused && cx.ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if enter || (was_focused && !focused) {
+            if draft != active_name {
+                cx.out.emit(AppCommand::LayoutRename {
+                    name: draft.clone(),
+                });
+            }
+            cx.ui.data_mut(|data| data.remove::<String>(field_id));
+            if enter {
+                cx.ui.memory_mut(|memory| memory.surrender_focus(field_id));
+            }
+        } else if focused {
+            cx.ui
+                .data_mut(|data| data.insert_temp(field_id, draft.clone()));
+        }
+    }
+
+    // The keys that act on the active layout.
+    // Rename beside the name, the others on the row under it.
+    let mut x = rect.right() + tokens.space.s3;
+    let mut y = control.top();
+    for (key_id, label, action, enabled) in [
+        (
+            "settings-layout-rename",
+            "settings.layout_rename",
+            AppCommand::LayoutRename {
+                name: draft.clone(),
+            },
+            !builtin,
+        ),
+        (
+            "settings-layout-duplicate",
+            "settings.layout_duplicate",
+            AppCommand::LayoutDuplicate,
+            layouts.personal.len() < MAX_PERSONAL,
+        ),
+        (
+            "settings-layout-delete",
+            "settings.layout_delete",
+            AppCommand::LayoutDelete,
+            !builtin,
+        ),
+        (
+            "settings-layout-up",
+            "settings.layout_up",
+            AppCommand::LayoutMoveUp,
+            !builtin && layouts.active > first_personal,
+        ),
+        (
+            "settings-layout-down",
+            "settings.layout_down",
+            AppCommand::LayoutMoveDown,
+            !builtin && layouts.active + 1 < layouts.len(),
+        ),
+    ] {
+        if key_id == "settings-layout-duplicate" {
+            x = control.left();
+            y = control.top() + LAYOUT_KEYS_STEP;
+        }
+        let label = texts.get(label);
+        let rect = Rect::from_min_size(
+            egui::pos2(x, y),
+            egui::vec2(key::width_for(cx, label, 56.0), tokens.size.button_h),
+        );
+        x = rect.right() + tokens.space.s2;
+        key::key(
+            cx,
+            rect,
+            id(key_id),
+            KeySpec::text(label).enabled(enabled),
+            Press::Click(Action::App(action)),
+        );
+    }
+
+    // The list: a click makes a layout active.
+    let list = Rect::from_min_max(
+        egui::pos2(page.left() + LABEL_X, page.top() + LAYOUT_LIST_TOP),
+        egui::pos2(
+            page.right() - LABEL_X,
+            page.top() + LAYOUT_LIST_TOP + LAYOUT_ROW * rows.len() as f32,
+        ),
+    );
+    for (index, row) in rows.iter().enumerate() {
+        let item = Rect::from_min_size(
+            list.min + egui::vec2(0.0, LAYOUT_ROW * index as f32),
+            egui::vec2(list.width(), LAYOUT_ROW),
+        );
+        let action = AppCommand::LayoutSelect { index };
+        cx.record(action.id(), item, ControlKind::Button, true);
+        let response = cx.ui.interact(
+            item,
+            id(("settings-layout", index)),
+            cx.sense(true, Sense::click()),
+        );
+        let name = layout_name(texts, row);
+        let active = index == layouts.active;
+        response.widget_info(|| WidgetInfo::selected(Role::Button, true, active, name));
+        if response.clicked() {
+            cx.out.emit(action);
+        }
+        let painter = cx.painter();
+        if active {
+            painter.rect_filled(
+                item,
+                paint::radius(tokens.radius.md),
+                color.surface_selected,
+            );
+        } else if response.hovered() {
+            painter.rect_filled(item, paint::radius(tokens.radius.md), color.surface_hover);
+        }
+        let inner = item.shrink2(egui::vec2(tokens.space.s3, 0.0));
+        paint::text_elided(
+            painter,
+            theme,
+            inner,
+            name,
+            tokens.text.body,
+            color.text_primary,
+        );
+        let tag = match (active, row) {
+            (true, _) => Some("settings.layout_active"),
+            (false, LayoutRow::BuiltIn(_)) => Some("settings.layout_builtin"),
+            (false, LayoutRow::Personal(_)) => None,
+        };
+        if let Some(tag) = tag {
+            paint::text(
+                painter,
+                theme,
+                inner,
+                Align2::RIGHT_CENTER,
+                texts.get(tag),
+                tokens.text.label,
+                color.text_secondary,
+            );
+        }
+        if response.has_focus() {
+            paint::focus_ring(painter, theme, item, tokens.radius.md);
+        }
+    }
+
+    // What the active layout shows, which only a personal layout lets change.
+    let top = section(
+        cx,
+        page,
+        list.bottom() - page.top() + 20.0,
+        "settings.layout_zones_section",
+    );
+    let shown = view.settings.shown;
+    for (row, (zone, name, help, on)) in [
+        (
+            Zone::Effects,
+            "settings.layout_effects",
+            "settings.layout_effects_help",
+            shown.effects,
+        ),
+        (
+            Zone::Mixer,
+            "settings.layout_mixer",
+            "settings.layout_mixer_help",
+            shown.mixer,
+        ),
+        (
+            Zone::Lanes,
+            "settings.layout_lanes",
+            "settings.layout_lanes_help",
+            shown.lanes,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        switch_when(
+            cx,
+            page,
+            top + 50.0 * row as f32,
+            Switch {
+                name,
+                help: if builtin {
+                    "settings.layout_builtin_help"
+                } else {
+                    help
+                },
+                on,
+                action: AppCommand::LayoutZoneToggle { zone }.into(),
+            },
+            !builtin,
+        );
+    }
+}
+
+/// The Recording page: `docs/behavior/recording.md`, *Preferences*.
+fn recording_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
+    let texts = cx.texts;
+    let theme = cx.theme;
+    let tokens = &theme.tokens;
+    let settings = &view.settings;
+    let top = section(cx, page, 20.0, "settings.mix_recorder_section");
+
+    // The folder: a line in the place of a control, then the keys that change it.
+    let control = setting(cx, page, top, "settings.recording_folder");
+    let explorer = view.browser.explorer.clone();
+    let mut keys = Vec::new();
+    let mut right = control.right();
+    for (key_id, label, action, enabled) in [
+        (
+            "settings-recording-default",
+            "settings.recording_default",
+            AppCommand::RecorderFolderReset,
+            settings.recording_folder_chosen,
+        ),
+        (
+            "settings-recording-explorer",
+            "settings.recording_use_explorer",
+            AppCommand::RecorderFolderSet {
+                path: explorer.clone().unwrap_or_default(),
+            },
+            explorer
+                .as_ref()
+                .is_some_and(|folder| folder.display().to_string() != settings.recording_folder),
+        ),
+    ] {
+        let label = texts.get(label);
+        let width = key::width_for(cx, label, 72.0);
+        let rect = Rect::from_min_size(
+            egui::pos2(right - width, control.top()),
+            egui::vec2(width, tokens.size.button_h),
+        );
+        right = rect.left() - tokens.space.s3;
+        keys.push((key_id, label, action, enabled, rect));
+    }
+    let line = Rect::from_min_max(
+        control.min,
+        egui::pos2(right, control.top() + tokens.size.button_h),
+    );
+    paint::text_elided(
+        cx.painter(),
+        theme,
+        line,
+        &settings.recording_folder,
+        tokens.text.readout,
+        tokens.color.text_primary,
+    );
+    for (key_id, label, action, enabled, rect) in keys.into_iter().rev() {
+        key::key(
+            cx,
+            rect,
+            id(key_id),
+            KeySpec::text(label).enabled(enabled),
+            Press::Click(Action::App(action)),
+        );
+    }
+
+    // The prefix: kept by Enter or by leaving the field.
+    let control = setting(cx, page, top + 44.0, "settings.recording_prefix");
+    let rect = Rect::from_min_size(control.min, egui::vec2(160.0, tokens.size.button_h));
+    let field_id = id("settings-recording-prefix");
+    let was_focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+    let mut draft = cx
+        .ui
+        .data(|data| data.get_temp::<String>(field_id))
+        .unwrap_or_else(|| settings.recording_prefix.clone());
+    field::text(
+        cx,
+        rect,
+        field_id,
+        &mut draft,
+        texts.get("settings.recording_prefix"),
+        "recorder.prefix.set",
+    );
+    let focused = cx.ui.memory(|memory| memory.has_focus(field_id));
+    let enter = focused && cx.ui.input(|input| input.key_pressed(egui::Key::Enter));
+    if enter || (was_focused && !focused) {
+        if draft != settings.recording_prefix {
+            cx.out.emit(AppCommand::RecorderPrefixSet { prefix: draft });
+        }
+        cx.ui.data_mut(|data| data.remove::<String>(field_id));
+        if enter {
+            cx.ui.memory_mut(|memory| memory.surrender_focus(field_id));
+        }
+    } else if focused {
+        cx.ui.data_mut(|data| data.insert_temp(field_id, draft));
+    }
+    help(
+        cx,
+        Rect::from_min_max(rect.min, egui::pos2(control.right(), rect.bottom())),
+        texts.get("settings.recording_prefix_help"),
+    );
+
+    // The split size.
+    let control = setting(cx, page, top + 94.0, "settings.recording_split");
+    let labels = RECORDING_SPLITS.map(|megabytes| {
+        texts.format(
+            "settings.recording_megabytes",
+            &[("size", &megabytes.to_string())],
+        )
+    });
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-recording-split"),
+        &choices,
+        RECORDING_SPLITS
+            .iter()
+            .position(|megabytes| *megabytes == settings.recording_split),
+        |index| {
+            Action::App(AppCommand::RecorderSplitSet {
+                megabytes: RECORDING_SPLITS[index],
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.recording_split_help"),
+    );
+
+    // The loop recorder: the overdub decay, in percent.
+    let top = section(cx, page, 230.0, "settings.loop_recorder_section");
+    let control = setting(cx, page, top, "settings.loop_decay");
+    let decay = view.engine.loop_recorder.decay;
+    let percent = (decay * 100.0).round();
+    let field = Rect::from_min_size(
+        control.min,
+        egui::vec2(DECAY_FIELD_WIDTH, tokens.size.button_h),
+    );
+    value::field(
+        cx,
+        field,
+        id("settings-loop-decay"),
+        ValueSpec {
+            name: texts.get("settings.loop_decay"),
+            position: decay,
+            default: 0.0,
+            steps: Steps::PERCENT,
+            enabled: true,
+        },
+        &texts.format(
+            "settings.loop_decay_value",
+            &[("percent", &format!("{percent:.0}"))],
+        ),
+        |position| {
+            Action::App(AppCommand::LoopDecaySet {
+                percent: (position * 100.0).round().clamp(0.0, 100.0) as u32,
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(field.min, egui::pos2(control.right(), field.bottom())),
+        texts.get("settings.loop_decay_help"),
+    );
+}
+
+/// The width of the field of the overdub decay.
+const DECAY_FIELD_WIDTH: f32 = 96.0;
 
 /// The ranges of the tempo faders the Decks page offers, in percent: those of the deck.
 const TEMPO_RANGE_PERCENTS: [u32; 3] = [8, 16, 50];
@@ -2155,6 +2659,11 @@ struct Switch {
 }
 
 fn switch(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch) {
+    switch_when(cx, page, top, switch, true);
+}
+
+/// A switch that can be disabled.
+fn switch_when(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch, enabled: bool) {
     let theme = cx.theme;
     let texts = cx.texts;
     let tokens = &theme.tokens;
@@ -2166,9 +2675,10 @@ fn switch(cx: &mut Cx<'_>, page: Rect, top: f32, switch: Switch) {
     });
     let width = key::width_for(cx, state, 72.0);
     let rect = Rect::from_min_size(control.min, egui::vec2(width, tokens.size.button_h));
-    let mut spec = KeySpec::text(state);
+    let mut spec = KeySpec::text(state).enabled(enabled);
     spec.name = texts.get(switch.name);
     spec.lit = switch.on.then_some(tokens.color.text_primary);
+    spec.keeps_led = true;
     key::key(
         cx,
         rect,

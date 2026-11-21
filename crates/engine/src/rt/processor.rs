@@ -15,6 +15,7 @@ use rtrb::{Consumer, Producer};
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
 use super::effects::Effects;
+use super::loop_recorder::{LoopRecorder, LoopSource};
 use super::metronome::Metronome;
 use super::preview::PreviewPlayer;
 use super::recorder::Tap;
@@ -79,6 +80,8 @@ pub struct Processor {
     pair_limiters: [Limiter; 2],
     effects: Effects,
     recorder: Tap,
+    /// Boxed with its two buffers, so the processor stays small.
+    loop_recorder: Box<LoopRecorder>,
 }
 
 impl Processor {
@@ -125,6 +128,7 @@ impl Processor {
             pair_limiters: [Limiter::new(rate), Limiter::new(rate)],
             effects: Effects::new(rate),
             recorder: Tap::new(queues.recorded),
+            loop_recorder: Box::new(LoopRecorder::new(rate)),
         }
     }
 
@@ -136,6 +140,7 @@ impl Processor {
     /// the function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
         self.take_commands();
+        self.loop_recorder.prepare();
         self.clock.choose(self.candidates());
         if channels == 0 {
             output.fill(0.0);
@@ -237,6 +242,18 @@ impl Processor {
             }
             RtCommand::Metronome { on } => self.metronome.set_on(on),
             RtCommand::Record { on, recording } => self.recorder.set(on, recording),
+            RtCommand::LoopRecord => {
+                let bpm = self.clock.pulse().bpm;
+                self.loop_recorder.record(bpm);
+            }
+            RtCommand::LoopPlay => self.loop_recorder.toggle_play(),
+            RtCommand::LoopUndo => self.loop_recorder.undo(),
+            RtCommand::LoopRedo => self.loop_recorder.redo(),
+            RtCommand::LoopDelete => self.loop_recorder.delete(),
+            RtCommand::LoopBars { bars } => self.loop_recorder.set_bars(bars),
+            RtCommand::LoopSource { source } => self.loop_recorder.set_source(source),
+            RtCommand::LoopDryWet { amount } => self.loop_recorder.set_dry_wet(amount),
+            RtCommand::LoopDecay { decay } => self.loop_recorder.set_decay(decay),
             RtCommand::FxValues { unit, values } => self.effects.set_values(unit, values),
             RtCommand::FxRouting { unit, routing } => self.effects.set_routing(unit, routing),
             RtCommand::FxAssign { deck, unit, on } => self.effects.set_assigned(deck, unit, on),
@@ -374,6 +391,7 @@ impl Processor {
         let mut mix = [0.0f32; 2];
         let mut pre_listened = [0.0f32; 2];
         let mut decks = [[0.0f32; 2]; DeckId::COUNT];
+        let mut before_faders = [[0.0f32; 2]; DeckId::COUNT];
         let mut ticks = [0.0f32; DeckId::COUNT];
         let external = self.external.advance();
         let routed = external > 0.0;
@@ -398,6 +416,7 @@ impl Processor {
             let strip = channel.strip.process(played, |stage, frame| {
                 effects.process(deck, stage, frame, metered_outside)
             });
+            before_faders[index] = strip.pre;
             let side = channel.crossfade.advance();
             mix[0] += strip.post[0] * side;
             mix[1] += strip.post[1] * side;
@@ -427,6 +446,14 @@ impl Processor {
                 strip.post
             });
         }
+        // The loop is taken before it joins the mix, so it never records itself:
+        // `docs/behavior/recording.md`, *Loop recorder*.
+        let source = match self.loop_recorder.source() {
+            LoopSource::Master => mix,
+            LoopSource::Deck(deck) => before_faders[deck.index()],
+        };
+        let (dry, looped) = self.loop_recorder.next(source, pulse.phase);
+        let mix = [mix[0] * dry + looped[0], mix[1] * dry + looped[1]];
         let tone = self.tone.next(Output::Master);
         // The test tone comes after the maximiser, so its drive does not change its level.
         let maximised = self.maximiser.process([mix[0] * gain, mix[1] * gain]);
@@ -576,6 +603,15 @@ impl Processor {
         self.shared.maximiser_gain.set(self.maximiser.gain());
         self.shared.recorded_frames.set(self.recorder.frames());
         self.shared.recorder_dropped.set(self.recorder.dropped());
+        let looper = &self.loop_recorder;
+        self.shared.loop_phase.set(u64::from(looper.phase().code()));
+        self.shared.loop_progress.set(looper.progress());
+        self.shared.loop_seconds.set(looper.length_seconds());
+        self.shared
+            .loop_bars
+            .set(u64::from(looper.fitting_bars(pulse.bpm)));
+        self.shared.loop_can_undo.set(looper.can_undo());
+        self.shared.loop_can_redo.set(looper.can_redo());
     }
 }
 

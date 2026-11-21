@@ -13,7 +13,7 @@ use egui::{
 use platter_core::{DeckId, LoopSize};
 use platter_engine::{Command, DeckSnapshot, WaveformPeaks};
 
-use crate::command::{AppCommand, DeckLayout};
+use crate::command::{AppCommand, WaveColour};
 use crate::cx::{ControlKind, Cx, id};
 use crate::i18n::Texts;
 use crate::icons::Glyph;
@@ -186,8 +186,24 @@ fn cue_overlay(
     ));
 }
 
-/// The low, mid and high colour of a deck, darkest first.
+/// The low, mid and high colour of the waveform of a deck in the colour mode of the theme,
+/// darkest first: `docs/design/DESIGN.md`, *Waveform colour modes (M4)*.
 pub fn band_colors(theme: &Theme, deck: DeckId) -> [Color32; 3] {
+    let color = &theme.tokens.color;
+    match theme.wave_colour {
+        WaveColour::Deck => deck_bands(theme, deck),
+        WaveColour::Bands => [color.wave_low, color.wave_mid, color.wave_high],
+        WaveColour::Mono => [color.line_control, color.text_secondary, color.text_primary],
+        WaveColour::Bass => [
+            deck_color(theme, deck),
+            color.line_control,
+            color.text_secondary,
+        ],
+    }
+}
+
+/// The three colours of a deck's own hue, darkest first.
+fn deck_bands(theme: &Theme, deck: DeckId) -> [Color32; 3] {
     let color = &theme.tokens.color;
     match deck {
         DeckId::A => [color.deck_a_low, color.deck_a, color.deck_a_high],
@@ -197,8 +213,9 @@ pub fn band_colors(theme: &Theme, deck: DeckId) -> [Color32; 3] {
     }
 }
 
+/// The colour of a deck, whatever the colour mode of the waveforms.
 pub fn deck_color(theme: &Theme, deck: DeckId) -> Color32 {
-    band_colors(theme, deck)[1]
+    deck_bands(theme, deck)[1]
 }
 
 /// Adds one column of the waveform to `mesh`: three nested bars mirrored around the centre
@@ -368,6 +385,7 @@ fn scrolling(cx: &Cx<'_>, lane: Rect, deck: DeckId, snapshot: &DeckSnapshot, zoo
 pub fn lanes(
     cx: &mut Cx<'_>,
     rect: Rect,
+    shown: &[DeckId],
     decks: &[DeckSnapshot; DeckId::COUNT],
     zoom: [usize; DeckId::COUNT],
 ) {
@@ -376,8 +394,9 @@ pub fn lanes(
     let tokens = &theme.tokens;
     let color = &tokens.color;
     let seam = tokens.space.s1;
-    let lane_height = (rect.height() - seam) / 2.0;
-    for (row, &deck) in DeckLayout::Two.decks().iter().enumerate() {
+    let rows = shown.len().max(1) as f32;
+    let lane_height = (rect.height() - seam * (rows - 1.0)) / rows;
+    for (row, &deck) in shown.iter().enumerate() {
         let top = rect.top() + row as f32 * (lane_height + seam);
         let row = Rect::from_min_size(
             egui::pos2(rect.left(), top),
@@ -531,7 +550,49 @@ fn paint_overview(cx: &Cx<'_>, rect: Rect, deck: DeckId, peaks: &WaveformPeaks) 
 
 #[cfg(test)]
 mod tests {
-    use super::peak_over;
+    #![allow(clippy::unwrap_used)]
+
+    use platter_core::DeckId;
+
+    use super::{band_colors, deck_color, peak_over};
+    use crate::command::WaveColour;
+    use crate::theme::Theme;
+
+    /// `docs/behavior/waveform.md`, *Colour modes*.
+    #[test]
+    fn a_colour_mode_swaps_the_bands_and_keeps_the_colour_of_the_deck() {
+        let mut theme = Theme::load().unwrap();
+        let color = theme.tokens.color.clone();
+        assert_eq!(
+            band_colors(&theme, DeckId::B),
+            [color.deck_b_low, color.deck_b, color.deck_b_high]
+        );
+        theme.wave_colour = WaveColour::Bands;
+        assert_eq!(
+            band_colors(&theme, DeckId::A),
+            [color.wave_low, color.wave_mid, color.wave_high]
+        );
+        assert_eq!(
+            band_colors(&theme, DeckId::A),
+            band_colors(&theme, DeckId::D)
+        );
+        theme.wave_colour = WaveColour::Mono;
+        assert_eq!(
+            band_colors(&theme, DeckId::C),
+            [color.line_control, color.text_secondary, color.text_primary]
+        );
+        theme.wave_colour = WaveColour::Bass;
+        assert_eq!(band_colors(&theme, DeckId::D)[0], color.deck_d);
+        assert_ne!(
+            band_colors(&theme, DeckId::D)[0],
+            band_colors(&theme, DeckId::A)[0]
+        );
+        // The badge and the keys keep the hue of their deck in every mode.
+        for mode in WaveColour::ALL {
+            theme.wave_colour = mode;
+            assert_eq!(deck_color(&theme, DeckId::B), color.deck_b);
+        }
+    }
 
     #[test]
     fn the_peak_of_a_range_is_the_highest_of_each_band() {

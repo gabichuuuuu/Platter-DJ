@@ -2182,7 +2182,7 @@ fn toolbar(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>, focus_search: bool) {
         right = key_rect.left() - tokens.space.s4;
     }
     // One key per deck the window shows, A first; the arrow points to the column of the deck.
-    for &deck in view.settings.deck_layout.decks().iter().rev() {
+    for &deck in view.settings.shown_decks().iter().rev() {
         let (glyph, label) = match deck {
             DeckId::A => (Glyph::LoadLeft, "browser.load_a"),
             DeckId::B => (Glyph::LoadRight, "browser.load_b"),

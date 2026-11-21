@@ -9,7 +9,7 @@
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_engine::{Command, MixerMode, SyncMode};
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{Action, AppCommand, DeckSize, SettingsPage};
+use platter_ui_egui::command::{Action, AppCommand, DeckSize, SettingsPage, WaveColour};
 use platter_ui_egui::cx::Control;
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
@@ -508,4 +508,133 @@ fn the_controls_of_the_general_decks_and_library_pages_fit_the_dialog_in_both_la
             }
         }
     }
+}
+
+/// `docs/behavior/waveform.md`, *Colour modes*: at the end of the Decks page, which scrolls.
+#[test]
+fn the_decks_page_chooses_the_colour_mode_of_the_waveforms() {
+    let mut stage = Stage::on_page(sample::playing(), Language::English, SettingsPage::Decks);
+    stage.shell.state.settings.decks_scroll = f32::MAX;
+    stage.frame(Vec::new());
+    stage.frame(Vec::new());
+    let colours = control(&stage, "app.wave_colour.set").unwrap();
+    assert!(stage.click(colours.rect.center()).is_empty());
+    // The third row of the list.
+    let row = colours.rect.center_bottom() + egui::vec2(0.0, 2.0 + 14.0 + 2.0 * 28.0);
+    assert_eq!(
+        app(&stage.click(row)),
+        [AppCommand::WaveColourSet {
+            mode: WaveColour::Mono
+        }]
+    );
+}
+
+/// `docs/behavior/recording.md`, *Preferences*.
+#[test]
+fn the_recording_page_sets_the_folder_the_prefix_and_the_split_of_the_recorder() {
+    let mut scene = sample::playing();
+    scene.browser.explorer = Some(std::path::PathBuf::from("Music/Sets"));
+    let mut stage = Stage::on_page(scene, Language::English, SettingsPage::Recording);
+    // The folder is the default one: only the explorer folder can be taken.
+    let reset = control(&stage, "recorder.folder.reset").unwrap();
+    assert!(!reset.enabled);
+    let explorer = control(&stage, "recorder.folder.set").unwrap();
+    assert_eq!(
+        app(&stage.click(explorer.rect.center())),
+        [AppCommand::RecorderFolderSet {
+            path: std::path::PathBuf::from("Music/Sets")
+        }]
+    );
+
+    let mut splits: Vec<Control> = stage
+        .shell
+        .controls()
+        .iter()
+        .filter(|control| control.command == "recorder.split.set")
+        .cloned()
+        .collect();
+    splits.sort_by(|first, second| first.rect.left().total_cmp(&second.rect.left()));
+    assert_eq!(splits.len(), 3);
+    assert_eq!(
+        app(&stage.click(splits[0].rect.center())),
+        [AppCommand::RecorderSplitSet { megabytes: 512 }]
+    );
+
+    // The prefix is typed into its field and kept by Enter.
+    let prefix = control(&stage, "recorder.prefix.set").unwrap();
+    stage.click(prefix.rect.center());
+    let backspace = |pressed| Event::Key {
+        key: egui::Key::Backspace,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    stage.frame(vec![backspace(true), backspace(false)]);
+    stage.frame(vec![Event::Text("x-friday".to_owned())]);
+    let enter = Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    assert_eq!(
+        app(&stage.frame(vec![enter])),
+        [AppCommand::RecorderPrefixSet {
+            prefix: "mix-friday".to_owned()
+        }]
+    );
+
+    // The overdub decay of the loop recorder, 0 by default, moves by one percent per key.
+    let decay = control(&stage, "recorder.loop_decay.set").unwrap();
+    assert!(decay.enabled);
+    stage.click(decay.rect.center());
+    let up = Event::Key {
+        key: egui::Key::ArrowUp,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    assert_eq!(
+        app(&stage.frame(vec![up])),
+        [AppCommand::LoopDecaySet { percent: 1 }]
+    );
+}
+
+/// `docs/behavior/interface.md`, *Layouts*: a row chooses its layout, and a built-in layout
+/// leaves its arrangement alone.
+#[test]
+fn the_layouts_page_chooses_a_layout_and_a_built_in_one_cannot_be_changed() {
+    let mut stage = Stage::on_page(sample::playing(), Language::English, SettingsPage::Layouts);
+    let mut rows: Vec<Control> = stage
+        .shell
+        .controls()
+        .iter()
+        .filter(|control| control.command == "layout.select")
+        .cloned()
+        .collect();
+    rows.sort_by(|first, second| first.rect.top().total_cmp(&second.rect.top()));
+    assert_eq!(rows.len(), 5);
+    assert_eq!(
+        app(&stage.click(rows[2].rect.center())),
+        [AppCommand::LayoutSelect { index: 2 }]
+    );
+    // The sample shows its personal layout: its zones can change.
+    let zone = control(&stage, "layout.zone.toggle").unwrap();
+    assert!(zone.enabled);
+    assert!(control(&stage, "layout.delete").unwrap().enabled);
+
+    let mut builtin = sample::playing();
+    builtin.settings.layouts.active = 0;
+    let stage = Stage::on_page(builtin, Language::English, SettingsPage::Layouts);
+    for command in ["layout.zone.toggle", "layout.delete", "layout.move_up"] {
+        assert!(!control(&stage, command).unwrap().enabled, "{command}");
+    }
+    assert!(control(&stage, "layout.duplicate").unwrap().enabled);
+    let mut builtin = sample::playing();
+    builtin.settings.layouts.active = 0;
+    let stage = Stage::on_page(builtin, Language::English, SettingsPage::General);
+    assert!(!control(&stage, "app.deck_layout.set").unwrap().enabled);
 }

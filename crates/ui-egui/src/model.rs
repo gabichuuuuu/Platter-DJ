@@ -5,6 +5,7 @@
 //! commands. The capture mode builds the same values from invented data, without an engine
 //! or a device.
 
+use crate::layout::Layouts;
 use std::path::PathBuf;
 
 use platter_core::DeckId;
@@ -12,7 +13,7 @@ use platter_engine::Snapshot;
 use platter_library::{NodeId, SessionId};
 
 use crate::collection::TagWriting;
-use crate::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, SortColumn};
+use crate::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, SortColumn, WaveColour};
 use crate::i18n::Language;
 use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
@@ -126,6 +127,11 @@ pub struct SettingsView {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// The layouts of the Layouts page, and what the active one shows besides the decks.
+    pub layouts: Layouts,
+    pub shown: Shown,
+    /// The colours of the waveforms, from the Decks page.
+    pub wave_colour: WaveColour,
     /// Two effect units or four, and the unit each panel of the effect row shows.
     pub effect_units: EffectUnits,
     pub fx_panels: [platter_engine::FxUnit; 2],
@@ -141,6 +147,13 @@ pub struct SettingsView {
     pub bpm_range: (u32, u32),
     /// A playing deck takes no track.
     pub load_stopped_only: bool,
+    /// The folder the mix recorder writes into, as the Recording page shows it, and whether
+    /// it is one the user chose.
+    pub recording_folder: String,
+    pub recording_folder_chosen: bool,
+    /// The start of the names of the recordings, and the size their files split at, in MiB.
+    pub recording_prefix: String,
+    pub recording_split: u32,
     /// The music folders of the Library page, and the one it shows.
     pub music_folders: Vec<PathBuf>,
     pub music_folder: Option<usize>,
@@ -508,4 +521,37 @@ pub struct View<'a> {
     pub clock: Option<Clock>,
     pub notices: [Option<DeckNotice>; DeckId::COUNT],
     pub midi: MidiView,
+}
+
+/// What the active layout shows besides the decks: `docs/behavior/interface.md`, *Layouts*.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shown {
+    pub effects: bool,
+    pub mixer: bool,
+    /// The parallel lanes, with two decks.
+    pub lanes: bool,
+    /// Deck A alone across the window.
+    pub single: bool,
+}
+
+impl Default for Shown {
+    fn default() -> Self {
+        Self {
+            effects: true,
+            mixer: true,
+            lanes: true,
+            single: false,
+        }
+    }
+}
+
+impl SettingsView {
+    /// The decks the window shows, left column first in each row.
+    pub fn shown_decks(&self) -> &'static [platter_core::DeckId] {
+        if self.shown.single {
+            &[platter_core::DeckId::A]
+        } else {
+            self.deck_layout.decks()
+        }
+    }
 }

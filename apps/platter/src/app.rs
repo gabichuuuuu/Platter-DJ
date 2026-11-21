@@ -24,9 +24,10 @@ use platter_ui_egui::command::{Action, AppCommand, EffectUnits, fx_panel_of};
 use platter_ui_egui::files::{FileBrowser, Root};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
+use platter_ui_egui::layout::{Layouts, Row as LayoutRow, Zone};
 use platter_ui_egui::model::{
     AnalysisStatus, AudioProblem, AudioState, AudioView, ControllerManager, ControllerRow,
-    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, StreamView, View,
+    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, Shown, StreamView, View,
 };
 use platter_ui_egui::played::{MAX_PLAYTIME, MIN_PLAYTIME, PlayClock};
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
@@ -122,7 +123,12 @@ fn recall_from(file: PathBuf) -> Recall {
 
 /// Names each recording in `folder` by the moment it starts, in UTC, as the backups of the
 /// collection are: `mix-20261118-214105` (`docs/behavior/recording.md`, *Files*).
-fn recording_names(folder: PathBuf) -> RecordingNames {
+/// Bytes in a MiB, the unit of the split size of the Recording page.
+const MIB: u64 = 1024 * 1024;
+
+/// The names of the recordings: `prefix`, a dash and the moment the recording starts, in UTC
+/// (`docs/behavior/recording.md`, *Files*).
+fn recording_names(folder: PathBuf, prefix: String) -> RecordingNames {
     Arc::new(move || {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -131,7 +137,7 @@ fn recording_names(folder: PathBuf) -> RecordingNames {
             });
         let (year, month, day, hour, minute, second) = Timestamp(now).utc();
         folder.join(format!(
-            "mix-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}"
+            "{prefix}-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}"
         ))
     })
 }
@@ -162,6 +168,8 @@ fn roots(home_name: &str, extra: &[PathBuf]) -> Vec<Root> {
 pub struct PlatterApp {
     /// The folder of the files of the user; without one nothing is saved.
     folder: Option<PathBuf>,
+    /// Where the mix recorder writes when the user has chosen no folder.
+    default_recordings: Option<PathBuf>,
     logger: Option<Logger>,
     settings: Settings,
     keymap: Keymap,
@@ -273,14 +281,25 @@ impl PlatterApp {
             engine.set_recall(recall);
         }
         let home = config::home_dir();
-        let recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
+        let default_recordings = config::recordings_folder(home.as_deref(), folder.as_deref());
+        let recordings = settings
+            .recording_folder
+            .clone()
+            .or_else(|| default_recordings.clone());
         browser.set_recordings(recordings.clone());
         if let Some(recordings) = recordings {
-            engine.set_recording_names(recording_names(recordings));
+            engine.set_recording_names(recording_names(
+                recordings,
+                settings.recording_prefix.clone(),
+            ));
         }
+        engine.set_recording_split(u64::from(settings.recording_split) * MIB);
+        // A fresh queue has room for it, and the settings keep the decay in range.
+        let _ = engine.set_loop_decay(f64::from(settings.loop_decay) / 100.0);
         let settings_min_playtime = settings.min_playtime;
         let mut app = Self {
             folder,
+            default_recordings,
             logger,
             settings,
             keymap: Keymap::defaults(),
@@ -357,6 +376,63 @@ impl PlatterApp {
             }
             _ => {}
         }
+    }
+
+    /// Applies `change` to the layouts and, when it changed them, gives the window the
+    /// arrangement of the active one and keeps it: `docs/behavior/interface.md`, *Layouts*.
+    fn change_layout(&mut self, change: impl FnOnce(&mut Layouts) -> bool) {
+        if change(&mut self.settings.layouts) {
+            let arrangement = self.settings.layouts.arrangement();
+            self.settings.deck_layout = arrangement.decks;
+            self.settings.deck_size = arrangement.size;
+            self.save_settings();
+        }
+    }
+
+    /// The name the active layout shows, in the language of the interface.
+    fn layout_name(&self) -> String {
+        let layouts = &self.settings.layouts;
+        match layouts.rows().get(layouts.active) {
+            Some(LayoutRow::BuiltIn(built_in)) => {
+                self.shell.texts().get(built_in.text()).to_owned()
+            }
+            Some(LayoutRow::Personal(name)) => name.clone(),
+            None => String::new(),
+        }
+    }
+
+    /// The folder in use for the recordings: the one chosen, or the default.
+    fn recordings(&self) -> Option<PathBuf> {
+        self.settings
+            .recording_folder
+            .clone()
+            .or_else(|| self.default_recordings.clone())
+    }
+
+    /// Gives the preferences of the Recording page to the engine and to the tree, for the next
+    /// recording, and keeps them.
+    fn apply_loop_decay(&mut self) {
+        let decay = f64::from(self.settings.loop_decay) / 100.0;
+        if let Err(error) = self.engine.set_loop_decay(decay) {
+            self.log(
+                Level::Warning,
+                &format!("the overdub decay was not applied: {error}"),
+            );
+        }
+    }
+
+    fn apply_recorder(&mut self) {
+        let recordings = self.recordings();
+        self.browser.set_recordings(recordings.clone());
+        if let Some(recordings) = recordings {
+            self.engine.set_recording_names(recording_names(
+                recordings,
+                self.settings.recording_prefix.clone(),
+            ));
+        }
+        self.engine
+            .set_recording_split(u64::from(self.settings.recording_split) * MIB);
+        self.save_settings();
     }
 
     fn save_settings(&self) {
@@ -1156,11 +1232,37 @@ impl PlatterApp {
                 self.save_settings();
             }
             AppCommand::DeckSizeSet { size } => {
-                self.settings.deck_size = size;
-                self.save_settings();
+                self.change_layout(|layouts| layouts.change(|arrangement| arrangement.size = size));
             }
             AppCommand::DeckLayoutSet { layout } => {
-                self.settings.deck_layout = layout;
+                self.change_layout(|layouts| {
+                    layouts.change(|arrangement| arrangement.decks = layout)
+                });
+            }
+            AppCommand::LayoutSelect { index } => {
+                self.change_layout(|layouts| layouts.select(index));
+            }
+            AppCommand::LayoutDuplicate => {
+                let base = self.layout_name();
+                self.change_layout(|layouts| layouts.duplicate(&base));
+            }
+            AppCommand::LayoutRename { name } => {
+                self.change_layout(|layouts| layouts.rename(&name));
+            }
+            AppCommand::LayoutDelete => self.change_layout(Layouts::delete),
+            AppCommand::LayoutMoveUp => self.change_layout(|layouts| layouts.shift(true)),
+            AppCommand::LayoutMoveDown => self.change_layout(|layouts| layouts.shift(false)),
+            AppCommand::LayoutZoneToggle { zone } => {
+                self.change_layout(|layouts| {
+                    layouts.change(|arrangement| match zone {
+                        Zone::Effects => arrangement.effects = !arrangement.effects,
+                        Zone::Mixer => arrangement.mixer = !arrangement.mixer,
+                        Zone::Lanes => arrangement.lanes = !arrangement.lanes,
+                    })
+                });
+            }
+            AppCommand::WaveColourSet { mode } => {
+                self.settings.wave_colour = mode;
                 self.save_settings();
             }
             AppCommand::EffectUnitsSet { units } => {
@@ -1188,6 +1290,29 @@ impl PlatterApp {
             }
             AppCommand::BrowserColumnToggle { .. } => {
                 self.settings.columns = self.browser.columns().to_vec();
+                self.save_settings();
+            }
+            AppCommand::RecorderFolderSet { path } => {
+                if !path.as_os_str().is_empty() {
+                    self.settings.recording_folder = Some(path);
+                    self.apply_recorder();
+                }
+            }
+            AppCommand::RecorderFolderReset => {
+                self.settings.recording_folder = None;
+                self.apply_recorder();
+            }
+            AppCommand::RecorderPrefixSet { prefix } => {
+                self.settings.recording_prefix = config::recording_prefix(&prefix);
+                self.apply_recorder();
+            }
+            AppCommand::RecorderSplitSet { megabytes } => {
+                self.settings.recording_split = megabytes;
+                self.apply_recorder();
+            }
+            AppCommand::LoopDecaySet { percent } => {
+                self.settings.loop_decay = percent.min(100);
+                self.apply_loop_decay();
                 self.save_settings();
             }
             AppCommand::MusicFolderAdd { path } => {
@@ -1293,6 +1418,12 @@ impl PlatterApp {
             folder: self.settings.folder.clone(),
             roots: self.settings.roots.clone(),
             midi: self.settings.midi.clone(),
+            // The personal layouts are the user's work, not settings: they stay, and Mixing
+            // becomes active.
+            layouts: Layouts {
+                personal: self.settings.layouts.personal.clone(),
+                active: 0,
+            },
             ..Settings::default()
         };
         self.save_settings();
@@ -1302,6 +1433,7 @@ impl PlatterApp {
         let curve = self.settings.crossfader_curve;
         self.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
         self.apply_mixer_settings();
+        self.apply_recorder();
         self.reopen_audio();
     }
 
@@ -1494,6 +1626,7 @@ impl PlatterApp {
 
     fn settings_view(&self) -> SettingsView {
         let routing = self.settings.routing;
+        let arrangement = self.settings.layouts.arrangement();
         SettingsView {
             device: self.settings.device.clone(),
             sample_rate: self.settings.sample_rate,
@@ -1509,8 +1642,16 @@ impl PlatterApp {
             tooltips: self.settings.tooltips,
             fullscreen_at_start: self.settings.fullscreen_at_start,
             tempo_range: self.settings.tempo_range,
-            deck_size: self.settings.deck_size,
-            deck_layout: self.settings.deck_layout,
+            deck_size: arrangement.size,
+            deck_layout: arrangement.decks,
+            layouts: self.settings.layouts.clone(),
+            shown: Shown {
+                effects: arrangement.effects,
+                mixer: arrangement.mixer,
+                lanes: arrangement.has_lanes(),
+                single: arrangement.single,
+            },
+            wave_colour: self.settings.wave_colour,
             effect_units: self.settings.effect_units,
             fx_panels: match self.settings.effect_units {
                 EffectUnits::Two => [FxUnit::ALL[0], FxUnit::ALL[1]],
@@ -1526,6 +1667,13 @@ impl PlatterApp {
                 self.settings.bpm_range.max().round() as u32,
             ),
             load_stopped_only: self.settings.load_stopped_only,
+            recording_folder: self
+                .recordings()
+                .map(|folder| folder.display().to_string())
+                .unwrap_or_default(),
+            recording_folder_chosen: self.settings.recording_folder.is_some(),
+            recording_prefix: self.settings.recording_prefix.clone(),
+            recording_split: self.settings.recording_split,
             music_folders: self.settings.music_folders.clone(),
             music_folder: self.music_folder,
             import_at_start: self.settings.import_at_start,

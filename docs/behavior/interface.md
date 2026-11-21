@@ -281,3 +281,76 @@ The manual does not say how the window shares its room between two and four deck
 no overlap in English and Spanish), the place of each deck and channel, the load keys, the drops
 and the setting on the General page. `crates/ui-egui/src/command.rs` for the command and
 `apps/platter/src/config.rs` for the settings file.
+
+## Layouts
+
+### What the public manual says
+
+Sections of the public manual, read on 20 November 2026 through its online guide, which gave
+the text of these sections in part:
+
+- *Setting up*, sections on selecting a layout and on the default layouts
+- *Advanced operation*, section on managing layouts
+- *Preferences*, the page of the layout manager
+
+A layout is a named arrangement of the window. Six come with the documented application: one
+with the decks alone for a controller, one with every panel, one with the browser enlarged and
+the decks small, one with the mixer, one with the waveforms stacked above the decks, and one
+for preparation with a single deck enlarged above the browser. A drop-down of the header
+switches between them. The page of the layout manager lists the personal layouts: it adds,
+removes, duplicates and renames them and moves them up and down, which is also their order in
+the drop-down; the active one is marked. Settings changed in the preferences while a personal
+layout is active are saved into it. The manual does not say whether a layout has a shortcut.
+
+### What Platter does
+
+- **What a layout holds.** The number of decks, the deck size of the two-deck layout, and which
+  zones the window shows: the effect row, the mixer and the parallel waveform lanes. The
+  status header and the browser are always there.
+- **Built-in layouts.** Four, first in the list, which cannot be changed, renamed or removed
+  (`docs/design/DESIGN.md`, *Layouts (M4)*):
+  - `Mixing`, the default: four decks with the effect row and the mixer.
+  - `Parallel`: two compact decks with the effect row, the mixer and the lanes.
+  - `Preparation`: deck A alone across the window in the full size, its lane above it, no
+    effect row and no mixer; loading goes to deck A.
+  - `Browser`: decks A and B compact side by side, no effect row, mixer or lanes.
+- **Personal layouts.** *Duplicate* (`layout.duplicate`) copies the active layout, names the
+  copy after it with a number, puts it last and makes it active. *Rename* (`layout.rename`),
+  *Delete* (`layout.delete`), *Move up* and *Move down* (`layout.move_up`, `layout.move_down`)
+  act on the active personal layout; a deleted layout gives way to `Mixing`. At most 16.
+- **Changing a personal layout.** While one is active, the Decks choice and the deck size of
+  the General page, and the three switches of the zones on the Layouts page
+  (`layout.zone.toggle`), change it. While a built-in one is active they are disabled, with a
+  tooltip that says to duplicate it.
+- **Choosing.** A click on a row of the Layouts page, or `Ctrl+1` to `Ctrl+9` for the first
+  nine of the list (`layout.select`). The settings file keeps the personal layouts and the
+  active one under `[layouts]`.
+
+### Differences
+
+- No drop-down in the status header: at 1440 points it has no room (decided by the maintainer
+  on 18 and 20 November 2026). The shortcuts take its place for switching during a set.
+- Four built-in layouts instead of six: the decks alone and the full panel are what `Mixing`
+  and a personal layout without the mixer give; the mixer layout has no description in the
+  manual.
+- A personal layout keeps only its arrangement, not the other preferences.
+
+### Edge cases
+
+| Input | Result |
+| --- | --- |
+| A layout in the settings file this version cannot read | Left out |
+| An active layout that no longer exists | `Mixing` |
+| *Duplicate* with 16 personal layouts | Disabled |
+| A name of spaces, or one already used | Refused; the name stays |
+| A zone switch or the Decks choice while a built-in layout is active | Disabled; the command, sent from a mapping or the CLI, is ignored |
+| `Ctrl+5` with four layouts | Nothing |
+| Decks C and D playing when a two-deck layout is chosen | They keep playing, as with the Decks choice |
+
+### Tests
+
+`crates/ui-egui/src/layout.rs` for the list and its rules; `crates/ui-egui/src/shell.rs` for the
+zones of each built-in layout; `crates/ui-egui/tests/settings_mixer.rs` for the Layouts page and
+the General page under a built-in layout; `crates/ui-egui/tests/panels.rs` for the Preparation,
+Browser and Layouts states through every check of the panels; `apps/platter/src/config.rs` for
+the settings file and an older one with two decks.

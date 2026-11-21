@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use eframe::egui;
 use platter_ui_egui::command::{DeckSize, SettingsPage};
+use platter_ui_egui::layout::BuiltIn;
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
@@ -22,13 +23,16 @@ const SETTLE_FRAMES: u32 = 4;
 const GIVE_UP_FRAMES: u32 = 120;
 
 /// The states that can be captured: one per reference screen of M2, the main window with compact
-/// decks and with four decks, with four effect units, the Decks, Mixer and Library pages of the preferences with the
-/// maintenance of the collection, a playlist and a history shown in the browser, and the details
-/// of one track and of two.
-pub const STATES: [&str; 15] = [
+/// decks and with four decks, in the layouts Preparation and Browser, with four effect units, the
+/// Decks, Mixer, Recording, Layouts and Library pages of the preferences with the maintenance of
+/// the collection, a playlist and a history shown in the browser, and the details of one track
+/// and of two.
+pub const STATES: [&str; 19] = [
     "main",
     "compact",
     "four-decks",
+    "layout-preparation",
+    "layout-browser",
     "four-units",
     "playlist",
     "history",
@@ -37,6 +41,8 @@ pub const STATES: [&str; 15] = [
     "preferences-general",
     "preferences-decks",
     "preferences-mixer",
+    "preferences-recording",
+    "preferences-layouts",
     "preferences-library",
     "maintenance",
     "details",
@@ -52,6 +58,8 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
             Some((scene, None))
         }
         "four-decks" => Some((sample::four_decks(), None)),
+        "layout-preparation" => Some((sample::in_layout(BuiltIn::Preparation), None)),
+        "layout-browser" => Some((sample::in_layout(BuiltIn::Browser), None)),
         "four-units" => Some((sample::four_units(), None)),
         "playlist" | "details" => Some((sample::playlist(), None)),
         "details-several" => {
@@ -66,6 +74,8 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
         "preferences-general" => Some((sample::playing(), Some(SettingsPage::General))),
         "preferences-decks" => Some((sample::playing(), Some(SettingsPage::Decks))),
         "preferences-mixer" => Some((sample::playing(), Some(SettingsPage::Mixer))),
+        "preferences-recording" => Some((sample::playing(), Some(SettingsPage::Recording))),
+        "preferences-layouts" => Some((sample::playing(), Some(SettingsPage::Layouts))),
         "preferences-library" | "maintenance" => {
             Some((sample::playing(), Some(SettingsPage::Library)))
         }

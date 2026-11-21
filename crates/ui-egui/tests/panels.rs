@@ -13,12 +13,15 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot};
-use platter_engine::{ClockMode, Command, EffectKind, MixerMode, UnitMode};
+use platter_engine::{ClockMode, Command, EffectKind, LoopPhase, MixerMode, UnitMode};
 use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
-use platter_ui_egui::command::{APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage};
+use platter_ui_egui::command::{
+    APP_SPECS, Action, AppCommand, DeckLayout, DeckPage, SettingsPage, WaveColour,
+};
 use platter_ui_egui::cx::{Control, ControlKind};
 use platter_ui_egui::i18n::{Language, Texts};
+use platter_ui_egui::layout::{BuiltIn, Personal};
 use platter_ui_egui::model::{DeckNotice, PlaylistRow};
 use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
@@ -264,6 +267,35 @@ fn states() -> Vec<State> {
     recorder_failed.engine.recorder.failure = Some("the disk is full".to_owned());
     recorder_failed.engine.recorder.dropped_frames = 4_800;
     let recorder_failed = state("recorder-failed", recorder_failed, None);
+    // A loop of four bars plays, with an overdub undone, so play, Undo, Redo and the knob act.
+    let mut looping = sample::four_decks();
+    let looper = &mut looping.engine.loop_recorder;
+    looper.phase = LoopPhase::Playing;
+    looper.seconds = 8.0;
+    looper.progress = 0.4;
+    looper.can_redo = true;
+    let looping = state("loop-recorded", looping, None);
+    // The built-in layouts that leave zones out: deck A alone, and the decks over the browser.
+    let preparation = sample::in_layout(BuiltIn::Preparation);
+    let browser_layout = sample::in_layout(BuiltIn::Browser);
+    // The second of three personal layouts, active, which can move up and down.
+    let mut second = sample::playing();
+    let first = second.settings.layouts.personal[0].clone();
+    for name in ["Late set", "Closing"] {
+        second.settings.layouts.personal.push(Personal {
+            name: name.to_owned(),
+            ..first.clone()
+        });
+    }
+    second.settings.layouts.active = 5;
+    // The Recording page with a folder the user chose, which Default takes back.
+    let mut chosen = sample::playing();
+    chosen.settings.recording_folder = "Music/Sets/Recorded".to_owned();
+    chosen.settings.recording_folder_chosen = true;
+    // The waveforms of the four decks in the colour mode of the bands.
+    let mut bands = sample::four_decks();
+    bands.settings.wave_colour = WaveColour::Bands;
+    let bands = state("wave-bands", bands, None);
     vec![
         state("main", sample::playing(), None),
         state("startup", sample::startup(), None),
@@ -306,6 +338,7 @@ fn states() -> Vec<State> {
         details,
         details_several,
         state("four-decks", sample::four_decks(), None),
+        bands,
         state("effects-single", single_unit(), None),
         state("four-units", sample::four_units(), None),
         state(
@@ -321,6 +354,7 @@ fn states() -> Vec<State> {
         other_preview,
         recording,
         recorder_failed,
+        looping,
         state(
             "preferences-controllers",
             sample::playing(),
@@ -336,6 +370,28 @@ fn states() -> Vec<State> {
             sample::playing(),
             Some(SettingsPage::Mixer),
         ),
+        state(
+            "preferences-recording",
+            sample::playing(),
+            Some(SettingsPage::Recording),
+        ),
+        state(
+            "preferences-recording-chosen",
+            chosen,
+            Some(SettingsPage::Recording),
+        ),
+        state(
+            "preferences-layouts",
+            sample::playing(),
+            Some(SettingsPage::Layouts),
+        ),
+        state(
+            "preferences-layouts-second",
+            second,
+            Some(SettingsPage::Layouts),
+        ),
+        state("layout-preparation", preparation, None),
+        state("layout-browser", browser_layout, None),
         State {
             page_scroll: f32::MAX,
             ..state(
@@ -668,10 +724,12 @@ fn the_controls_of_the_header_do_not_overlap_in_either_language() {
 #[test]
 fn the_controls_of_the_mixer_do_not_overlap_and_stay_between_the_decks() {
     for language in Language::ALL {
-        for state in states()
-            .into_iter()
-            .filter(|state| state.page.is_none() && !state.details && state.rules.is_none())
-        {
+        for state in states().into_iter().filter(|state| {
+            state.page.is_none()
+                && !state.details
+                && state.rules.is_none()
+                && state.scene.settings.shown.mixer
+        }) {
             let mut stage = Stage::with_texts(&state, Texts::load(language).unwrap());
             stage.frame(Vec::new());
             let controls: Vec<Control> = stage
@@ -1311,6 +1369,18 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     }
     data.extend(scene.browser.crumbs.iter().cloned());
     data.extend(scene.audio.devices.iter().map(|device| device.name.clone()));
+    // The names the user gave the personal layouts.
+    data.extend(
+        scene
+            .settings
+            .layouts
+            .personal
+            .iter()
+            .map(|layout| layout.name.clone()),
+    );
+    // The folder and the prefix of the recordings, as the Recording page shows them.
+    data.insert(scene.settings.recording_folder.clone());
+    data.insert(scene.settings.recording_prefix.clone());
     data
 }
 
@@ -2265,4 +2335,113 @@ fn rec_and_cut_send_the_commands_of_the_recorder() {
             [Action::Engine(expected)]
         );
     }
+}
+
+/// The loop recorder sits left of the mix recorder in the middle of the effect row, and its
+/// keys act only when there is a loop: `docs/behavior/recording.md`, *Loop recorder*.
+#[test]
+fn the_loop_recorder_fits_its_panel_and_acts_only_on_a_recorded_loop() {
+    for (name, recorded) in [
+        ("main", false),
+        ("four-decks", false),
+        ("loop-recorded", true),
+    ] {
+        for language in Language::ALL {
+            let texts = Texts::load(language).unwrap();
+            let state = state_named(name);
+            let mut stage = Stage::with_texts(&state, texts.clone());
+            let (_, shapes) = stage.frame(Vec::new());
+            let controls = stage.controls();
+            let find = |command: &str| {
+                let found: Vec<&Control> = controls
+                    .iter()
+                    .filter(|control| control.command == command)
+                    .collect();
+                assert_eq!(found.len(), 1, "{name}, {language:?}: {command}");
+                found[0].clone()
+            };
+            let mix = find("recorder.toggle");
+            let panel_left = 520.0 + 2.0 + 12.0;
+            for (command, enabled) in [
+                ("loop_recorder.source.set", true),
+                ("loop_recorder.size.set", !recorded),
+                ("loop_recorder.record", true),
+                ("loop_recorder.play", recorded),
+                ("loop_recorder.undo", recorded),
+                ("loop_recorder.dry_wet.set", recorded),
+            ] {
+                let control = find(command);
+                assert_eq!(control.enabled, enabled, "{name}: {command}");
+                assert!(
+                    control.rect.left() >= panel_left - 0.5
+                        && control.rect.right() <= mix.rect.left() - 16.0 + 0.5
+                        && control.rect.top() >= 42.0
+                        && control.rect.bottom() <= 114.0,
+                    "{name}, {language:?}: {command} at {:?}",
+                    control.rect
+                );
+            }
+            let painted = placed_texts(&shapes);
+            for key in ["loop_recorder.rec", "loop_recorder.undo"] {
+                let label = texts.get(key);
+                let command = if key.ends_with("rec") {
+                    "loop_recorder.record"
+                } else {
+                    "loop_recorder.undo"
+                };
+                let rect = find(command).rect;
+                assert!(
+                    painted
+                        .iter()
+                        .any(|(text, at)| text == label && rect.contains_rect(*at)),
+                    "{name}, {language:?}: {label} does not fit its key"
+                );
+            }
+        }
+    }
+}
+
+/// The keys of the loop recorder send its commands, and the menu of Undo holds Redo and
+/// Delete.
+#[test]
+fn the_keys_of_the_loop_recorder_send_its_commands() {
+    let state = state_named("loop-recorded");
+    for (command, expected) in [
+        ("loop_recorder.record", Command::LoopRecorderRecord),
+        ("loop_recorder.play", Command::LoopRecorderPlay),
+        ("loop_recorder.undo", Command::LoopRecorderUndo),
+    ] {
+        let mut stage = Stage::new(&state);
+        let control = stage
+            .controls()
+            .into_iter()
+            .find(|control| control.command == command)
+            .unwrap();
+        assert_eq!(
+            stage.click(control.rect.center()),
+            [Action::Engine(expected)]
+        );
+    }
+    let mut stage = Stage::new(&state);
+    let undo = stage
+        .controls()
+        .into_iter()
+        .find(|control| control.command == "loop_recorder.undo")
+        .unwrap();
+    stage.click_with(undo.rect.center(), PointerButton::Secondary);
+    stage.frame(Vec::new());
+    let items = stage.controls();
+    let item = |command: &str| {
+        items
+            .iter()
+            .find(|control| control.command == command)
+            .unwrap_or_else(|| panic!("{command} is not in the menu of Undo"))
+            .rect
+    };
+    let (redo, delete) = (item("loop_recorder.redo"), item("loop_recorder.delete"));
+    assert!(redo.top() < delete.top());
+    assert_eq!(
+        stage.click(delete.center()),
+        [Action::Engine(Command::LoopRecorderDelete)]
+    );
 }

@@ -1,5 +1,6 @@
 //! The look of the interface: tokens, icons and fonts, and how they are given to egui.
 
+use crate::command::WaveColour;
 use std::fmt;
 use std::sync::Arc;
 
@@ -40,6 +41,8 @@ pub struct Theme {
     pub tokens: Tokens,
     pub icons: Icons,
     pub mark: Mark,
+    /// The colour mode of the waveforms, set by the shell from the settings at each frame.
+    pub wave_colour: WaveColour,
 }
 
 impl Theme {
@@ -49,6 +52,7 @@ impl Theme {
             tokens: Tokens::load().map_err(ThemeError::Tokens)?,
             icons: Icons::load().map_err(ThemeError::Icons)?,
             mark: Mark::load().map_err(ThemeError::Icons)?,
+            wave_colour: WaveColour::default(),
         })
     }
 

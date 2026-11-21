@@ -15,9 +15,14 @@ use platter_engine::{
     MaximiserControls, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
-use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS};
+use platter_ui_egui::command::{
+    DeckLayout, DeckSize, EffectUnits, ListColumn, MAX_OUTPUTS, RECORDING_SPLITS, WaveColour,
+};
 use platter_ui_egui::i18n::Language;
 use platter_ui_egui::keys::KeyNotation;
+use platter_ui_egui::layout::{
+    Arrangement, BuiltIn, Layouts, MAX_NAME_CHARS as MAX_LAYOUT_NAME, MAX_PERSONAL, Personal,
+};
 use platter_ui_egui::played::{DEFAULT_PLAYTIME, MAX_PLAYTIME, MIN_PLAYTIME};
 
 pub const SETTINGS_FILE: &str = "settings.toml";
@@ -56,6 +61,141 @@ pub fn config_dir() -> Option<PathBuf> {
         var("XDG_CONFIG_HOME")
             .or_else(|| var("HOME").map(|home| home.join(".config")))
             .map(|base| base.join("platter"))
+    }
+}
+
+/// The layouts kept under `[layouts]`: the active one and the personal ones. A personal layout
+/// that cannot be read is left out, and an active one that is gone is `Mixing`. A file from
+/// before the layouts that showed two decks, in `two_decks`, gets a personal layout with them,
+/// active, so the window looks as it did.
+fn read_layouts(table: Option<&toml::Table>, two_decks: Option<DeckSize>) -> Layouts {
+    let Some(table) = table else {
+        return match two_decks {
+            Some(size) => Layouts {
+                personal: vec![Personal {
+                    name: "Two decks".to_owned(),
+                    arrangement: Arrangement {
+                        decks: DeckLayout::Two,
+                        size,
+                        effects: true,
+                        mixer: true,
+                        lanes: true,
+                        single: false,
+                    },
+                }],
+                active: BuiltIn::ALL.len(),
+            },
+            None => Layouts::default(),
+        };
+    };
+    let personal: Vec<Personal> = table
+        .get("personal")
+        .and_then(toml::Value::as_array)
+        .map(|layouts| {
+            layouts
+                .iter()
+                .filter_map(toml::Value::as_table)
+                .filter_map(read_personal)
+                .take(MAX_PERSONAL)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut layouts = Layouts {
+        personal,
+        active: 0,
+    };
+    let active = table
+        .get("active")
+        .and_then(toml::Value::as_integer)
+        .and_then(|active| usize::try_from(active).ok())
+        .unwrap_or(0);
+    layouts.select(active);
+    layouts
+}
+
+fn read_personal(table: &toml::Table) -> Option<Personal> {
+    let text = |name: &str| table.get(name)?.as_str();
+    let flag = |name: &str| table.get(name)?.as_bool();
+    let name: String = text("name")?.trim().chars().take(MAX_LAYOUT_NAME).collect();
+    if name.is_empty() {
+        return None;
+    }
+    Some(Personal {
+        name,
+        arrangement: Arrangement {
+            decks: DeckLayout::ALL
+                .into_iter()
+                .find(|layout| Some(layout.name()) == text("decks"))?,
+            size: DeckSize::ALL
+                .into_iter()
+                .find(|size| Some(size.name()) == text("size"))?,
+            effects: flag("effects")?,
+            mixer: flag("mixer")?,
+            lanes: flag("lanes")?,
+            single: flag("single")?,
+        },
+    })
+}
+
+fn write_layouts(layouts: &Layouts) -> toml::Table {
+    let mut table = toml::Table::new();
+    table.insert(
+        "active".to_owned(),
+        toml::Value::Integer(i64::try_from(layouts.active).unwrap_or(0)),
+    );
+    let personal = layouts
+        .personal
+        .iter()
+        .map(|layout| {
+            let arrangement = layout.arrangement;
+            let mut row = toml::Table::new();
+            row.insert("name".to_owned(), toml::Value::String(layout.name.clone()));
+            row.insert(
+                "decks".to_owned(),
+                toml::Value::String(arrangement.decks.name().to_owned()),
+            );
+            row.insert(
+                "size".to_owned(),
+                toml::Value::String(arrangement.size.name().to_owned()),
+            );
+            for (name, on) in [
+                ("effects", arrangement.effects),
+                ("mixer", arrangement.mixer),
+                ("lanes", arrangement.lanes),
+                ("single", arrangement.single),
+            ] {
+                row.insert(name.to_owned(), toml::Value::Boolean(on));
+            }
+            toml::Value::Table(row)
+        })
+        .collect();
+    table.insert("personal".to_owned(), toml::Value::Array(personal));
+    table
+}
+
+/// The prefix of the names of the recordings when none is set.
+pub const DEFAULT_PREFIX: &str = "mix";
+/// The split size of the recordings when none is set, in MiB: the largest.
+const SPLIT_DEFAULT: u32 = 2048;
+/// The longest prefix kept, in characters.
+const MAX_PREFIX_CHARS: usize = 32;
+
+/// The prefix of the names of the recordings made of `text`: without the characters a file
+/// name cannot hold nor the spaces around it, at most 32 characters, and `mix` when nothing is
+/// left (`docs/behavior/recording.md`, *Preferences*).
+pub fn recording_prefix(text: &str) -> String {
+    let kept: String = text
+        .chars()
+        .filter(|c| {
+            !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+        .collect();
+    let kept: String = kept.trim().chars().take(MAX_PREFIX_CHARS).collect();
+    let kept = kept.trim_end();
+    if kept.is_empty() {
+        DEFAULT_PREFIX.to_owned()
+    } else {
+        kept.to_owned()
     }
 }
 
@@ -117,6 +257,10 @@ pub struct Settings {
     pub deck_size: DeckSize,
     /// Two decks or four.
     pub deck_layout: DeckLayout,
+    /// The layouts of the window: `docs/behavior/interface.md`, *Layouts*.
+    pub layouts: Layouts,
+    /// The colours of the waveforms, from the Decks page.
+    pub wave_colour: WaveColour,
     /// Two effect units or four: `docs/behavior/effects.md`.
     pub effect_units: EffectUnits,
     /// The settings of the Mixer page: `docs/behavior/settings.md`.
@@ -136,6 +280,14 @@ pub struct Settings {
     /// says so.
     pub music_folders: Vec<PathBuf>,
     pub import_at_start: bool,
+    /// The preferences of the mix recorder, from the Recording page
+    /// (`docs/behavior/recording.md`, *Preferences*): the folder the user chose, if any, the
+    /// prefix of the names and the split size in MiB.
+    pub recording_folder: Option<PathBuf>,
+    pub recording_prefix: String,
+    pub recording_split: u32,
+    /// The overdub decay of the loop recorder, in percent.
+    pub loop_decay: u32,
     /// The columns the list of the browser shows besides the title.
     pub columns: Vec<ListColumn>,
     pub check_at_start: bool,
@@ -182,6 +334,8 @@ impl Default for Settings {
             tempo_range: 8,
             deck_size: DeckSize::Full,
             deck_layout: DeckLayout::Four,
+            layouts: Layouts::default(),
+            wave_colour: WaveColour::Deck,
             effect_units: EffectUnits::Two,
             mixer_mode: MixerMode::Internal,
             sync_mode: SyncMode::Beat,
@@ -191,6 +345,10 @@ impl Default for Settings {
             load_stopped_only: false,
             music_folders: Vec::new(),
             import_at_start: true,
+            recording_folder: None,
+            recording_prefix: DEFAULT_PREFIX.to_owned(),
+            recording_split: SPLIT_DEFAULT,
+            loop_decay: 0,
             columns: ListColumn::SHOWN_AT_FIRST.to_vec(),
             check_at_start: false,
             tag_writing: TagWriting::default(),
@@ -321,6 +479,17 @@ impl Settings {
             sync_mode: text(table("decks"), "sync_mode")
                 .and_then(|name| SyncMode::ALL.into_iter().find(|mode| mode.name() == name))
                 .unwrap_or(defaults.sync_mode),
+            layouts: read_layouts(
+                table("layouts"),
+                (text(table("decks"), "layout").as_deref() == Some("two")).then(|| {
+                    text(table("decks"), "size")
+                        .and_then(|name| DeckSize::ALL.into_iter().find(|size| size.name() == name))
+                        .unwrap_or(DeckSize::Full)
+                }),
+            ),
+            wave_colour: text(table("decks"), "wave_colour")
+                .and_then(|name| WaveColour::ALL.into_iter().find(|mode| mode.name() == name))
+                .unwrap_or(defaults.wave_colour),
             key_notation: text(table("decks"), "key_notation")
                 .and_then(|name| {
                     KeyNotation::ALL
@@ -364,6 +533,18 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            recording_folder: text(table("recorder"), "folder")
+                .filter(|folder| !folder.is_empty())
+                .map(PathBuf::from),
+            recording_prefix: recording_prefix(
+                &text(table("recorder"), "prefix").unwrap_or_default(),
+            ),
+            recording_split: number(table("recorder"), "split_mb")
+                .filter(|megabytes| RECORDING_SPLITS.contains(megabytes))
+                .unwrap_or(defaults.recording_split),
+            loop_decay: number(table("recorder"), "loop_decay")
+                .filter(|percent| *percent <= 100)
+                .unwrap_or(defaults.loop_decay),
             import_at_start: flag(table("browser"), "import_at_start")
                 .unwrap_or(defaults.import_at_start),
             check_at_start: flag(table("browser"), "check_at_start")
@@ -485,6 +666,10 @@ impl Settings {
             toml::Value::String(self.sync_mode.name().to_owned()),
         );
         decks.insert(
+            "wave_colour".to_owned(),
+            toml::Value::String(self.wave_colour.name().to_owned()),
+        );
+        decks.insert(
             "key_notation".to_owned(),
             toml::Value::String(self.key_notation.name().to_owned()),
         );
@@ -573,6 +758,21 @@ impl Settings {
             toml::Value::String(self.tag_writing.name().to_owned()),
         );
         root.insert("browser".to_owned(), toml::Value::Table(browser));
+        root.insert(
+            "layouts".to_owned(),
+            toml::Value::Table(write_layouts(&self.layouts)),
+        );
+        let mut recorder = toml::Table::new();
+        if let Some(folder) = self.recording_folder.as_deref().and_then(Path::to_str) {
+            recorder.insert("folder".to_owned(), toml::Value::String(folder.to_owned()));
+        }
+        recorder.insert(
+            "prefix".to_owned(),
+            toml::Value::String(self.recording_prefix.clone()),
+        );
+        recorder.insert("split_mb".to_owned(), integer(self.recording_split));
+        recorder.insert("loop_decay".to_owned(), integer(self.loop_decay));
+        root.insert("recorder".to_owned(), toml::Value::Table(recorder));
         let mut effects = crate::effects_config::write(&self.effects);
         effects.insert(
             "shown".to_owned(),
@@ -630,7 +830,7 @@ mod tests {
     use platter_audio_io::Routing;
     use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
     use platter_ui_egui::collection::TagWriting;
-    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn};
+    use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, WaveColour};
     use platter_ui_egui::i18n::Language;
     use platter_ui_egui::keys::KeyNotation;
 
@@ -655,6 +855,15 @@ mod tests {
             tempo_range: 16,
             deck_size: DeckSize::Compact,
             deck_layout: DeckLayout::Four,
+            layouts: platter_ui_egui::layout::Layouts {
+                personal: Vec::new(),
+                active: 2,
+            },
+            wave_colour: WaveColour::Bass,
+            recording_folder: Some(PathBuf::from("Sets")),
+            recording_prefix: "night".to_owned(),
+            recording_split: 1024,
+            loop_decay: 35,
             effect_units: EffectUnits::Four,
             mixer_mode: MixerMode::External,
             sync_mode: SyncMode::Tempo,
@@ -794,6 +1003,77 @@ min_playtime = {written}
         );
         let unknown = Settings::parse("[decks]\nkey_notation = \"camelot\"\n");
         assert_eq!(unknown.key_notation, KeyNotation::Flats);
+        // `docs/behavior/waveform.md`, *Colour modes*: kept, and an unknown one is the default.
+        let mono = Settings {
+            wave_colour: WaveColour::Mono,
+            ..Settings::default()
+        };
+        assert_eq!(
+            Settings::parse(&mono.to_toml()).wave_colour,
+            WaveColour::Mono
+        );
+        let unknown = Settings::parse("[decks]\nwave_colour = \"neon\"\n");
+        assert_eq!(unknown.wave_colour, WaveColour::Deck);
+    }
+
+    /// `docs/behavior/interface.md`, *Layouts*: kept, and a file from before them keeps its
+    /// two decks.
+    #[test]
+    fn the_layouts_are_kept_and_an_older_file_keeps_two_decks() {
+        use platter_ui_egui::layout::{BuiltIn, Layouts};
+        let mut layouts = Layouts::default();
+        layouts.select(1);
+        layouts.duplicate("Parallel");
+        layouts.change(|arrangement| arrangement.mixer = false);
+        layouts.rename("Warm-up, ñ");
+        let chosen = Settings {
+            layouts: layouts.clone(),
+            ..Settings::default()
+        };
+        assert_eq!(Settings::parse(&chosen.to_toml()).layouts, layouts);
+
+        let older = Settings::parse("[decks]\nlayout = \"two\"\nsize = \"compact\"\n");
+        assert_eq!(older.layouts.active, BuiltIn::ALL.len());
+        let arrangement = older.layouts.arrangement();
+        assert_eq!(arrangement.decks, DeckLayout::Two);
+        assert_eq!(arrangement.size, DeckSize::Compact);
+        assert!(arrangement.lanes && arrangement.mixer);
+        let four = Settings::parse("[decks]\nlayout = \"four\"\n");
+        assert_eq!(four.layouts, Layouts::default());
+
+        // A personal layout that cannot be read is left out; a lost active one is Mixing.
+        let damaged = Settings::parse(
+            "[layouts]\nactive = 9\n[[layouts.personal]]\nname = \"Half\"\ndecks = \"three\"\n",
+        );
+        assert!(damaged.layouts.personal.is_empty());
+        assert_eq!(damaged.layouts.active, 0);
+    }
+
+    /// `docs/behavior/recording.md`, *Preferences*, and its edge cases.
+    #[test]
+    fn the_preferences_of_the_recorder_are_kept_and_cleaned() {
+        let chosen = Settings {
+            recording_folder: Some(PathBuf::from("Sets/Recordings ñ")),
+            recording_prefix: "friday".to_owned(),
+            recording_split: 512,
+            loop_decay: 100,
+            ..Settings::default()
+        };
+        let read = Settings::parse(&chosen.to_toml());
+        assert_eq!(read.recording_folder, chosen.recording_folder);
+        assert_eq!(read.recording_prefix, "friday");
+        assert_eq!(read.recording_split, 512);
+        assert_eq!(read.loop_decay, 100);
+        let defaults =
+            Settings::parse("[recorder]\nfolder = \"\"\nsplit_mb = 700\nloop_decay = 101\n");
+        assert_eq!(defaults.recording_folder, None);
+        assert_eq!(defaults.recording_prefix, "mix");
+        assert_eq!(defaults.recording_split, 2048);
+        assert_eq!(defaults.loop_decay, 0, "a decay above 100 percent");
+        assert_eq!(super::recording_prefix("  live: <set>  "), "live set");
+        assert_eq!(super::recording_prefix("a/b\\c?"), "abc");
+        assert_eq!(super::recording_prefix(" \t* "), "mix");
+        assert_eq!(super::recording_prefix(&"x".repeat(40)).len(), 32);
         // A range the analysis cannot use, or half a range, is the default.
         for written in [
             "[decks]\nbpm_min = 100\nbpm_max = 120\n",

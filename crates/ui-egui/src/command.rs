@@ -6,6 +6,7 @@
 //! typed parameters. Controls, keyboard shortcuts and anything that comes later build an
 //! [`Action`] and hand it to the application; nothing changes state by another path.
 
+use crate::layout::{ZONES, Zone};
 use std::path::PathBuf;
 
 use platter_core::{DeckId, ValueError};
@@ -146,17 +147,21 @@ pub enum SettingsPage {
     General,
     Decks,
     Mixer,
+    Recording,
+    Layouts,
     Library,
     Controllers,
     Keyboard,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Audio,
         Self::General,
         Self::Decks,
         Self::Mixer,
+        Self::Recording,
+        Self::Layouts,
         Self::Library,
         Self::Controllers,
         Self::Keyboard,
@@ -168,6 +173,8 @@ impl SettingsPage {
             Self::General => "general",
             Self::Decks => "decks",
             Self::Mixer => "mixer",
+            Self::Recording => "recording",
+            Self::Layouts => "layouts",
             Self::Library => "library",
             Self::Controllers => "controllers",
             Self::Keyboard => "keyboard",
@@ -309,6 +316,10 @@ pub enum AppCommand {
     DeckLayoutSet {
         layout: DeckLayout,
     },
+    /// Chooses the colours of every waveform: `docs/behavior/waveform.md`, *Colour modes*.
+    WaveColourSet {
+        mode: WaveColour,
+    },
     /// Shows two effect units or four: `docs/behavior/effects.md`, *Units and modes*.
     EffectUnitsSet {
         units: EffectUnits,
@@ -361,6 +372,36 @@ pub enum AppCommand {
     },
     /// Turns on or off the rule that a playing deck takes no track.
     LoadStoppedOnlyToggle,
+    /// The layouts of the window: `docs/behavior/interface.md`, *Layouts*.
+    LayoutSelect {
+        index: usize,
+    },
+    LayoutDuplicate,
+    LayoutRename {
+        name: String,
+    },
+    LayoutDelete,
+    LayoutMoveUp,
+    LayoutMoveDown,
+    LayoutZoneToggle {
+        zone: Zone,
+    },
+    /// The preferences of the mix recorder: `docs/behavior/recording.md`, *Preferences*.
+    RecorderFolderSet {
+        path: PathBuf,
+    },
+    RecorderFolderReset,
+    RecorderPrefixSet {
+        prefix: String,
+    },
+    RecorderSplitSet {
+        megabytes: u32,
+    },
+    /// The overdub decay of the loop recorder, in percent: `docs/behavior/recording.md`,
+    /// *Loop recorder*.
+    LoopDecaySet {
+        percent: u32,
+    },
     /// The music folders of the Library page: `docs/behavior/library.md`.
     MusicFolderAdd {
         path: PathBuf,
@@ -685,6 +726,8 @@ const PAGES: &[&str] = &[
     "general",
     "decks",
     "mixer",
+    "recording",
+    "layouts",
     "library",
     "controllers",
     "keyboard",
@@ -831,6 +874,46 @@ impl DeckLayout {
 
 pub const DECK_SIZES: &[&str] = &["full", "compact"];
 pub const DECK_LAYOUTS: &[&str] = &["two", "four"];
+pub const WAVE_COLOURS: &[&str] = &["deck", "bands", "mono", "bass"];
+/// The sizes the Recording page splits the files of the mix recorder at, in MiB.
+pub const RECORDING_SPLITS: [u32; 3] = [512, 1024, 2048];
+const SPLIT_NAMES: &[&str] = &["512", "1024", "2048"];
+
+fn split_name(megabytes: u32) -> &'static str {
+    match megabytes {
+        512 => "512",
+        1024 => "1024",
+        _ => "2048",
+    }
+}
+
+/// The colours of the three bands of every waveform: `docs/behavior/waveform.md`, *Colour
+/// modes*.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WaveColour {
+    /// Each deck in its own hue, the bands by lightness.
+    #[default]
+    Deck,
+    /// One colour per band, the same on every deck.
+    Bands,
+    /// Three greys.
+    Mono,
+    /// The low band in the hue of the deck, the others in grey.
+    Bass,
+}
+
+impl WaveColour {
+    pub const ALL: [Self; 4] = [Self::Deck, Self::Bands, Self::Mono, Self::Bass];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Deck => "deck",
+            Self::Bands => "bands",
+            Self::Mono => "mono",
+            Self::Bass => "bass",
+        }
+    }
+}
 pub const EFFECT_UNITS: &[&str] = &["two", "four"];
 
 /// How many effect units the effect row shows: `docs/behavior/effects.md`, *Units and modes*.
@@ -1171,6 +1254,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[choice("layout", DECK_LAYOUTS)],
     },
     CommandSpec {
+        id: "app.wave_colour.set",
+        label: "Waveform colour",
+        params: &[choice("mode", WAVE_COLOURS)],
+    },
+    CommandSpec {
         id: "app.effect_units.set",
         label: "Two or four effect units",
         params: &[choice("units", EFFECT_UNITS)],
@@ -1184,6 +1272,69 @@ pub const APP_SPECS: &[CommandSpec] = &[
         id: "app.tempo_range.set",
         label: "Tempo range of every deck",
         params: &[number("percent", 8.0, 50.0)],
+    },
+    CommandSpec {
+        id: "layout.select",
+        label: "Choose a layout",
+        params: &[number("index", 0.0, 63.0)],
+    },
+    CommandSpec {
+        id: "layout.duplicate",
+        label: "Duplicate the layout",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.rename",
+        label: "Rename the layout",
+        params: &[text("name")],
+    },
+    CommandSpec {
+        id: "layout.delete",
+        label: "Delete the layout",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.move_up",
+        label: "Move the layout up",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.move_down",
+        label: "Move the layout down",
+        params: &[],
+    },
+    CommandSpec {
+        id: "layout.zone.toggle",
+        label: "Show or hide a zone of the layout",
+        params: &[choice("zone", ZONES)],
+    },
+    CommandSpec {
+        id: "recorder.folder.set",
+        label: "Folder of the recordings",
+        params: &[ParamSpec {
+            name: "path",
+            kind: ParamKind::Path,
+        }],
+    },
+    CommandSpec {
+        id: "recorder.folder.reset",
+        label: "Default folder of the recordings",
+        params: &[],
+    },
+    CommandSpec {
+        id: "recorder.prefix.set",
+        label: "Prefix of the recordings",
+        params: &[text("prefix")],
+    },
+    CommandSpec {
+        id: "recorder.split.set",
+        label: "Split the recordings at",
+        params: &[choice("megabytes", SPLIT_NAMES)],
+    },
+    CommandSpec {
+        id: "recorder.loop_decay.set",
+        label: "Overdub decay of the loop recorder",
+        params: &[number("percent", 0.0, 100.0)],
     },
     CommandSpec {
         id: "app.min_playtime.set",
@@ -1873,6 +2024,14 @@ impl AppCommand {
             "app.deck_layout.set" => Self::DeckLayoutSet {
                 layout: read.choice("layout", &DeckLayout::ALL, DeckLayout::name, "two, four")?,
             },
+            "app.wave_colour.set" => Self::WaveColourSet {
+                mode: read.choice(
+                    "mode",
+                    &WaveColour::ALL,
+                    WaveColour::name,
+                    "deck, bands, mono, bass",
+                )?,
+            },
             "app.effect_units.set" => Self::EffectUnitsSet {
                 units: read.choice("units", &EffectUnits::ALL, EffectUnits::name, "two, four")?,
             },
@@ -1921,6 +2080,37 @@ impl AppCommand {
             "midi.learn.toggle" => Self::MidiLearnToggle,
             "midi.target.set" => Self::MidiTargetSet { deck: read.deck()? },
             "app.load_stopped_only.toggle" => Self::LoadStoppedOnlyToggle,
+            "layout.select" => Self::LayoutSelect {
+                index: read.index("index")?,
+            },
+            "layout.duplicate" => Self::LayoutDuplicate,
+            "layout.rename" => Self::LayoutRename {
+                name: read.text("name")?.to_owned(),
+            },
+            "layout.delete" => Self::LayoutDelete,
+            "layout.move_up" => Self::LayoutMoveUp,
+            "layout.move_down" => Self::LayoutMoveDown,
+            "layout.zone.toggle" => Self::LayoutZoneToggle {
+                zone: read.choice("zone", &Zone::ALL, Zone::name, "effects, mixer, lanes")?,
+            },
+            "recorder.folder.set" => Self::RecorderFolderSet {
+                path: PathBuf::from(read.text("path")?),
+            },
+            "recorder.folder.reset" => Self::RecorderFolderReset,
+            "recorder.prefix.set" => Self::RecorderPrefixSet {
+                prefix: read.text("prefix")?.to_owned(),
+            },
+            "recorder.loop_decay.set" => Self::LoopDecaySet {
+                percent: u32::try_from(read.integer("percent")?.clamp(0, 100)).unwrap_or(0),
+            },
+            "recorder.split.set" => Self::RecorderSplitSet {
+                megabytes: read.choice(
+                    "megabytes",
+                    &RECORDING_SPLITS,
+                    split_name,
+                    "512, 1024, 2048",
+                )?,
+            },
             "library.music_folder.add" => Self::MusicFolderAdd {
                 path: PathBuf::from(read.text("path")?),
             },
@@ -2230,6 +2420,7 @@ impl AppCommand {
             Self::FullscreenAtStartToggle => "app.fullscreen_at_start.toggle",
             Self::DeckSizeSet { .. } => "app.deck_size.set",
             Self::DeckLayoutSet { .. } => "app.deck_layout.set",
+            Self::WaveColourSet { .. } => "app.wave_colour.set",
             Self::EffectUnitsSet { .. } => "app.effect_units.set",
             Self::FxPanelShow { .. } => "app.fx_panel.show",
             Self::TempoRangeSet { .. } => "app.tempo_range.set",
@@ -2237,6 +2428,18 @@ impl AppCommand {
             Self::KeyNotationSet { .. } => "app.key_notation.set",
             Self::AnalysisRangeSet { .. } => "app.analysis_range.set",
             Self::LoadStoppedOnlyToggle => "app.load_stopped_only.toggle",
+            Self::LayoutSelect { .. } => "layout.select",
+            Self::LayoutDuplicate => "layout.duplicate",
+            Self::LayoutRename { .. } => "layout.rename",
+            Self::LayoutDelete => "layout.delete",
+            Self::LayoutMoveUp => "layout.move_up",
+            Self::LayoutMoveDown => "layout.move_down",
+            Self::LayoutZoneToggle { .. } => "layout.zone.toggle",
+            Self::RecorderFolderSet { .. } => "recorder.folder.set",
+            Self::RecorderFolderReset => "recorder.folder.reset",
+            Self::RecorderPrefixSet { .. } => "recorder.prefix.set",
+            Self::RecorderSplitSet { .. } => "recorder.split.set",
+            Self::LoopDecaySet { .. } => "recorder.loop_decay.set",
             Self::MusicFolderAdd { .. } => "library.music_folder.add",
             Self::MusicFolderRemove { .. } => "library.music_folder.remove",
             Self::MusicFolderSelect { .. } => "library.music_folder.select",
@@ -2396,8 +2599,9 @@ mod tests {
 
     use super::{
         APP_SPECS, Action, AppCommand, BrowserNode, DECK_LAYOUTS, DETAIL_FIELDS, DeckLayout,
-        DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, RULE_FIELDS, RuleField,
-        SORT_COLUMNS, SettingsPage, SortColumn,
+        DetailField, DetailFields, NEW_ITEMS, NODES, NewItem, PAGES, RECORDING_SPLITS, RULE_FIELDS,
+        RuleField, SORT_COLUMNS, SPLIT_NAMES, SettingsPage, SortColumn, WAVE_COLOURS, WaveColour,
+        split_name,
     };
 
     /// Valid arguments for a specification: the first choice, the lower bound, deck A.
@@ -2512,6 +2716,10 @@ mod tests {
         assert_eq!(fields, RULE_FIELDS);
         let layouts: Vec<_> = DeckLayout::ALL.into_iter().map(DeckLayout::name).collect();
         assert_eq!(layouts, DECK_LAYOUTS);
+        let modes: Vec<_> = WaveColour::ALL.into_iter().map(WaveColour::name).collect();
+        assert_eq!(modes, WAVE_COLOURS);
+        let splits: Vec<_> = RECORDING_SPLITS.into_iter().map(split_name).collect();
+        assert_eq!(splits, SPLIT_NAMES);
     }
 
     /// `docs/behavior/interface.md`, *Deck layout*, edge cases.

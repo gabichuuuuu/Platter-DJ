@@ -11,7 +11,7 @@ use platter_core::{Bpm, CueKind, CueName, DeckId, HotcueSlot, MAX_MARKERS};
 use platter_engine::command::{Args, SPECS, Value};
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, MixerMode, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
+    CueStep, Direction, LoopSource, MixerMode, MoveMode, Output, SizeStep, SyncMode, TEMPO_RANGES,
 };
 use proptest::prelude::{ProptestConfig, Strategy, any, prop, prop_oneof, proptest};
 
@@ -83,6 +83,7 @@ fn later_command() -> impl Strategy<Value = Command> {
         // Without a folder for the recordings both are refused or ignored.
         prop::strategy::Just(Command::RecorderToggle),
         prop::strategy::Just(Command::RecorderCut),
+        loop_recorder_command(),
         grid_command(),
         loop_command(),
         cue_command(),
@@ -122,6 +123,26 @@ fn cue_command() -> impl Strategy<Value = Command> {
 }
 
 /// The commands of loops, jumps and moves, added in M3.
+/// The loop recorder, with sizes and amounts in and out of range.
+fn loop_recorder_command() -> impl Strategy<Value = Command> {
+    let source = prop::sample::select(vec![
+        LoopSource::Master,
+        LoopSource::Deck(DeckId::A),
+        LoopSource::Deck(DeckId::D),
+    ]);
+    prop_oneof![
+        3 => prop::strategy::Just(Command::LoopRecorderRecord),
+        1 => prop::strategy::Just(Command::LoopRecorderPlay),
+        1 => prop::strategy::Just(Command::LoopRecorderUndo),
+        1 => prop::strategy::Just(Command::LoopRecorderRedo),
+        1 => prop::strategy::Just(Command::LoopRecorderDelete),
+        1 => prop_oneof![prop::sample::select(vec![1.0, 2.0, 4.0, 8.0]), number()]
+            .prop_map(|bars| Command::LoopRecorderSizeSet { bars }),
+        1 => source.prop_map(|source| Command::LoopRecorderSourceSet { source }),
+        1 => number().prop_map(|amount| Command::LoopRecorderDryWetSet { amount }),
+    ]
+}
+
 fn loop_command() -> impl Strategy<Value = Command> {
     let direction = || prop::sample::select(vec![Direction::Back, Direction::Forward]);
     let size_step = || prop::sample::select(vec![SizeStep::Down, SizeStep::Up]);

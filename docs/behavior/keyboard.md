@@ -57,7 +57,9 @@ The default table:
 Ctrl and comma opens the preferences. F11 shows the window on the whole screen, or as a
 window again. Ctrl and F goes to the search field of the browser. Ctrl and A selects every
 row of the list (`docs/behavior/browser.md`, *Selecting several tracks*). Delete takes the
-selected track out of the playlist the list shows.
+selected track out of the playlist the list shows. Ctrl and Z undoes the last overdub of the
+loop recorder, Ctrl and Y redoes it and Ctrl and Delete deletes the loop
+(`docs/behavior/recording.md`, *Loop recorder*).
 
 ### Controls
 
@@ -76,6 +78,7 @@ Every control takes the keyboard focus with Tab and shows a focus ring.
 | *Playlists* or a folder of playlists | Shift+F10 opens its menu |
 | Name field of the tree | Typing adds at the end; Backspace erases; Enter names; Escape closes without naming |
 | Context menu | Up and Down move; Enter or Space operates the item; Escape closes |
+| Undo of the loop recorder | Space or Enter undoes; Shift+F10 opens its menu with Redo and Delete |
 
 A key the focused control uses does not trigger a shortcut: with a knob focused the arrows
 move the knob. A chord with Ctrl or Alt always reaches the shortcuts.

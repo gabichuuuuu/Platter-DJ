@@ -23,8 +23,8 @@ features = [
   { id = "tooltips", name = "Tooltips", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test tooltips; a disabled control shows no reason yet, see docs/behavior/interface.md" },
   { id = "deck-sizes", name = "Two deck sizes: compact and full", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test deck_size --test settings_mixer; two sizes, not five, see docs/behavior/interface.md" },
   { id = "parallel-waveforms", name = "Parallel waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; each lane keeps its own zoom, see docs/behavior/waveform.md" },
-  { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "planned" },
-  { id = "custom-layouts", name = "Custom layouts", milestone = "M4", status = "planned" },
+  { id = "task-layouts", name = "Layouts per task: mixing, preparation, browser, parallel", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --lib layout shell --test panels; no selector in the header, see docs/behavior/interface.md" },
+  { id = "custom-layouts", name = "Custom layouts", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --lib layout --test settings_mixer; they keep their arrangement only, see docs/behavior/interface.md" },
 ]
 
 [[area]]
@@ -71,7 +71,7 @@ features = [
   { id = "zoom", name = "Waveform zoom", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels every_control_emits_its_command" },
   { id = "markers", name = "Cue, loop and beatgrid markers in both waveforms", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-ui-egui --test flux_marker" },
   { id = "colour-mode-first", name = "First waveform colour mode", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels no_panel_paints_a_colour_outside_the_design_tokens" },
-  { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "planned" },
+  { id = "colour-modes-rest", name = "Remaining three waveform colour modes", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --lib waveform --test settings_mixer --test panels; the four modes are Platter's own, see docs/behavior/waveform.md" },
 ]
 
 [[area]]
@@ -197,7 +197,7 @@ id = "recording"
 title = "Recording and output"
 features = [
   { id = "mix-recorder", name = "Mix recorder: level, counter, cut to a new file", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test recorder --test realtime_memory; cargo test -p platter-ui-egui --test panels; the level is the master meter of the header, with no gain or meter of its own, and the folder and the split are fixed, see docs/behavior/recording.md" },
-  { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "planned" },
+  { id = "loop-recorder", name = "Loop recorder: size, overdub, undo, redo, source", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test loop_recorder --test realtime_memory; cargo test -p platter-ui-egui --test panels --test settings_mixer; no external input and one layer of undo, and nobody has listened to a loop, see docs/behavior/recording.md" },
   { id = "auto-mix", name = "Automatic mixing with the fade cues", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test auto_mix; cargo test -p platter-ui-egui --test settings_mixer; no automatic playback of a playlist, and nobody has listened to a transition, see docs/behavior/auto-mix.md" },
   { id = "broadcasting", name = "Broadcasting to a server the user configures", milestone = "M5", status = "planned" },
 ]
@@ -281,8 +281,8 @@ features = [
   { id = "analysis", name = "Analysis", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test analysis; cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter --bin platter config; the range of tempos on the Decks page, no automatic range and no choice of markers, see docs/behavior/analysis.md" },
   { id = "controllers", name = "Controllers", milestone = "M3", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; the Controllers page, see docs/behavior/controllers.md" },
   { id = "effects", name = "Effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-engine --test effects; on the Mixer page: the number of units, the routing and Keep values; no list of preselected effects, see docs/behavior/effects.md" },
-  { id = "recorders", name = "Recorders", milestone = "M4", status = "planned" },
-  { id = "layouts", name = "Layouts", milestone = "M4", status = "planned" },
+  { id = "recorders", name = "Recorders", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; the Recording page: folder, prefix and split of the mix recorder, overdub decay of the loop recorder; no external source and no latency setting, see docs/behavior/recording.md" },
+  { id = "layouts", name = "Layouts", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer --test panels, see docs/behavior/interface.md" },
   { id = "input-routing", name = "Input routing", milestone = "M5", status = "planned" },
   { id = "external-sync", name = "External sync", milestone = "M5", status = "planned" },
   { id = "timecode", name = "Timecode", milestone = "M5", status = "planned" },
