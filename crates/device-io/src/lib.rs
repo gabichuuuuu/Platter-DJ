@@ -12,5 +12,5 @@ mod port;
 mod queue;
 
 pub use output::{Output, outputs};
-pub use port::{Input, PortError, inputs, open};
+pub use port::{ClockMessages, Input, PortError, inputs, open, open_clock};
 pub use queue::{MAX_MESSAGE_BYTES, Messages, RawMessage};
