@@ -2706,6 +2706,7 @@ fn deck_notice(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, notice: DeckNotice) {
     let painter = cx.painter();
     let (title, text) = match notice {
         DeckNotice::LoadFailed => ("deck.load_failed_title", "deck.load_failed_text"),
+        DeckNotice::StemsFailed => ("deck.stems_failed_title", "deck.stems_failed_text"),
     };
     painter.rect_filled(rect, paint::radius(tokens.radius.md), color.surface_control);
     let inner = rect.shrink(tokens.space.s3);

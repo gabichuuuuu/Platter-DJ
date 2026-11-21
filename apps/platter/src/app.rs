@@ -1549,6 +1549,13 @@ impl PlatterApp {
                         &format!("deck {}: {message}", deck.letter()),
                     );
                 }
+                Event::StemsFailed { deck, message } => {
+                    self.notices[deck.index()] = Some(DeckNotice::StemsFailed);
+                    self.log(
+                        Level::Warning,
+                        &format!("deck {}: stems: {message}", deck.letter()),
+                    );
+                }
                 Event::PreviewFailed { message } => {
                     self.log(Level::Warning, &format!("preview: {message}"));
                 }

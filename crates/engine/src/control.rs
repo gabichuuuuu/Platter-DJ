@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use platter_analysis::Transposed;
 use platter_core::{
-    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Tempo, TrackMemory,
-    ValueError,
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, Gain, LoopSize, SampleRate, Stem, Tempo,
+    TrackMemory, ValueError,
 };
 use platter_decode::{Container, DecodeError, DecodedAudio, Tags, decode_file};
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
@@ -34,9 +34,9 @@ use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
 use crate::recorder::{MIN_SPLIT_BYTES, Recorder, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 use crate::rt::{
-    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckTrack, GridEdit, LOOP_BARS,
-    LoopEdit, LoopPart, LoopPhase, LoopSource, LoopState, Processor, RtCommand, Span, Stretcher,
-    TrackAudio,
+    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckStems, DeckTrack, GridEdit,
+    LOOP_BARS, LoopEdit, LoopPart, LoopPhase, LoopSource, LoopState, Processor, RtCommand, Span,
+    StemSettings, Stretcher, TrackAudio,
 };
 use crate::stretch::TrackStretch;
 use crate::tap::TapTempo;
@@ -70,6 +70,11 @@ pub enum Event {
         info: TrackInfo,
     },
     LoadFailed {
+        deck: DeckId,
+        message: String,
+    },
+    /// The stems of a track could not be played; the track loaded alone.
+    StemsFailed {
         deck: DeckId,
         message: String,
     },
@@ -148,6 +153,9 @@ pub struct DeckControls {
     pub move_size: MoveSize,
     /// Jumps and moves go by [`FINE_MOVE_SECONDS`] instead of the move size.
     pub move_fine: bool,
+    /// The controls of the four stems, in the order of [`Stem::ALL`]. A load puts them back
+    /// to their defaults.
+    pub stems: [StemSettings; Stem::COUNT],
 }
 
 impl Default for DeckControls {
@@ -166,6 +174,7 @@ impl Default for DeckControls {
             move_mode: MoveMode::default(),
             move_size: MoveSize::default(),
             move_fine: false,
+            stems: [StemSettings::default(); Stem::COUNT],
         }
     }
 }
@@ -296,6 +305,8 @@ pub struct DeckSnapshot {
     pub track: Option<TrackInfo>,
     /// Waveform data of the loaded track.
     pub peaks: Option<Arc<WaveformPeaks>>,
+    /// Waveform data of each stem, while the deck plays stems: `docs/behavior/stems.md`.
+    pub stem_peaks: Option<Arc<[WaveformPeaks; Stem::COUNT]>>,
     /// A file is being decoded for this deck.
     pub loading: bool,
     /// The loaded track is being analysed.
@@ -347,6 +358,7 @@ impl Default for DeckSnapshot {
         Self {
             track: None,
             peaks: None,
+            stem_peaks: None,
             loading: false,
             analysing: false,
             analysis: None,
@@ -476,6 +488,7 @@ impl LoopControls {
 struct DeckControl {
     track: Option<TrackInfo>,
     peaks: Option<Arc<WaveformPeaks>>,
+    stem_peaks: Option<Arc<[WaveformPeaks; Stem::COUNT]>>,
     loading: bool,
     analysing: bool,
     analysis: Option<TrackAnalysis>,
@@ -504,6 +517,10 @@ struct Loaded {
     stretch: Option<Stretcher>,
     info: TrackInfo,
     peaks: WaveformPeaks,
+    /// The stems, when they were asked for and could be read, with their waveforms.
+    stems: Option<(Box<DeckStems>, [WaveformPeaks; Stem::COUNT])>,
+    /// Why the stems asked for could not be played.
+    stems_failed: Option<String>,
 }
 
 /// What a load worker sends back: the decoded track and then, once it is analysed, the
@@ -578,6 +595,8 @@ pub struct Engine {
     swaps_in_flight: usize,
     /// Load workers that have not sent their last report.
     loads_running: usize,
+    /// Events a finished load gives besides its own, for the next poll to hand out.
+    later_events: Vec<Event>,
     finished_loads: Receiver<LoadResult>,
     load_reports: Sender<LoadResult>,
     analyser: Arc<dyn Analyser>,
@@ -663,6 +682,7 @@ impl Engine {
             crossfading: false,
             swaps_in_flight: 0,
             loads_running: 0,
+            later_events: Vec::new(),
             finished_loads,
             load_reports,
             analyser,
@@ -772,7 +792,16 @@ impl Engine {
     /// Validates a command and applies it. An invalid command changes nothing.
     pub fn dispatch(&mut self, command: Command) -> Result<(), EngineError> {
         match command {
-            Command::DeckLoad { deck, path } => self.start_load(deck, path),
+            Command::DeckLoad { deck, path } => self.start_load(deck, path, None),
+            Command::DeckLoadStems { deck, path, stems } => {
+                self.start_load(deck, path, Some(stems))
+            }
+            stem @ (Command::DeckStemVolumeSet { .. }
+            | Command::DeckStemMuteToggle { .. }
+            | Command::DeckStemFilterSet { .. }
+            | Command::DeckStemFilterToggle { .. }
+            | Command::DeckStemSendSet { .. }
+            | Command::DeckStemSendToggle { .. }) => self.dispatch_stem(stem),
             Command::GlobalLoadMarkerToggle => {
                 self.load_marker = !self.load_marker;
                 Ok(())
@@ -1311,6 +1340,42 @@ impl Engine {
         Ok(())
     }
 
+    /// The controls of the stems of a deck: `docs/behavior/stems.md`.
+    fn dispatch_stem(&mut self, command: Command) -> Result<(), EngineError> {
+        let (deck, stem) = match command {
+            Command::DeckStemVolumeSet { deck, stem, .. }
+            | Command::DeckStemMuteToggle { deck, stem }
+            | Command::DeckStemFilterSet { deck, stem, .. }
+            | Command::DeckStemFilterToggle { deck, stem }
+            | Command::DeckStemSendSet { deck, stem, .. }
+            | Command::DeckStemSendToggle { deck, stem } => (deck, stem),
+            _ => return Ok(()),
+        };
+        let mut settings = self.decks[deck.index()].controls.stems[stem.index()];
+        match command {
+            Command::DeckStemVolumeSet { volume, .. } => {
+                settings.volume = ValueError::check("volume", volume, 0.0, 1.0)? as f32;
+            }
+            Command::DeckStemMuteToggle { .. } => settings.muted = !settings.muted,
+            Command::DeckStemFilterSet { position, .. } => {
+                settings.filter = ValueError::check("position", position, -1.0, 1.0)? as f32;
+            }
+            Command::DeckStemFilterToggle { .. } => settings.filter_on = !settings.filter_on,
+            Command::DeckStemSendSet { amount, .. } => {
+                settings.send = ValueError::check("amount", amount, 0.0, 1.0)? as f32;
+            }
+            Command::DeckStemSendToggle { .. } => settings.send_on = !settings.send_on,
+            _ => {}
+        }
+        self.send(RtCommand::Stem {
+            deck,
+            stem,
+            settings,
+        })?;
+        self.decks[deck.index()].controls.stems[stem.index()] = settings;
+        Ok(())
+    }
+
     /// The commands of the loop recorder. Rec is refused in external mixer mode, where the
     /// mix the loop plays into is not heard.
     fn dispatch_loop_recorder(&mut self, command: Command) -> Result<(), EngineError> {
@@ -1680,7 +1745,12 @@ impl Engine {
         Ok(())
     }
 
-    fn start_load(&mut self, deck: DeckId, path: PathBuf) -> Result<(), EngineError> {
+    fn start_load(
+        &mut self,
+        deck: DeckId,
+        path: PathBuf,
+        stems: Option<Box<[PathBuf; Stem::COUNT]>>,
+    ) -> Result<(), EngineError> {
         let state = &mut self.decks[deck.index()];
         state.generation += 1;
         let generation = state.generation;
@@ -1696,7 +1766,14 @@ impl Engine {
                         .as_ref()
                         .and_then(|recall| recall(&path))
                         .unwrap_or_default();
-                    Box::new(prepare(decoded, path, rate, memory))
+                    let mut loaded = prepare(decoded, path, rate, memory);
+                    if let Some(paths) = &stems {
+                        match prepare_stems(&loaded.audio, paths, rate) {
+                            Ok(stems) => loaded.stems = Some(stems),
+                            Err(message) => loaded.stems_failed = Some(message),
+                        }
+                    }
+                    Box::new(loaded)
                 });
                 let audio = result.as_ref().ok().map(|loaded| loaded.audio.clone());
                 // The engine may be gone by now; then nobody waits for the result.
@@ -1785,6 +1862,7 @@ impl Engine {
             stretch: None,
             memory: None,
             start: None,
+            stems: None,
         };
         if let Err(error) = self.send(RtCommand::PreviewSwap {
             track: Some(track),
@@ -1807,6 +1885,7 @@ impl Engine {
         state.loading = false;
         state.track = None;
         state.peaks = None;
+        state.stem_peaks = None;
         state.held = None;
         state.forget_analysis();
         Ok(())
@@ -1834,6 +1913,7 @@ impl Engine {
         while let Ok(finished) = self.finished_loads.try_recv() {
             events.extend(self.finish_load(finished));
         }
+        events.append(&mut self.later_events);
         let dropped = self.ends.shared.recorder_dropped.get();
         self.recorder
             .poll(&mut self.ends.commands, dropped, &mut events);
@@ -1914,6 +1994,7 @@ impl Engine {
             };
             events.extend(self.finish_load(finished));
         }
+        events.append(&mut self.later_events);
         events
     }
 
@@ -1960,21 +2041,44 @@ impl Engine {
                     .map(|(_, cue)| cue.position)
             })
             .flatten();
+        let (stems, stem_peaks) = loaded
+            .stems
+            .map_or((None, None), |(stems, peaks)| (Some(stems), Some(peaks)));
         let track = DeckTrack {
             audio: loaded.audio,
             stretch: loaded.stretch,
             memory: Some(Box::new(loaded.memory)),
             start,
+            stems,
         };
         if let Err(error) = self.send_swap(deck, Some(track)) {
             return failed(error.to_string());
+        }
+        // A new track starts with its stems as they sound together. These follow the swap
+        // in the queue; one refused leaves that stem as it was.
+        for stem in Stem::ALL {
+            let settings = StemSettings::default();
+            if self
+                .send(RtCommand::Stem {
+                    deck,
+                    stem,
+                    settings,
+                })
+                .is_ok()
+            {
+                self.decks[deck.index()].controls.stems[stem.index()] = settings;
+            }
         }
         let state = &mut self.decks[deck.index()];
         state.held = Some(generation);
         state.track = Some(loaded.info.clone());
         state.peaks = Some(Arc::new(loaded.peaks));
+        state.stem_peaks = stem_peaks.map(Arc::new);
         state.forget_analysis();
         state.analysing = true;
+        if let Some(message) = loaded.stems_failed {
+            self.later_events.push(Event::StemsFailed { deck, message });
+        }
         Some(Event::Loaded {
             deck,
             info: loaded.info,
@@ -2023,6 +2127,7 @@ impl Engine {
             DeckSnapshot {
                 track: control.track.clone(),
                 peaks: control.peaks.clone(),
+                stem_peaks: control.stem_peaks.clone(),
                 loading: control.loading,
                 analysing: control.analysing,
                 analysis: control.analysis,
@@ -2138,6 +2243,13 @@ impl DeckControls {
                 cut: self.eq_kill[band as usize],
             });
         }
+        for stem in Stem::ALL {
+            commands.push(RtCommand::Stem {
+                deck,
+                stem,
+                settings: self.stems[stem.index()],
+            });
+        }
         commands
     }
 }
@@ -2240,7 +2352,48 @@ fn prepare(
         stretch,
         info,
         peaks,
+        stems: None,
+        stems_failed: None,
     }
+}
+
+/// Decodes the four stems of `track` and builds what the deck plays them with. A stem has
+/// to be at the rate of the track; a shorter one is completed with silence and a longer one
+/// cut at the length of the track.
+fn prepare_stems(
+    track: &TrackAudio,
+    paths: &[PathBuf; Stem::COUNT],
+    engine_rate: SampleRate,
+) -> Result<(Box<DeckStems>, [WaveformPeaks; Stem::COUNT]), String> {
+    let mut audio = Vec::with_capacity(Stem::COUNT);
+    let mut peaks = Vec::with_capacity(Stem::COUNT);
+    let mut stretch = Vec::with_capacity(Stem::COUNT);
+    for (stem, path) in Stem::ALL.into_iter().zip(paths) {
+        let decoded = decode_file(path).map_err(|error| format!("{stem}: {error}"))?;
+        if decoded.sample_rate != track.rate() {
+            return Err(format!(
+                "{stem}: {} Hz, the track is at {} Hz",
+                decoded.sample_rate.hz(),
+                track.rate().hz()
+            ));
+        }
+        let mut stereo = decoded.into_stereo();
+        stereo.resize(track.frames() * 2, 0.0);
+        peaks.push(WaveformPeaks::compute(&stereo, track.rate()));
+        let part = TrackAudio::new(track.rate(), stereo);
+        stretch.push(
+            TrackStretch::new(part.frames(), part.rate(), engine_rate)
+                .map(|stretch| Stretcher(Box::new(stretch))),
+        );
+        audio.push(part);
+    }
+    let missing = || "the stems are incomplete".to_owned();
+    let stems = DeckStems {
+        audio: audio.try_into().map_err(|_| missing())?,
+        stretch: stretch.try_into().map_err(|_| missing())?,
+    };
+    let peaks = peaks.try_into().map_err(|_| missing())?;
+    Ok((Box::new(stems), peaks))
 }
 
 /// The longest step between two polls that still counts as playback crossing a fade-out cue.

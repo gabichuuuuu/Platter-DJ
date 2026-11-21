@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use common::{RATE, Rig, sine_file};
-use platter_core::{CueKind, DeckId, HotcueSlot};
+use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
 use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
     Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
@@ -543,6 +543,55 @@ fn process_neither_allocates_nor_frees() {
         run(&mut rig, blocks);
     }
     rig.send(Command::DeckPause { deck: DeckId::A });
+    // A stem deck: its four stems arrive with their stretches, play through key lock with
+    // their controls moving, and go back when a plain track replaces them while it plays.
+    let stems =
+        Stem::ALL.map(|stem| sine_file(&format!("memory-stem-{stem}"), 330.0, 2.0, 0.2, RATE));
+    rig.send(Command::DeckLoadStems {
+        deck: DeckId::B,
+        path: sine_file("memory-stem-track", 330.0, 2.0, 0.5, RATE),
+        stems: Box::new(stems),
+    });
+    rig.engine.wait_for_loads();
+    rig.send(Command::DeckPlay { deck: DeckId::B });
+    rig.send(Command::DeckKeyLockToggle { deck: DeckId::B });
+    rig.send(Command::DeckTempoSet {
+        deck: DeckId::B,
+        ratio: 1.05,
+    });
+    run(&mut rig, 20);
+    for stem in Stem::ALL {
+        rig.send(Command::DeckStemFilterToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        rig.send(Command::DeckStemSendSet {
+            deck: DeckId::B,
+            stem,
+            amount: 0.3,
+        });
+        rig.send(Command::DeckStemSendToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        rig.send(Command::DeckStemMuteToggle {
+            deck: DeckId::B,
+            stem,
+        });
+        run(&mut rig, 3);
+    }
+    rig.send(Command::DeckBeatjump {
+        deck: DeckId::B,
+        direction: Direction::Forward,
+    });
+    run(&mut rig, 10);
+    rig.load(
+        DeckId::B,
+        sine_file("memory-after-stems", 220.0, 1.0, 0.5, RATE),
+    );
+    run(&mut rig, 10);
+    rig.send(Command::DeckEject { deck: DeckId::B });
+    run(&mut rig, 5);
     // Replacing a track while it plays is the case where a buffer changes hands: the old
     // one must travel back to this thread instead of being freed by the processor.
     rig.send(Command::DeckPlay { deck: DeckId::A });

@@ -498,6 +498,8 @@ impl BrowserView {
 pub enum DeckNotice {
     /// The last file sent to the deck could not be read.
     LoadFailed,
+    /// The stems of the last track could not be played; the track plays alone.
+    StemsFailed,
 }
 
 /// The MIDI controllers of the settings, for the indicator of the status header.

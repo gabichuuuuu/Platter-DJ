@@ -23,6 +23,7 @@ mod preview;
 mod processor;
 mod recorder;
 mod shared;
+mod stems;
 mod strip;
 mod tick;
 mod tone;
@@ -30,7 +31,8 @@ mod tone;
 use std::sync::Arc;
 
 use platter_core::{
-    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate, TrackMemory,
+    BeatGrid, Bpm, CueKind, CueName, Cues, DeckId, HotcueSlot, LoopRegion, SampleRate, Stem,
+    TrackMemory,
 };
 use platter_dsp::Frame;
 use platter_dsp::crossfade::{CrossfaderCurve, CrossfaderSide};
@@ -47,6 +49,7 @@ pub use loop_recorder::{LOOP_BARS, LoopPhase, LoopSource, MAX_LOOP_SECONDS};
 pub use processor::Processor;
 pub use recorder::Recorded;
 pub use shared::{DeckShared, MasterChoice, Shared};
+pub use stems::StemSettings;
 
 /// Commands the processor takes in one call. The queue holds this many; a control side
 /// that sends faster gets an error instead of blocking.
@@ -81,6 +84,16 @@ pub struct DeckTrack {
     /// Where the deck starts, in seconds of track time, when not at the beginning: the load
     /// marker. The cue point starts there too.
     pub start: Option<f64>,
+    /// The stems the deck plays in the place of the track: `docs/behavior/stems.md`.
+    pub stems: Option<Box<DeckStems>>,
+}
+
+/// The four stems of a track, each as long as the track and at its rate, with the stretch
+/// key lock plays each one with.
+#[derive(Debug)]
+pub struct DeckStems {
+    pub audio: [TrackAudio; Stem::COUNT],
+    pub stretch: [Option<Stretcher>; Stem::COUNT],
 }
 
 /// Stereo audio of a loaded track, shared without copying.
@@ -262,6 +275,12 @@ pub enum RtCommand {
     },
     FilterModel {
         model: FilterModel,
+    },
+    /// The controls of one stem of a deck. They act while the deck plays stems.
+    Stem {
+        deck: DeckId,
+        stem: Stem,
+        settings: StemSettings,
     },
     CrossfaderAssign {
         deck: DeckId,

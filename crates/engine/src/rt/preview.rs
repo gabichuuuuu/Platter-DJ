@@ -52,6 +52,7 @@ impl PreviewPlayer {
                 stretch,
                 memory: None,
                 start: None,
+                stems: None,
             }),
             memory,
             None,

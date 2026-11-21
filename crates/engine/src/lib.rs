@@ -43,5 +43,7 @@ pub use platter_dsp::eq::{Band, EqModel};
 pub use platter_dsp::filter::FilterModel;
 pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
-pub use rt::{LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor};
+pub use rt::{
+    LOOP_BARS, LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
+};
 pub use wav::WavWriter;
