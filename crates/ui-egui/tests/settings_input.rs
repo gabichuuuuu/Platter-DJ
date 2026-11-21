@@ -14,11 +14,12 @@ use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
 /// The commands of the controls of the page.
-const PAGE: [&str; 4] = [
+const PAGE: [&str; 5] = [
     "input.device.set",
     "input.routing.set",
     "deck.type.set",
     "mixer.aux.set",
+    "recorder.source.set",
 ];
 
 struct Stage {
@@ -105,8 +106,10 @@ fn engine(actions: Vec<Action>) -> Vec<Command> {
 fn the_page_has_a_control_for_each_input_setting() {
     let stage = Stage::new(sample::playing(), Language::English);
     assert_eq!(stage.controls("input.device.set").len(), 1);
-    // Four decks and the auxiliary input.
-    assert_eq!(stage.controls("input.routing.set").len(), 5);
+    // Four decks, the auxiliary input and the recorders.
+    assert_eq!(stage.controls("input.routing.set").len(), 6);
+    // The mix or the input, for the mix recorder.
+    assert_eq!(stage.controls("recorder.source.set").len(), 2);
     // Track and Live input, for each deck.
     assert_eq!(stage.controls("deck.type.set").len(), 8);
     assert_eq!(stage.controls("mixer.aux.set").len(), 1);

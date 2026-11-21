@@ -309,7 +309,7 @@ pub struct InputSettings {
     /// Name of the input device; `None` opens no input.
     pub device: Option<String>,
     /// What feeds each of [InputTarget::ALL], in its order.
-    pub routes: [Option<InputSource>; 5],
+    pub routes: [Option<InputSource>; InputTarget::ALL.len()],
     /// The decks of the live type, by [DeckId::index](platter_core::DeckId::index).
     pub live: [bool; 4],
     /// The volume of the auxiliary input, 0 to 1.
@@ -320,7 +320,7 @@ impl Default for InputSettings {
     fn default() -> Self {
         Self {
             device: None,
-            routes: [None; 5],
+            routes: [None; InputTarget::ALL.len()],
             live: [false; 4],
             aux_level: 0.0,
         }
@@ -1249,6 +1249,7 @@ min_playtime = {written}
                     InputSource::parse("8"),
                     None,
                     InputSource::parse("3"),
+                    InputSource::parse("5-6"),
                 ],
                 live: [true, false, true, false],
                 aux_level: 0.5,
@@ -1265,7 +1266,7 @@ min_playtime = {written}
         assert_eq!(read.input.live, [false, true, false, false]);
         assert_eq!(
             read.input.routes,
-            [None, None, InputSource::parse("5-6"), None, None]
+            [None, None, InputSource::parse("5-6"), None, None, None]
         );
     }
 

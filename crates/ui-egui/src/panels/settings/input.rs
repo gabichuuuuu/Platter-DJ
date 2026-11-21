@@ -123,6 +123,7 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
                 &[("deck", &deck.letter().to_string())],
             ),
             InputTarget::Aux => texts.get("settings.input_aux").to_owned(),
+            InputTarget::Recorder => texts.get("settings.input_recorder").to_owned(),
         };
         let control = setting_named(cx, page, top, &name);
         let route = mixer.input_routes[target.index()];
@@ -148,6 +149,7 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         match target {
             InputTarget::Deck(deck) => deck_type(cx, right, deck, view, &type_choices),
             InputTarget::Aux => aux_level(cx, right, mixer.aux_level),
+            InputTarget::Recorder => recorder_source(cx, right, view),
         }
         selects.push((select, target, name, route));
         top += ROW_STEP;
@@ -266,5 +268,33 @@ fn aux_level(cx: &mut Cx<'_>, rect: Rect, level: f64) {
         texts.get("settings.aux_level"),
         theme.tokens.text.body,
         theme.tokens.color.text_secondary,
+    );
+}
+
+/// What the mix recorder records: the internal mix or this input.
+fn recorder_source(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
+    let texts = cx.texts;
+    let labels = [
+        texts.get("settings.record_internal"),
+        texts.get("settings.record_external"),
+    ];
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    choice::segmented(
+        cx,
+        rect,
+        id("settings-recorder-source"),
+        &choices,
+        Some(usize::from(view.engine.recorder.external)),
+        |index| {
+            Action::Engine(Command::RecorderSourceSet {
+                external: index == 1,
+            })
+        },
     );
 }
