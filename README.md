@@ -6,7 +6,7 @@
 
 <p align="center">
   An open-source DJ application for professional use, written in Rust,<br>
-  with its own code, graphics and sounds.
+  with its own graphics and sounds, and its own code as the goal.
 </p>
 
 <p align="center">
@@ -31,6 +31,13 @@
 Platter is an independent, open-source DJ application written in Rust. The goal is a complete
 desktop program for DJs, with the functions expected of professional DJ software, written with
 its own code, graphics and sounds.
+
+That goal is not reached yet. The graphics, the sounds and most of the code are Platter's, but
+today it also uses open-source libraries of others: for the audio device and MIDI, the window,
+decoding audio and cover pictures, key lock and the library file. Each one is listed with its
+licence in [`docs/dependencies.md`](docs/dependencies.md), is confined to one place and is to be
+replaced with Platter's own code, piece by piece. Until then Platter is not presented as written
+entirely by its project.
 
 ## Why Platter
 

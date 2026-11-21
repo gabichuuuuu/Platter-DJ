@@ -1,8 +1,9 @@
 # Dependencies
 
-Every external dependency is temporary: it can stay or be replaced by project code, and the
-maintainer decides that piece by piece. Until then each one is confined to a single crate or
-module, so replacing it touches one place.
+The goal is a program written entirely by the project; today it is not. Every external
+dependency is temporary: it is to be replaced by project code, and the maintainer decides when,
+piece by piece. Until then each one is confined to a single crate or module, so replacing it
+touches one place.
 
 ## In use
 
