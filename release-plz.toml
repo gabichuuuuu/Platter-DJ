@@ -65,6 +65,7 @@ changelog_include = [
   "platter-dsp",
   "platter-engine",
   "platter-library",
+  "platter-mcp",
   "platter-ui-egui",
 ]
 
