@@ -132,6 +132,12 @@ pub struct SettingsView {
     pub clock_output: Option<String>,
     pub clock_output_open: bool,
     pub clock_offset_ms: i32,
+    /// The MIDI inputs of the system, the one whose clock can be followed, whether it is
+    /// open, and the tempo received in tenths of a BPM while a clock arrives.
+    pub clock_inputs: Vec<String>,
+    pub clock_input: Option<String>,
+    pub clock_input_open: bool,
+    pub clock_received: Option<u32>,
     pub sample_rate: u32,
     pub buffer_frames: u32,
     /// Output of the device for master left, master right, headphones left and right.

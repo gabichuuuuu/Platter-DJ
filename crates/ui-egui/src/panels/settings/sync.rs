@@ -111,6 +111,9 @@ pub(super) fn sync_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         texts.get("settings.clock_offset_help"),
     );
 
+    // Before the list of outputs, so an open list of outputs lies over this section.
+    follow_section(cx, page, top + 230.0, view);
+
     let outputs = &settings.clock_outputs;
     choice::select(
         cx,
@@ -125,6 +128,105 @@ pub(super) fn sync_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
         |index| {
             let port = index.checked_sub(1).and_then(|index| outputs.get(index));
             Action::App(AppCommand::ClockMidiOutputSet {
+                port: port.cloned(),
+            })
+        },
+    );
+}
+
+/// The clock received: the input, the source of the master clock and what arrives.
+fn follow_section(cx: &mut Cx<'_>, page: Rect, top: f32, view: &View<'_>) {
+    let texts = cx.texts;
+    let tokens = &cx.theme.tokens;
+    let settings = view.settings;
+    let clock = &view.engine.clock;
+
+    let top = section(cx, page, top, "settings.follow_clock");
+    let control = setting(cx, page, top, "settings.clock_input");
+    let select_rect = Rect::from_min_size(control.min, egui::vec2(280.0, tokens.size.button_h));
+    let status = match (
+        &settings.clock_input,
+        settings.clock_input_open,
+        settings.clock_received,
+    ) {
+        (None, _, _) => texts.get("settings.clock_no_input").to_owned(),
+        (Some(_), false, _) => texts.get("settings.clock_closed").to_owned(),
+        (Some(_), true, None) => texts.get("settings.clock_waiting").to_owned(),
+        (Some(_), true, Some(tenths)) => texts.format(
+            "settings.clock_receiving",
+            &[("bpm", &format!("{:.1}", f64::from(tenths) / 10.0))],
+        ),
+    };
+    help(
+        cx,
+        Rect::from_min_max(
+            select_rect.min,
+            egui::pos2(control.right(), select_rect.bottom()),
+        ),
+        &status,
+    );
+
+    let control = setting(cx, page, top + 56.0, "settings.clock_source");
+    let source_labels = [
+        texts.get("settings.source_internal"),
+        texts.get("settings.source_external"),
+    ];
+    let source_choices: Vec<Choice<'_>> = source_labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let drawn = choice::segmented(
+        cx,
+        control,
+        id("settings-clock-source"),
+        &source_choices,
+        Some(usize::from(clock.external)),
+        |index| {
+            Action::Engine(Command::ClockSourceSet {
+                external: index == 1,
+            })
+        },
+    );
+    help(
+        cx,
+        Rect::from_min_max(drawn.min, egui::pos2(control.right(), drawn.bottom())),
+        texts.get("settings.clock_source_help"),
+    );
+
+    let mut labels = vec![texts.get("settings.no_input")];
+    labels.extend(settings.clock_inputs.iter().map(String::as_str));
+    let choices: Vec<Choice<'_>> = labels
+        .iter()
+        .map(|label| Choice {
+            label,
+            enabled: true,
+        })
+        .collect();
+    let current = match &settings.clock_input {
+        None => Some(0),
+        Some(name) => settings
+            .clock_inputs
+            .iter()
+            .position(|port| port == name)
+            .map(|index| index + 1),
+    };
+    let inputs = &settings.clock_inputs;
+    choice::select(
+        cx,
+        select_rect,
+        id("settings-clock-input"),
+        SelectSpec {
+            name: texts.get("settings.clock_input"),
+            choices: &choices,
+            current,
+            enabled: true,
+        },
+        |index| {
+            let port = index.checked_sub(1).and_then(|index| inputs.get(index));
+            Action::App(AppCommand::ClockMidiInputSet {
                 port: port.cloned(),
             })
         },

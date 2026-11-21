@@ -92,8 +92,9 @@ input does are in `docs/behavior/live-input.md`. M5 adds it.
 
 The MIDI output the clock goes to, the switch that sends it, the key that restarts the devices
 that follow, and the offset of the clock, -50 to 50 ms (`clock.midi.output.set`,
-`clock.midi.send.toggle`, `clock.midi.restart`, `clock.midi.offset.set`):
-`docs/behavior/midi-clock.md`. M5 adds it.
+`clock.midi.send.toggle`, `clock.midi.restart`, `clock.midi.offset.set`); then the input whose
+clock can be followed, with what arrives, and the source of the master clock
+(`clock.midi.input.set`, `clock.source.set`): `docs/behavior/midi-clock.md`. M5 adds it.
 
 ### General
 

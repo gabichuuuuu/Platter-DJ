@@ -13,11 +13,13 @@ use platter_ui_egui::sample::{self, Scene};
 use platter_ui_egui::shell::{DESIGN_HEIGHT, DESIGN_WIDTH, Shell};
 
 /// The commands of the controls of the page.
-const PAGE: [&str; 4] = [
+const PAGE: [&str; 6] = [
     "clock.midi.output.set",
     "clock.midi.send.toggle",
     "clock.midi.restart",
     "clock.midi.offset.set",
+    "clock.midi.input.set",
+    "clock.source.set",
 ];
 
 struct Stage {
@@ -94,8 +96,25 @@ impl Stage {
 fn the_page_has_a_control_for_each_clock_setting() {
     let stage = Stage::new(sample::playing(), Language::English);
     for command in PAGE {
-        assert_eq!(stage.controls(command).len(), 1, "{command}");
+        // Internal and External for the source; one control for each of the others.
+        let expected = if command == "clock.source.set" { 2 } else { 1 };
+        assert_eq!(stage.controls(command).len(), expected, "{command}");
     }
+}
+
+#[test]
+fn the_source_of_the_master_clock_is_chosen_on_the_page() {
+    let mut stage = Stage::new(sample::playing(), Language::English);
+    let external = stage.controls("clock.source.set")[1].rect.center();
+    let engine: Vec<Command> = stage
+        .click(external)
+        .into_iter()
+        .filter_map(|action| match action {
+            Action::Engine(command) => Some(command),
+            Action::App(_) => None,
+        })
+        .collect();
+    assert_eq!(engine, [Command::ClockSourceSet { external: true }]);
 }
 
 #[test]

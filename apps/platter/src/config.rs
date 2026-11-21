@@ -247,6 +247,9 @@ pub struct ClockSettings {
     pub offset_ms: i32,
     /// The clock was being sent when the settings were saved.
     pub send: bool,
+    /// The MIDI input whose clock the master clock can follow, and whether it follows it.
+    pub input: Option<String>,
+    pub external: bool,
 }
 
 impl ClockSettings {
@@ -270,6 +273,15 @@ impl ClockSettings {
                 .get("send")
                 .and_then(toml::Value::as_bool)
                 .unwrap_or(false),
+            input: table
+                .get("input")
+                .and_then(toml::Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned),
+            external: table
+                .get("external")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false),
         }
     }
 
@@ -283,6 +295,10 @@ impl ClockSettings {
             toml::Value::Integer(i64::from(self.offset_ms)),
         );
         table.insert("send".to_owned(), toml::Value::Boolean(self.send));
+        if let Some(input) = &self.input {
+            table.insert("input".to_owned(), toml::Value::String(input.clone()));
+        }
+        table.insert("external".to_owned(), toml::Value::Boolean(self.external));
         table
     }
 }
@@ -1068,6 +1084,8 @@ mod tests {
                 output: Some("Clock out".to_owned()),
                 offset_ms: 7,
                 send: false,
+                input: None,
+                external: false,
             },
         };
         assert_eq!(Settings::parse(&settings.to_toml()), settings);
@@ -1259,6 +1277,8 @@ min_playtime = {written}
                 output: Some("Clock out".to_owned()),
                 offset_ms: -12,
                 send: true,
+                input: Some("Clock in".to_owned()),
+                external: true,
             },
             ..Settings::default()
         };

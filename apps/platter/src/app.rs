@@ -15,8 +15,9 @@ use platter_audio_io::{
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
+use platter_device_io::ClockMessages;
 use platter_engine::command::{Args, CommandSpec, SPECS};
-use platter_engine::midi_clock::ClockFeed;
+use platter_engine::midi_clock::{ClockFeed, ClockFollower, ClockMessage};
 use platter_engine::{
     Command, Engine, EngineError, Event, FxUnit, InputFeed, InputTarget, PlatterAnalyser,
     Processor, Recall, RecordingNames, StemRecall, TempoRange,
@@ -49,6 +50,8 @@ use crate::manager::Document;
 use crate::midi;
 use crate::starting::{Next, Starting};
 
+/// Messages of a received MIDI clock the queue holds: more than a second at any tempo.
+const CLOCK_QUEUE: usize = 256;
 /// How often the devices are looked for again while none is playing.
 const DEVICE_RETRY: Duration = Duration::from_secs(3);
 /// How often an idle window is drawn, for the readings that change on their own.
@@ -221,6 +224,11 @@ pub struct PlatterApp {
     clock_feed: Option<ClockFeed>,
     /// The MIDI outputs of the system, as the last look found them.
     midi_outputs: Vec<String>,
+    /// The input whose clock the master clock can follow, while it is open, and what it reads
+    /// of it; times are seconds since `clock_base`.
+    clock_input: Option<(platter_device_io::Input, ClockMessages)>,
+    follower: ClockFollower,
+    clock_base: Instant,
     browser: FileBrowser,
     notices: [Option<DeckNotice>; DeckId::COUNT],
     /// The window covers the whole screen, as the window last said.
@@ -365,6 +373,9 @@ impl PlatterApp {
             clock_sender: None,
             clock_feed: None,
             midi_outputs: Vec::new(),
+            clock_input: None,
+            follower: ClockFollower::new(),
+            clock_base: Instant::now(),
             mcp: None,
             separation,
             browser,
@@ -402,6 +413,7 @@ impl PlatterApp {
             app.settings.check_at_start,
         ));
         app.open_audio(Some(source_of(processor)));
+        app.open_clock_input();
         app.open_controllers();
         let curve = app.settings.crossfader_curve;
         app.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
@@ -1101,6 +1113,46 @@ impl PlatterApp {
         }
     }
 
+    /// Opens the MIDI input the settings name for the clock to follow.
+    fn open_clock_input(&mut self) {
+        self.clock_input = None;
+        self.follower = ClockFollower::new();
+        let Some(name) = self.settings.clock.input.clone() else {
+            return;
+        };
+        let base = self.clock_base;
+        match platter_device_io::open_clock(&name, CLOCK_QUEUE, move || {
+            base.elapsed().as_secs_f64()
+        }) {
+            Ok(input) => {
+                self.log(Level::Info, &format!("MIDI clock: listening to `{name}`"));
+                self.clock_input = Some(input);
+            }
+            Err(error) => self.log(Level::Warning, &format!("MIDI clock: {error}")),
+        }
+    }
+
+    /// Reads what the clock input received and, while the source is external, brings the
+    /// master clock to it: its tempo, and its beat as it will be when the block rendered
+    /// next is heard.
+    fn follow_clock(&mut self) {
+        let Some((_, messages)) = &self.clock_input else {
+            return;
+        };
+        for (time, byte) in messages.take() {
+            if let Some(message) = ClockMessage::of(byte) {
+                self.follower.take(time, message);
+            }
+        }
+        let now = self.clock_base.elapsed().as_secs_f64();
+        let heard = now + self.clock_delay().as_secs_f64();
+        if let (Some(bpm), Some(phase)) = (self.follower.bpm(now), self.follower.phase_at(heard))
+            && let Err(error) = self.engine.follow_clock(bpm, phase)
+        {
+            self.log(Level::Warning, &format!("MIDI clock: {error}"));
+        }
+    }
+
     fn close_clock(&mut self) {
         if let Some(sender) = self.clock_sender.take() {
             self.clock_feed = sender.stop();
@@ -1256,6 +1308,9 @@ impl PlatterApp {
             deck,
             percent: settings.tempo_range,
         }));
+        commands.push(Command::ClockSourceSet {
+            external: settings.clock.external,
+        });
         let input = &settings.input;
         commands.push(Command::MixerAuxSet {
             level: input.aux_level,
@@ -1434,7 +1489,10 @@ impl PlatterApp {
             Command::MixerAuxSet { .. } => Some(false),
             _ => None,
         };
-        let clock_setting = matches!(command, Command::ClockMidiSendToggle);
+        let clock_setting = matches!(
+            command,
+            Command::ClockMidiSendToggle | Command::ClockSourceSet { .. }
+        );
         let id = command.id();
         let effect = id.starts_with("fx.")
             || id.starts_with("mixer.fx_assign")
@@ -1455,9 +1513,12 @@ impl PlatterApp {
             self.keep_input_settings(save);
         }
         if clock_setting {
-            let send = self.engine.snapshot().clock.midi_clock;
-            if send != self.settings.clock.send {
-                self.settings.clock.send = send;
+            let clock = self.engine.snapshot().clock;
+            if (clock.midi_clock, clock.external)
+                != (self.settings.clock.send, self.settings.clock.external)
+            {
+                self.settings.clock.send = clock.midi_clock;
+                self.settings.clock.external = clock.external;
                 self.save_settings();
             }
         }
@@ -1509,6 +1570,13 @@ impl PlatterApp {
                     self.save_settings();
                     self.close_clock();
                     self.open_clock();
+                }
+            }
+            AppCommand::ClockMidiInputSet { port } => {
+                if self.settings.clock.input != port {
+                    self.settings.clock.input = port;
+                    self.save_settings();
+                    self.open_clock_input();
                 }
             }
             AppCommand::ClockMidiOffsetSet { ms } => {
@@ -1790,6 +1858,8 @@ impl PlatterApp {
         self.dispatch(Command::MixerCrossfaderCurveSet { curve }.into());
         self.apply_mixer_settings();
         self.apply_recorder();
+        self.close_clock();
+        self.open_clock_input();
         self.reopen_audio();
     }
 
@@ -1971,6 +2041,7 @@ impl PlatterApp {
             }
         }
         self.watch_input();
+        self.follow_clock();
         if self.clock_sender.as_ref().is_some_and(ClockSender::is_gone) {
             self.log(Level::Warning, "MIDI clock: the output went away");
             self.close_clock();
@@ -2076,6 +2147,13 @@ impl PlatterApp {
             clock_output: self.settings.clock.output.clone(),
             clock_output_open: self.clock_sender.is_some(),
             clock_offset_ms: self.settings.clock.offset_ms,
+            clock_inputs: self.midi_inputs.clone(),
+            clock_input: self.settings.clock.input.clone(),
+            clock_input_open: self.clock_input.is_some(),
+            clock_received: self
+                .follower
+                .bpm(self.clock_base.elapsed().as_secs_f64())
+                .map(|bpm| (bpm * 10.0).round() as u32),
             sample_rate: self.settings.sample_rate,
             buffer_frames: self.settings.buffer_frames,
             routing: [

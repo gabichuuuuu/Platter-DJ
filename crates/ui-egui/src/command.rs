@@ -310,6 +310,10 @@ pub enum AppCommand {
     ClockMidiOffsetSet {
         ms: i32,
     },
+    /// The MIDI input whose clock the master clock can follow; `None` listens to none.
+    ClockMidiInputSet {
+        port: Option<String>,
+    },
     /// Puts one side of an output pair on an output of the device, counted from zero.
     AudioRoutingSet {
         slot: RouteSlot,
@@ -1559,6 +1563,14 @@ pub const APP_SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "clock.midi.input.set",
+        label: "Set MIDI clock input",
+        params: &[ParamSpec {
+            name: "port",
+            kind: ParamKind::Text,
+        }],
+    },
+    CommandSpec {
         id: "clock.midi.offset.set",
         label: "Set MIDI clock offset",
         params: &[number("ms", -50.0, 50.0)],
@@ -2276,6 +2288,12 @@ impl AppCommand {
                     port: (!port.is_empty()).then(|| port.to_owned()),
                 }
             }
+            "clock.midi.input.set" => {
+                let port = read.text("port")?;
+                Self::ClockMidiInputSet {
+                    port: (!port.is_empty()).then(|| port.to_owned()),
+                }
+            }
             "clock.midi.offset.set" => Self::ClockMidiOffsetSet {
                 ms: read.integer("ms")? as i32,
             },
@@ -2614,6 +2632,7 @@ impl AppCommand {
             Self::InputDeviceSet { .. } => "input.device.set",
             Self::ClockMidiOutputSet { .. } => "clock.midi.output.set",
             Self::ClockMidiOffsetSet { .. } => "clock.midi.offset.set",
+            Self::ClockMidiInputSet { .. } => "clock.midi.input.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",
             Self::AudioRoutingSet { .. } => "audio.routing.set",
