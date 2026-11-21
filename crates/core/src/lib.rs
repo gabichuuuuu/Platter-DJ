@@ -9,6 +9,7 @@ mod grid;
 pub mod log;
 mod loops;
 mod rate;
+mod stem;
 mod tempo;
 mod track_text;
 
@@ -19,5 +20,6 @@ pub use gain::Gain;
 pub use grid::{BEATS_PER_BAR, Beat, BeatGrid, Bpm, MAX_BEATS_VISITED, MAX_MARKERS};
 pub use loops::{LoopRegion, LoopSize};
 pub use rate::SampleRate;
+pub use stem::Stem;
 pub use tempo::Tempo;
 pub use track_text::{MAX_TRACK_TEXT, TrackMemory, TrackTextError};
