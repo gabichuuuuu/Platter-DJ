@@ -533,6 +533,10 @@ pub enum Command {
     },
     /// A click on every beat of the clock, on the headphones.
     ClockMetronomeToggle,
+    /// Starts or stops sending the master clock as MIDI clock: `docs/behavior/midi-clock.md`.
+    ClockMidiSendToggle,
+    /// Stop and Start of the MIDI clock again on the next beat.
+    ClockMidiRestart,
     GlobalSyncModeSet {
         mode: SyncMode,
     },
@@ -1598,6 +1602,16 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "clock.midi.send.toggle",
+        label: "Send MIDI clock",
+        params: &[],
+    },
+    CommandSpec {
+        id: "clock.midi.restart",
+        label: "Restart MIDI clock",
+        params: &[],
+    },
+    CommandSpec {
         id: "global.snap.toggle",
         label: "Snap",
         params: &[],
@@ -2212,6 +2226,8 @@ impl Command {
                 amount: read.number("amount")?,
             },
             "clock.metronome.toggle" => Self::ClockMetronomeToggle,
+            "clock.midi.send.toggle" => Self::ClockMidiSendToggle,
+            "clock.midi.restart" => Self::ClockMidiRestart,
             "global.sync.mode.set" => Self::GlobalSyncModeSet {
                 mode: read.sync_mode()?,
             },
@@ -2565,6 +2581,8 @@ impl Command {
             Self::ClockTap => "clock.tap",
             Self::ClockBend { .. } => "clock.bend",
             Self::ClockMetronomeToggle => "clock.metronome.toggle",
+            Self::ClockMidiSendToggle => "clock.midi.send.toggle",
+            Self::ClockMidiRestart => "clock.midi.restart",
             Self::GlobalSyncModeSet { .. } => "global.sync.mode.set",
             Self::GlobalSnapToggle => "global.snap.toggle",
             Self::GlobalLoadMarkerToggle => "global.load_marker.toggle",
