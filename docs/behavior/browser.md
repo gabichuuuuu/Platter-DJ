@@ -776,12 +776,21 @@ is where files are written and read.
   Every entry is written, those of missing tracks too, with the path the library has.
 - **Importing.** The menu of *Playlists* and of a folder of the playlists offers *Import
   playlists from* with the name of that folder (`browser.playlist.import`, with the folder of
-  the tree and the folder of files). Each `.m3u` and `.m3u8` file of that folder, not of the
+  the tree and the folder of files). Each `.m3u`, `.m3u8`, `.pls` and `.xspf` file of that folder, not of the
   folders inside it, becomes a new playlist in the folder of the tree, named as the file without
   its extension, at most 100 files by name. Each entry whose file exists is taken into the
   collection when it is not there, as a track added to a playlist is
   (`docs/behavior/library.md`, *Importing one file*), and added in its order; the others are
   skipped.
+- **Importing a collection.** The menu of *Playlists* offers *Import collections from* with the
+  name of the folder the explorer shows (`browser.collection.import`). Each `.xml` file of that
+  folder that is a collection file is imported, at most 10 by name: its tracks whose files exist
+  are taken into the collection as one file is (`docs/behavior/library.md`, *Importing one
+  file*), and its tree is made again under a new folder of the playlists named after the program
+  that wrote it, or after the file. A track that has no beatgrid and no cues in Platter takes
+  those of the file; one that has them keeps them. Its rating and its comment are taken when it
+  has none. Another XML file of the folder is passed over; a folder without a collection file
+  gives the line that the file could not be read.
 - **The outcome.** The line above the list says what was written, or how many playlists and
   tracks were imported and how many entries were skipped. Both run on the worker of the
   library; the keys that import and export are off until it ends.
@@ -792,7 +801,9 @@ is where files are written and read.
 - The tracks are not copied with an exported playlist: the file names them where they are, so
   another computer finds them only at the same paths. Copying music is left to the system.
 - The playlist format of the documented application is not written or read: M3U is the format other
-  software shares.
+  software shares. Collections come in through the shared format of another DJ program, which
+  the manual does not name; the colours, the play counts and the dates of that file are not
+  taken, and a track keeps the grid and the cues it already has in Platter.
 - Dropping a playlist file on the tree does not import it yet.
 
 ### Edge cases

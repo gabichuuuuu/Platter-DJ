@@ -590,6 +590,9 @@ fn context_menu(
     let import_label = explorer_name
         .as_deref()
         .map(|name| texts.format("browser.menu_import", &[("folder", name)]));
+    let collection_label = explorer_name
+        .as_deref()
+        .map(|name| texts.format("browser.menu_import_collection", &[("folder", name)]));
     let import = |folder: Option<NodeId>| {
         explorer.zip(import_label.as_deref()).map(|(path, label)| {
             (
@@ -715,6 +718,17 @@ fn context_menu(
         MenuTarget::Playlists => {
             let mut entries: Vec<_> = new(None).into();
             entries.extend(import(None));
+            if let (Some(path), Some(label)) = (explorer, collection_label.as_deref()) {
+                entries.push((
+                    Item {
+                        label,
+                        action: Some(
+                            AppCommand::BrowserCollectionImport { path: path.clone() }.into(),
+                        ),
+                    },
+                    Then::Nothing,
+                ));
+            }
             (entries, id("tree-playlists"))
         }
         MenuTarget::Folder(folder) if item_of(folder).is_some_and(|row| row.folder) => {

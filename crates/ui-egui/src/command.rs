@@ -579,9 +579,15 @@ pub enum AppCommand {
         playlist: NodeId,
         path: PathBuf,
     },
-    /// Makes a playlist of each M3U file of a folder, in a folder of the tree or at its top.
+    /// Makes a playlist of each playlist file of a folder, in a folder of the tree or at its
+    /// top.
     BrowserPlaylistImport {
         folder: Option<NodeId>,
+        path: PathBuf,
+    },
+    /// Imports the collection files of a folder: `docs/behavior/browser.md`, *Collection
+    /// files*.
+    BrowserCollectionImport {
         path: PathBuf,
     },
     /// Makes a playlist the preparation list.
@@ -1548,6 +1554,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[number("folder", 0.0, MAX_NODE_ID), PATH],
     },
     CommandSpec {
+        id: "browser.collection.import",
+        label: "Import collections from a folder",
+        params: &[PATH],
+    },
+    CommandSpec {
         id: "browser.preparation.select",
         label: "Use playlist as preparation list",
         params: &[PLAYLIST],
@@ -2165,6 +2176,9 @@ impl AppCommand {
                     path: PathBuf::from(read.text("path")?),
                 }
             }
+            "browser.collection.import" => Self::BrowserCollectionImport {
+                path: PathBuf::from(read.text("path")?),
+            },
             "browser.preparation.select" => Self::BrowserPreparationSelect {
                 playlist: read.playlist()?,
             },
@@ -2316,6 +2330,7 @@ impl AppCommand {
             Self::LibraryMissingKeep => "library.missing.keep",
             Self::BrowserPlaylistExport { .. } => "browser.playlist.export",
             Self::BrowserPlaylistImport { .. } => "browser.playlist.import",
+            Self::BrowserCollectionImport { .. } => "browser.collection.import",
             Self::BrowserPreparationSelect { .. } => "browser.preparation.select",
             Self::BrowserPreparationAppend => "browser.preparation.append",
             Self::BrowserFavouriteSet { .. } => "browser.favourite.set",
