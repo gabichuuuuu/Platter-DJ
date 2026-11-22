@@ -6,6 +6,9 @@
   rustup installs it on first use.
 - Git.
 - `cargo-deny` 0.20.2: `cargo install cargo-deny --version 0.20.2 --locked`.
+- cmake and a C compiler, which build libopus for broadcasting (`docs/decisions/0046-broadcast-encoding.md`).
+  On Windows the build goes through MSBuild, which fails past 260 characters of path: from a deep
+  folder, point `CARGO_TARGET_DIR` at a short one.
 - On Windows, the MSVC build tools. On Linux, the packages the CI workflow installs
   (`.github/workflows/ci.yml`): the ALSA headers for cpal and the windowing libraries for eframe.
 - Integration tests write their temporary files under `target/`, never elsewhere.

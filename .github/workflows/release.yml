@@ -172,6 +172,15 @@ jobs:
             cp target/release/platter target/release/platter-cli "$name/"
           fi
           cp README.md LICENSE-MIT LICENSE-APACHE NOTICE "$name/"
+          # The notices of what the binaries embed: the fonts and libopus (docs/legal-notes.md).
+          mkdir "$name/licenses"
+          cp docs/design/fonts/OFL.txt "$name/licenses/Geist-OFL.txt"
+          opus_manifest=$(cargo metadata --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "opusic-sys") | .manifest_path')
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            opus_manifest=$(cygpath -u "$opus_manifest")
+          fi
+          cp "$(dirname "$opus_manifest")/opus/COPYING" "$name/licenses/libopus-COPYING.txt"
           if [ "$RUNNER_OS" = "Windows" ]; then
             archive="$name.zip"
             7z a -tzip "$archive" "$name" > /dev/null

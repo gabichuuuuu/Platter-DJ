@@ -17,9 +17,9 @@ has the count of `main`. Do not edit the table by hand.
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
 | M4 | 31 | 31 | 0 | 0 |
-| M5 | 11 | 5 | 2 | 4 |
+| M5 | 11 | 5 | 3 | 3 |
 | Later | 5 | 0 | 0 | 5 |
-| Total | 162 | 148 | 5 | 9 |
+| Total | 162 | 148 | 6 | 8 |
 
 First complete version (M0 to M3): 112 of 115 features done.
 
@@ -146,12 +146,15 @@ Where it stands:
   set; capture from the loop recorder.
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
   auxiliary knob and the keys of the MIDI clock, which `docs/design/`
-  does not draw yet; broadcasting, which needs an encoder and a network connection the user
-  starts.
+  does not draw yet.
 - **HID controllers, in progress.** Mappings name the bits, bytes and words of the reports of a
   HID device, and Platter lists the HID devices and reads their reports on a thread of their own
   (`docs/behavior/hid-controllers.md`, `docs/decisions/0044-hid-devices.md`). Still to do:
   choosing a HID device in the controller manager, learn mode and output to the device.
+- **Broadcasting, in progress.** The mix coded as Opus in Ogg at 48 kHz, resampled from the rate
+  of the device (`docs/behavior/broadcasting.md`, `docs/decisions/0046-broadcast-encoding.md`).
+  Still to do: the connection to the server, which the user starts, its settings and the
+  Broadcast key.
 
 ### After M5
 
