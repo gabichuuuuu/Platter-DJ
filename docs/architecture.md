@@ -14,6 +14,7 @@ today; a crate is created when it has code, in the milestone the table names.
 | L1 | `platter-library` | Collection, playlists, history | M3 |
 | L1 | `platter-control` | Mappings: from MIDI messages to commands, with modifiers | M3 (the keyboard of M2 lives in the interface crate) |
 | L1 | `platter-stems` | Stem separation | M4 |
+| L1 | `platter-broadcast` | The mix as an Ogg Opus stream for a streaming server | M5 |
 | L2 | `platter-engine` | Decks, mixer, command registry, real-time processor, background track loading, three-band waveform peaks, render without a device | M1 |
 | L3 | `platter-audio-io` | Devices, the output stream and the input stream with cpal; a null backend for tests | M2 |
 | L3 | `platter-device-io` | MIDI and HID ports | M3 |
