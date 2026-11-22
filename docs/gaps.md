@@ -21,6 +21,6 @@ Functions that are planned but not built yet are not gaps: they are in `docs/par
   application, and there is no scripting language.
 - The effect catalogue starts with eight original effects in M4. The rest of the catalogue has
   no milestone yet.
-- Link compatibility (M5) is an own implementation; the official library is not linked.
+- Link compatibility has no milestone: it waits for a public description of the protocol that is not code under the GPL (`docs/decisions/0043-link-later.md`). It will be an own implementation; the official library is not linked.
 - Stem separation uses a model the user downloads separately (M4); see `docs/legal-notes.md`.
 - No telemetry, no automatic reports, and no network connection without an explicit user action.

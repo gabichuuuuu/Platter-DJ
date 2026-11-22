@@ -87,7 +87,7 @@ features = [
   { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --lib midi_clock; cargo test -p platter-engine --test midi_clock --test realtime_memory; cargo test -p platter-ui-egui --test settings_sync; synthesised timings only, not tried with a real MIDI device, see docs/behavior/midi-clock.md" },
-  { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
+  { id = "link", name = "Link compatibility, own implementation", milestone = "later", status = "planned" },
 ]
 
 [[area]]

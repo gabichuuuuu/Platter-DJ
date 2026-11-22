@@ -17,9 +17,9 @@ has the count of `main`. Do not edit the table by hand.
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
 | M4 | 31 | 31 | 0 | 0 |
-| M5 | 15 | 0 | 0 | 15 |
-| Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 143 | 3 | 16 |
+| M5 | 14 | 5 | 1 | 8 |
+| Later | 2 | 0 | 0 | 2 |
+| Total | 162 | 148 | 4 | 10 |
 
 First complete version (M0 to M3): 112 of 115 features done.
 
@@ -129,8 +129,8 @@ Decisions already taken for this milestone:
 ### M5. Extras
 
 DVS with an own timecode and decoder, remix decks, a pattern sequencer with own sounds, HID
-controllers, MIDI clock, compatibility with Ableton Link as an own implementation, live input and
-microphone, broadcasting to a server the user configures.
+controllers, MIDI clock, live input and microphone, broadcasting to a server the user configures.
+Compatibility with Ableton Link left M5 (docs/decisions/0043-link-later.md).
 
 Where it stands:
 
@@ -146,13 +146,16 @@ Where it stands:
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
   look of the live deck, the auxiliary knob and the keys of the MIDI clock, which `docs/design/`
   does not draw yet; the timecode for DVS, which needs a format of Platter's own and its records;
-  Link, whose only detailed description is code under the GPL; HID controllers, which need a
+  HID controllers, which need a
   dependency that is not approved; broadcasting, which needs an encoder and a network connection
   the user starts.
 
 ### After M5
 
 Hosting third-party CLAP plugins.
+
+Compatibility with Ableton Link as an own implementation, once the protocol has a public
+description that is not code under the GPL (docs/decisions/0043-link-later.md).
 
 Replacing external dependencies with project code, piece by piece, as the maintainer decides
 (`docs/dependencies.md`). With it, audio output below the device period on Windows through
