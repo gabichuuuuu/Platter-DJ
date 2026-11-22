@@ -132,6 +132,11 @@ each slot.
   a command naming the deck, where the manual drags the title of the deck onto the cell. The grid is empty when Platter starts and the type of a remix deck is
   not kept in the settings: it starts as a track deck. A restart of the engine, on a change of
   audio device, empties the grid too; the deck stays a remix deck.
+- **Punch counts the run, not the loop before.** The manual starts a punched cell from the place
+  the previous sample had reached, fixed to the timeline of the deck. Platter counts the beats since
+  the first cell of the run started: the same place while the samples are as long as each other, and
+  a place in time with the run when they are not, where the place inside a shorter loop that went
+  round would jump back. A run ends when nothing in the slot plays or waits.
 - **A boundary counts the beats of the clock**, not bars of a track: with four beats the boundary is
   every fourth beat since the engine started, which is not tied to the downbeat of a deck.
 

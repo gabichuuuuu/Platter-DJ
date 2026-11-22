@@ -1846,6 +1846,8 @@ impl Engine {
     /// Copies the loop of deck `from` into a cell, on a worker thread: the loop that is on or,
     /// without one, the size of a new loop from where the deck plays.
     fn start_capture(&mut self, deck: DeckId, at: CellId, from: DeckId) -> Result<(), EngineError> {
+        // The loop and the grid as the processor has them now, not as of the last poll.
+        self.take_reports();
         let source = &self.decks[from.index()];
         let (Some(audio), Some(info)) = (source.audio.clone(), source.track.clone()) else {
             return Err(EngineError::NothingToCapture);
@@ -2370,6 +2372,21 @@ impl Engine {
     pub fn poll(&mut self) -> Vec<Event> {
         self.collect_retired();
         self.send_pending_analyses();
+        self.take_reports();
+        self.follow_fade_markers();
+        let mut events = Vec::new();
+        while let Ok(finished) = self.finished_loads.try_recv() {
+            events.extend(self.finish_load(finished));
+        }
+        events.append(&mut self.later_events);
+        let dropped = self.ends.shared.recorder_dropped.get();
+        self.recorder
+            .poll(&mut self.ends.commands, dropped, &mut events);
+        events
+    }
+
+    /// Takes in what the processor reported of the grids, loops and cues of the decks.
+    fn take_reports(&mut self) {
         while let Ok(report) = self.ends.reports.pop() {
             let deck = &mut self.decks[report.deck.index()];
             if let Some(grid) = report.grid {
@@ -2382,16 +2399,6 @@ impl Engine {
                 deck.cues = cues;
             }
         }
-        self.follow_fade_markers();
-        let mut events = Vec::new();
-        while let Ok(finished) = self.finished_loads.try_recv() {
-            events.extend(self.finish_load(finished));
-        }
-        events.append(&mut self.later_events);
-        let dropped = self.ends.shared.recorder_dropped.get();
-        self.recorder
-            .poll(&mut self.ends.commands, dropped, &mut events);
-        events
     }
 
     /// Starts the partner of a playing deck from its fade-in cue when the deck crosses one of

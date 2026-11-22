@@ -101,7 +101,7 @@ pub(crate) fn capture_sample(
     seconds: f64,
     bpm: Option<Bpm>,
 ) -> Result<DecodedSample, String> {
-    if !seconds.is_finite() || seconds > MAX_SAMPLE_SECONDS {
+    if !seconds.is_finite() || seconds > MAX_SAMPLE_SECONDS || !start.is_finite() {
         return Err(format!(
             "a sample is at most {MAX_SAMPLE_SECONDS:.0} seconds long"
         ));
@@ -111,7 +111,10 @@ pub(crate) fn capture_sample(
     let first = (start.max(0.0) * rate.as_f64()).round() as usize;
     let count = (seconds.max(0.0) * rate.as_f64()).round() as usize;
     let last = first.saturating_add(count).min(frames);
-    let samples = audio.samples().get(first * 2..last * 2).unwrap_or_default();
+    let samples = audio
+        .samples()
+        .get(first.saturating_mul(2)..last.saturating_mul(2))
+        .unwrap_or_default();
     if samples.len() < 4 {
         return Err("the part to capture is empty".to_owned());
     }

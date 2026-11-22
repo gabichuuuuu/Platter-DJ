@@ -443,13 +443,116 @@ fn punched_onset(punch: bool) -> usize {
 }
 
 #[test]
-fn in_punch_mode_a_new_loop_starts_where_the_one_before_had_reached() {
+fn in_punch_mode_a_new_loop_starts_where_its_run_had_reached() {
     // Without punch the loop starts at its beginning on beat 2; with it, one beat into
     // itself, so its click comes on beat 3.
     let plain = punched_onset(false);
     let punched = punched_onset(true);
     assert!(plain.abs_diff(2 * BEAT) <= 8, "{plain}");
     assert!(punched.abs_diff(3 * BEAT) <= 8, "{punched}");
+}
+
+/// A rig with a one-beat loop of 440 Hz in cell 1 of slot 1 and a four-beat loop with a click
+/// on its first frame in cell 2, both at 120 BPM, the slot punched.
+fn punch_rig(name: &str) -> Rig {
+    let mut rig = remix_rig();
+    load(
+        &mut rig,
+        cell(0, 0),
+        sample_file(&format!("{name}-short"), &sine(440.0, 0.5)),
+    );
+    load(
+        &mut rig,
+        cell(0, 1),
+        sample_file(&format!("{name}-long"), &click(2.0)),
+    );
+    for at in [cell(0, 0), cell(0, 1)] {
+        rig.send(Command::RemixCellBpmSet {
+            deck: A,
+            at,
+            bpm: Bpm::new(120.0).unwrap(),
+        });
+    }
+    rig.send(Command::RemixSlotPunchToggle { deck: A, slot: 0 });
+    rig
+}
+
+#[test]
+fn a_punched_loop_counts_from_the_start_of_the_run_not_from_where_the_loop_before_wrapped() {
+    // The short loop starts on beat 1 and has gone round twice when the long one takes over
+    // on beat 4: three beats into the run, so the click of the long one comes on beat 5.
+    let mut rig = punch_rig("run");
+    rig.run(0.1);
+    trigger(&mut rig, cell(0, 0));
+    let mut out = rig.run(1.7);
+    trigger(&mut rig, cell(0, 1));
+    out.extend(rig.run(1.5));
+    let start = (1.85 * f64::from(RATE)) as usize;
+    let heard = onset(&out[start..], 0.1).unwrap() + start + (0.1 * f64::from(RATE)) as usize;
+    assert!(heard.abs_diff(5 * BEAT) <= 8, "{heard}");
+}
+
+#[test]
+fn a_stop_ends_the_run_of_a_punched_slot() {
+    let mut rig = punch_rig("stop-run");
+    rig.run(0.1);
+    trigger(&mut rig, cell(0, 0));
+    rig.run(0.7);
+    // The long cell waits for beat 2 and is stopped before: the slot is silent.
+    trigger(&mut rig, cell(0, 1));
+    rig.run(0.1);
+    rig.send(Command::RemixSlotStop { deck: A, slot: 0 });
+    rig.run(0.6);
+    // A new run on beat 4: the click comes on it, not three beats into the sample.
+    trigger(&mut rig, cell(0, 1));
+    let out = rig.run(1.0);
+    let heard = onset(&out, 0.1).unwrap() + (1.5 * f64::from(RATE)) as usize;
+    assert!(heard.abs_diff(4 * BEAT) <= 8, "{heard}");
+}
+
+#[test]
+fn a_capture_copies_the_part_of_the_track_from_where_the_deck_is() {
+    let (mut engine, processor) = Engine::with_analyser(rate(), Arc::new(Steady));
+    engine.dispatch(Command::MixerAutogainToggle).unwrap();
+    let mut rig = Rig { engine, processor };
+    // A click at 1.5 s in ten seconds of silence; the deck stands at 1 s.
+    let mut track = vec![0.0; 10 * RATE as usize];
+    track[(1.5 * f64::from(RATE)) as usize] = 0.5;
+    rig.load(DeckId::B, sample_file("capture-click", &track));
+    rig.send(Command::DeckSeek {
+        deck: DeckId::B,
+        seconds: 1.0,
+    });
+    rig.run(0.1);
+    rig.send(Command::RemixCellCapture {
+        deck: A,
+        at: cell(0, 0),
+        from: DeckId::B,
+    });
+    rig.engine.wait_for_loads();
+    rig.send(Command::RemixCellBpmClear {
+        deck: A,
+        at: cell(0, 0),
+    });
+    rig.send(Command::RemixCellModeSet {
+        deck: A,
+        at: cell(0, 0),
+        mode: CellMode::OneShot,
+    });
+    rig.send(Command::RemixQuantizeSet {
+        deck: A,
+        beats: None,
+    });
+    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    rig.send(Command::DeckTypeSet {
+        deck: A,
+        kind: DeckKind::Remix,
+    });
+    rig.run(0.1);
+    trigger(&mut rig, cell(0, 0));
+    let heard = onset(&rig.run(1.5), 0.1).unwrap();
+    let half = (0.5 * f64::from(RATE)) as usize;
+    assert!(heard.abs_diff(half) <= 300, "{heard}");
 }
 
 #[test]

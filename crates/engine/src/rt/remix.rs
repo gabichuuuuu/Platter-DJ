@@ -327,6 +327,11 @@ impl RemixPlayer {
         let engine_rate = self.engine_rate;
         let mut out = [0.0f32; 2];
         for slot in &mut self.slots {
+            // A slot with nothing that plays or waits has ended its run: the next cell starts
+            // its own, punched or not.
+            if slot.playing.is_none() && slot.waiting.is_none() {
+                slot.timeline = None;
+            }
             if let Some(waiting) = slot.waiting
                 && waiting
                     .at
