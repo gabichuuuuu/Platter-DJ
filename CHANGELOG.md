@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.7.0...v0.8.0) - 2026-11-22
+
+### Added
+
+- *(broadcast)* code the mix as an Ogg Opus stream ([#73](https://github.com/gabichuuuuu/Platter-DJ/pull/73))
+- *(ui-egui)* show the input of a live deck in its place ([#71](https://github.com/gabichuuuuu/Platter-DJ/pull/71))
+- *(ui-egui)* show the grid of a remix deck ([#70](https://github.com/gabichuuuuu/Platter-DJ/pull/70))
+- *(engine)* add the remix deck, driven by commands ([#67](https://github.com/gabichuuuuu/Platter-DJ/pull/67))
+- *(engine)* route an input to the recorders and the FX Send ([#65](https://github.com/gabichuuuuu/Platter-DJ/pull/65))
+- *(engine)* send the MIDI clock and follow a received one ([#64](https://github.com/gabichuuuuu/Platter-DJ/pull/64))
+- *(engine)* add the input routing, live decks and the auxiliary input ([#63](https://github.com/gabichuuuuu/Platter-DJ/pull/63))
+- *(control, device-io)* map HID reports and read HID devices ([#72](https://github.com/gabichuuuuu/Platter-DJ/pull/72))
+- *(engine)* add gate, reverse, punch and capture to the remix deck ([#68](https://github.com/gabichuuuuu/Platter-DJ/pull/68))
+
+### Docs
+
+- leave Link compatibility and the DVS timecode out of M5 ([#69](https://github.com/gabichuuuuu/Platter-DJ/pull/69))
+
 ## [0.7.0](https://github.com/gabichuuuuu/Platter-DJ/compare/v0.6.0...v0.7.0) - 2026-11-21
 
 ### Added
