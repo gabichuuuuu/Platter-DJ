@@ -7,7 +7,9 @@ mod common;
 use common::{RATE, Rig, sine_file};
 use platter_core::DeckId;
 use platter_engine::command::{Args, Value};
-use platter_engine::{Command, InputFeed, InputSource, InputTarget, LoopSource, MixerMode};
+use platter_engine::{
+    Command, DeckKind, InputFeed, InputSource, InputTarget, LoopSource, MixerMode,
+};
 use platter_testkit::measure::{max_step, sine_fit};
 use platter_testkit::signal::channel;
 
@@ -65,7 +67,12 @@ fn route(rig: &mut Rig, target: InputTarget, input: &str) {
 }
 
 fn live(rig: &mut Rig, deck: DeckId, live: bool) {
-    rig.send(Command::DeckTypeSet { deck, live });
+    let kind = if live {
+        DeckKind::Live
+    } else {
+        DeckKind::Track
+    };
+    rig.send(Command::DeckTypeSet { deck, kind });
     // The crossfader at the side of deck A gives it full gain.
     rig.send(Command::MixerCrossfaderSet { position: 0.0 });
 }
@@ -90,7 +97,7 @@ fn a_live_deck_plays_its_input_through_its_channel() {
     let faded = run(&mut rig, &mut device, 0.2);
     assert!(amplitude(&faded, 0, 1_000.0) < 1e-4);
     let snapshot = rig.engine.snapshot();
-    assert!(snapshot.decks[0].controls.live);
+    assert!(snapshot.decks[0].controls.kind == DeckKind::Live);
     assert!(snapshot.input.reading);
     assert_eq!(snapshot.input.gaps, 0);
     assert!((snapshot.input.levels[0] - 0.5).abs() < 0.01);
@@ -219,7 +226,7 @@ fn the_controls_survive_a_new_engine() {
         InputSource::parse("3-4")
     );
     assert_eq!(snapshot.mixer.aux_level, 0.7);
-    assert!(snapshot.decks[2].controls.live);
+    assert!(snapshot.decks[2].controls.kind == DeckKind::Live);
 }
 
 #[test]
@@ -235,7 +242,7 @@ fn the_commands_parse_from_text() {
         parse("deck.type.set", &[("deck", "b"), ("type", "live")]),
         Ok(Command::DeckTypeSet {
             deck: DeckId::B,
-            live: true
+            kind: DeckKind::Live
         })
     ));
     assert!(matches!(
@@ -256,7 +263,7 @@ fn the_commands_parse_from_text() {
         })
     ));
     assert!(parse("input.routing.set", &[("target", "aux"), ("input", "2-3")]).is_err());
-    assert!(parse("deck.type.set", &[("deck", "a"), ("type", "remix")]).is_err());
+    assert!(parse("deck.type.set", &[("deck", "a"), ("type", "sampler")]).is_err());
     let mut rig = Rig::new();
     assert!(
         rig.engine

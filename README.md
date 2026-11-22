@@ -167,6 +167,9 @@ Everything known to be missing, unfinished or not yet listened to.
 - The MIDI clock is sent and followed from the Sync page of the preferences; only synthesised
   timings were measured, never a real MIDI device (`docs/behavior/midi-clock.md`). There is no
   Link.
+- A deck can be a remix deck, a grid of samples that start on the beats of the master clock, but
+  only through commands (the command line, MCP, mappings): the grid has no place on the screen yet,
+  and there is no capture, no key lock in a slot and no saving of a set (`docs/behavior/remix-deck.md`).
 - Key lock softens the attack of kicks, the first milliseconds after a jump play with the
   pitch following the speed, a track below 32 kHz plays without it, and nobody has listened to
   it; only synthesised signals were measured (`docs/decisions/0021-key-lock-stretch.md`). The

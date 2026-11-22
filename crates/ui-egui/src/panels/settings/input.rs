@@ -6,7 +6,7 @@
 
 use egui::{Rect, Role, Sense, WidgetInfo};
 use platter_core::DeckId;
-use platter_engine::{Command, InputSource, InputTarget};
+use platter_engine::{Command, DeckKind, InputSource, InputTarget};
 
 use super::{help, section, setting, setting_named};
 use crate::command::{Action, AppCommand};
@@ -219,23 +219,33 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     );
 }
 
-/// Track or live input, for one deck.
+/// Track or live input, for one deck. A remix deck, set by command while its grid has no
+/// place on the screen, shows neither: `docs/behavior/remix-deck.md`.
 fn deck_type(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, choices: &[Choice<'_>]) {
-    let live = view
+    let kind = view
         .engine
         .decks
         .get(deck.index())
-        .is_some_and(|snapshot| snapshot.controls.live);
+        .map_or(DeckKind::Track, |snapshot| snapshot.controls.kind);
+    let current = match kind {
+        DeckKind::Track => Some(0),
+        DeckKind::Live => Some(1),
+        DeckKind::Remix => None,
+    };
     choice::segmented(
         cx,
         rect,
         id(("settings-deck-type", deck.index())),
         choices,
-        Some(usize::from(live)),
+        current,
         |index| {
             Action::Engine(Command::DeckTypeSet {
                 deck,
-                live: index == 1,
+                kind: if index == 1 {
+                    DeckKind::Live
+                } else {
+                    DeckKind::Track
+                },
             })
         },
     );

@@ -139,7 +139,9 @@ fn apply(engine: &mut Engine, timed: &TimedCommand) -> Result<(), RenderError> {
             error,
         })?;
     for event in engine.wait_for_loads() {
-        if let Event::LoadFailed { deck, message } = event {
+        if let Event::LoadFailed { deck, message } | Event::RemixLoadFailed { deck, message, .. } =
+            event
+        {
             return Err(RenderError::Load { deck, message });
         }
     }

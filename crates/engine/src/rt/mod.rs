@@ -24,6 +24,7 @@ mod midi_clock;
 mod preview;
 mod processor;
 mod recorder;
+mod remix;
 mod shared;
 mod stems;
 mod strip;
@@ -52,6 +53,9 @@ pub use loop_recorder::{LOOP_BARS, LoopPhase, LoopSource, MAX_LOOP_SECONDS};
 pub use midi_clock::{ClockEvent, ClockMessage, TICKS_PER_BEAT};
 pub use processor::Processor;
 pub use recorder::Recorded;
+pub use remix::{
+    CELLS, CellId, CellMode, CellSettings, MAX_SAMPLE_SECONDS, QUANTIZE_BEATS, SLOTS, SlotState,
+};
 pub use shared::{DeckShared, MasterChoice, Shared};
 pub use stems::StemSettings;
 
@@ -472,11 +476,48 @@ pub enum RtCommand {
     LoopDecay {
         decay: f32,
     },
-    /// The deck plays the input routed to it in the place of its track, or its track:
-    /// `docs/behavior/live-input.md`.
-    DeckLive {
+    /// What the deck plays: its track, the input routed to it
+    /// (`docs/behavior/live-input.md`) or its grid of samples (`docs/behavior/remix-deck.md`).
+    DeckType {
         deck: DeckId,
-        live: bool,
+        kind: DeckKind,
+    },
+    /// Puts a sample in a cell of the grid of a deck, or empties it. Exactly one item comes
+    /// back through the retired queue per command.
+    RemixLoad {
+        deck: DeckId,
+        at: CellId,
+        audio: Option<TrackAudio>,
+        settings: CellSettings,
+    },
+    RemixSettings {
+        deck: DeckId,
+        at: CellId,
+        settings: CellSettings,
+    },
+    RemixTrigger {
+        deck: DeckId,
+        at: CellId,
+    },
+    RemixStop {
+        deck: DeckId,
+        slot: usize,
+    },
+    /// Volume of a slot, 0 to 1.
+    RemixVolume {
+        deck: DeckId,
+        slot: usize,
+        level: f32,
+    },
+    RemixMute {
+        deck: DeckId,
+        slot: usize,
+        on: bool,
+    },
+    /// Beats of the boundary the cells start and stop on; `None` starts them at once.
+    RemixQuantize {
+        deck: DeckId,
+        beats: Option<u32>,
     },
     /// The input a target of the routing takes; `None` leaves it silent.
     InputRoute {
@@ -491,6 +532,33 @@ pub enum RtCommand {
     InputLatency {
         frames: usize,
     },
+}
+
+/// What a deck plays.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeckKind {
+    #[default]
+    Track,
+    /// The input routed to the deck: `docs/behavior/live-input.md`.
+    Live,
+    /// Its grid of samples: `docs/behavior/remix-deck.md`.
+    Remix,
+}
+
+impl DeckKind {
+    pub const ALL: [Self; 3] = [Self::Track, Self::Live, Self::Remix];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Track => "track",
+            Self::Live => "live",
+            Self::Remix => "remix",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
 }
 
 /// What the input routing feeds.

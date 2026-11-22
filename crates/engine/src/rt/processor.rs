@@ -21,11 +21,12 @@ use super::metronome::Metronome;
 use super::midi_clock::MidiClock;
 use super::preview::PreviewPlayer;
 use super::recorder::Tap;
+use super::remix::RemixPlayer;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
 use super::{
-    COMMAND_CAPACITY, CROSSFADER_SIDES, DeckReport, InputTarget, Output, Queues, Retired,
+    COMMAND_CAPACITY, CROSSFADER_SIDES, DeckKind, DeckReport, InputTarget, Output, Queues, Retired,
     RtCommand, Shared,
 };
 
@@ -43,6 +44,11 @@ struct Channel {
     /// One while the deck plays its input in the place of its track:
     /// `docs/behavior/live-input.md`.
     live: Smoothed,
+    /// One while the deck plays its grid of samples in the place of its track:
+    /// `docs/behavior/remix-deck.md`.
+    remix: Smoothed,
+    /// Boxed: its 64 cells would make the processor large.
+    grid: Box<RemixPlayer>,
 }
 
 pub struct Processor {
@@ -97,6 +103,10 @@ pub struct Processor {
     /// The input each target of the routing takes, in the order of [`InputTarget::ALL`].
     routes: [Option<InputSource>; InputTarget::ALL.len()],
     aux_level: Smoothed,
+    /// Beats of the clock since the processor started, with the phase of the latest frame,
+    /// and that phase: the remix decks count their boundaries on it.
+    beat: f64,
+    last_phase: f64,
 }
 
 impl Processor {
@@ -112,6 +122,8 @@ impl Processor {
             pre_listen: parameter(0.0),
             tick: Tick::new(rate),
             live: parameter(0.0),
+            remix: parameter(0.0),
+            grid: Box::new(RemixPlayer::new(rate)),
         };
         Self {
             commands: queues.commands,
@@ -151,6 +163,8 @@ impl Processor {
             input: Box::new(InputReader::new(rate, queues.input)),
             routes: [None; InputTarget::ALL.len()],
             aux_level: parameter(0.0),
+            beat: 0.0,
+            last_phase: 0.0,
         }
     }
 
@@ -233,12 +247,47 @@ impl Processor {
             RtCommand::CueGoto { deck } => self.player(deck).goto_cue(),
             RtCommand::CueButton { deck, pressed } => self.player(deck).cue_button(pressed),
             RtCommand::CupButton { deck, pressed } => self.player(deck).cup_button(pressed),
-            RtCommand::DeckLive { deck, live } => {
-                if live {
+            RtCommand::DeckType { deck, kind } => {
+                if kind != DeckKind::Track {
                     self.player(deck).set_playing(false);
                 }
-                let target = if live { 1.0 } else { 0.0 };
-                self.channels[deck.index()].live.set(target);
+                let channel = &mut self.channels[deck.index()];
+                channel
+                    .live
+                    .set(if kind == DeckKind::Live { 1.0 } else { 0.0 });
+                channel
+                    .remix
+                    .set(if kind == DeckKind::Remix { 1.0 } else { 0.0 });
+            }
+            RtCommand::RemixLoad {
+                deck,
+                at,
+                audio,
+                settings,
+            } => {
+                let grid = &mut self.channels[deck.index()].grid;
+                grid.load(at, audio, settings, &mut self.retired);
+            }
+            RtCommand::RemixSettings { deck, at, settings } => {
+                self.channels[deck.index()].grid.set_settings(at, settings);
+            }
+            RtCommand::RemixTrigger { deck, at } => {
+                let beat = self.beat;
+                let grid = &mut self.channels[deck.index()].grid;
+                grid.trigger(at, beat, &mut self.retired);
+            }
+            RtCommand::RemixStop { deck, slot } => {
+                let beat = self.beat;
+                self.channels[deck.index()].grid.stop(slot, beat);
+            }
+            RtCommand::RemixVolume { deck, slot, level } => {
+                self.channels[deck.index()].grid.set_volume(slot, level);
+            }
+            RtCommand::RemixMute { deck, slot, on } => {
+                self.channels[deck.index()].grid.set_mute(slot, on);
+            }
+            RtCommand::RemixQuantize { deck, beats } => {
+                self.channels[deck.index()].grid.set_quantize(beats);
             }
             RtCommand::InputRoute { target, source } => self.routes[target.index()] = source,
             RtCommand::AuxLevel { level } => self.aux_level.set(level),
@@ -339,9 +388,9 @@ impl Processor {
 
     fn candidates(&self) -> [Candidate; DeckId::COUNT] {
         self.channels.each_ref().map(|channel| {
-            // A live deck has no tempo, so it is never the tempo master.
+            // A live or a remix deck has no tempo of its own, so it is never the tempo master.
             let candidate = channel.player.candidate();
-            if channel.live.target() > 0.0 {
+            if channel.live.target() > 0.0 || channel.remix.target() > 0.0 {
                 Candidate {
                     eligible: false,
                     live: false,
@@ -353,8 +402,22 @@ impl Processor {
         })
     }
 
+    /// Counts the beats of the clock from its phase, as the effect units do.
+    fn count_beats(&mut self, phase: f64) {
+        let mut whole = self.beat.floor();
+        if phase < self.last_phase - 0.5 {
+            whole += 1.0;
+        } else if phase > self.last_phase + 0.5 {
+            whole -= 1.0;
+        }
+        self.beat = whole + phase;
+        self.last_phase = phase;
+    }
+
+    /// The deck plays its input or its grid: its track has no transport.
     fn is_live(&self, deck: DeckId) -> bool {
-        self.channels[deck.index()].live.target() > 0.0
+        let channel = &self.channels[deck.index()];
+        channel.live.target() > 0.0 || channel.remix.target() > 0.0
     }
 
     fn apply_mixer(&mut self, command: RtCommand) {
@@ -489,6 +552,8 @@ impl Processor {
         self.midi_clock.next(pulse.phase);
         self.advance_fade(pulse.bpm);
         self.effects.follow(pulse);
+        self.count_beats(pulse.phase);
+        let beat = self.beat;
         let input = self.input.next();
         let routed_input = |target: InputTarget, routes: &[Option<InputSource>]| {
             routes[target.index()].map_or([0.0; 2], |source| source.take(&input))
@@ -508,6 +573,15 @@ impl Processor {
                 {
                     *sent = *sent * (1.0 - live) + heard * live;
                     *around *= 1.0 - live;
+                }
+            }
+            // The grid plays on unheard on a deck of another type, to stay in time.
+            let grid = channel.grid.next(beat, pulse.bpm, &mut self.retired);
+            let remix = channel.remix.advance();
+            if remix > 0.0 {
+                for ((sent, around), grid) in next.sent.iter_mut().zip(&mut next.around).zip(grid) {
+                    *sent = *sent * (1.0 - remix) + grid * remix;
+                    *around *= 1.0 - remix;
                 }
             }
             let played = [0, 1].map(|side| next.sent[side] + next.around[side]);
@@ -683,6 +757,17 @@ impl Processor {
         self.shared.crossfader.set(self.crossfader_position);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());
+            for (slot, (playing, waiting)) in shared
+                .remix_playing
+                .iter()
+                .zip(&shared.remix_waiting)
+                .enumerate()
+            {
+                let state = channel.grid.state(slot);
+                let code = |cell: Option<usize>| cell.map_or(0, |cell| cell as u64 + 1);
+                playing.set(code(state.playing));
+                waiting.set(code(state.waiting));
+            }
             shared.key_lock.set(channel.player.is_key_locked());
             shared.beat_tick.set(channel.player.has_beat_tick());
             shared.key_shift.set(channel.player.key_shift());
