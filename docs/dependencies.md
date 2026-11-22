@@ -12,11 +12,13 @@ dependency has no row or a row has no dependency.
 
 | Crate | Use | Licence | Confined to | Possible replacement |
 | --- | --- | --- | --- | --- |
+| `async-hid` | Lists the HID devices of the system, opens one and reads its input reports: hidraw on Linux, IOHIDManager on macOS, Win32 on Windows; written in Rust, with no C library. Brings `windows` on Windows, `nix` and `async-io` on Linux and the `objc2` crates on macOS | MIT; what it brings MIT, Apache-2.0 or both | `platter-device-io`, module `hid`; none of its types is public (`docs/decisions/0044-hid-devices.md`) | Own calls to each system API, which would need `unsafe` |
 | `audio_thread_priority` | Raises the worker threads of key lock to the priority of audio: MMCSS on Windows, the time-constraint policy on macOS, SCHED_FIFO on Linux; its feature `with_dbus` stays off. Brings mach2 on macOS | MPL-2.0, used unmodified; its source is at <https://github.com/mozilla/audio_thread_priority>; mach2 BSD-2-Clause OR MIT OR Apache-2.0 | `platter-engine`, module `stretch_pool` (`docs/decisions/0039-key-lock-threads.md`) | Own calls to each system API, which would need `unsafe` in a crate of its own |
 | `cargo_metadata` | Reads the workspace graph for the layer rules and the dependency registry | MIT | `xtask` (not distributed) | Parse the JSON of `cargo metadata` with project code |
 | `cpal` | Lists the output devices and runs the output stream: WASAPI, CoreAudio, ALSA | Apache-2.0 | `platter-audio-io`, module `device`; none of its types is public (`docs/decisions/0010-audio-output.md`) | Own bindings to each system API, which would need `unsafe` |
 | `eframe` | Opens the window, runs the event loop and puts the frames of egui on the screen through `wgpu` | MIT OR Apache-2.0 | `platter` (the application); its `accesskit` feature stays off (`docs/behavior/interface.md`) | An own window and GPU layer over the system APIs, which would need `unsafe` |
 | `egui` | The interface: layout, input, text and painting | MIT OR Apache-2.0 | `platter-ui-egui`; the widgets and panels use its painter and input, nothing of its stock widgets (`docs/decisions/0013-interface.md`) | Another immediate-mode layer, or an own renderer |
+| `futures-lite` | Runs the futures of `async-hid` to their end on the thread that asks, and walks the list of devices it gives as a stream | Apache-2.0 OR MIT | `platter-device-io`, module `hid` | An own executor over `std::task`, a few dozen lines, and the stream trait of `futures-core` |
 | `midir` | Lists the MIDI inputs of the system and receives their messages, and sends the MIDI clock to an output: WinMM, CoreMIDI, ALSA | MIT | `platter-device-io`, modules `port` and `output`; none of its types is public (`docs/decisions/0025-midi-ports.md`, `docs/decisions/0041-midi-clock.md`) | Own bindings to each system API, which would need `unsafe` |
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine, untrusted mappings | MIT OR Apache-2.0 | Tests of `platter-decode`, `platter-engine`, `platter-control` and `platter-library` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
@@ -53,7 +55,7 @@ licence again and read the documentation of the version obtained.
 | Tags | none | - | - | M3 | Not external: tags are written by the project's own code (`platter-decode`, module `tag_write`). lofty 0.25.5 was tried and is not used: it brings `paste`, which `cargo deny check` reports as unmaintained |
 | Library | rusqlite | 0.43.0 | MIT | M3 | Temporary, behind a project trait |
 | Stems | ort | 2.0.0-rc.15 | MIT OR Apache-2.0 | M4 | ONNX runtime |
-| HID | hidapi | 2.6.7 | MIT | M5 | Access to the HID devices of the system |
+| HID | async-hid, futures-lite | 0.5.3, 2.6.1 | MIT; Apache-2.0 OR MIT | M5 | Access to the HID devices of the system. Chosen by the maintainer on 22 November 2026 in the place of hidapi 2.6.7, which compiles a C library and whose build script carries a GPL header (`docs/decisions/0044-hid-devices.md`) |
 | Cover art | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify |
 | Cover art | zune-png | 0.5.2 | MIT OR Apache-2.0 OR Zlib | M3 | PNG decoding needs an inflate as well, a large piece to write and verify; it comes from the same family of decoders as zune-jpeg |
 

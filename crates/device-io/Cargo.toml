@@ -1,6 +1,6 @@
 [package]
 name = "platter-device-io"
-description = "MIDI ports of Platter: lists the inputs of the system and receives their messages, and sends the MIDI clock"
+description = "MIDI ports and HID devices of Platter: lists the inputs of the system and receives their messages and reports, and sends the MIDI clock"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,4 +10,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-hid.workspace = true
+futures-lite.workspace = true
 midir.workspace = true

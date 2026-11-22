@@ -17,9 +17,9 @@ has the count of `main`. Do not edit the table by hand.
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
 | M4 | 31 | 31 | 0 | 0 |
-| M5 | 14 | 5 | 1 | 8 |
+| M5 | 14 | 5 | 2 | 7 |
 | Later | 2 | 0 | 0 | 2 |
-| Total | 162 | 148 | 4 | 10 |
+| Total | 162 | 148 | 5 | 9 |
 
 First complete version (M0 to M3): 112 of 115 features done.
 
@@ -146,9 +146,11 @@ Where it stands:
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
   look of the live deck, the auxiliary knob and the keys of the MIDI clock, which `docs/design/`
   does not draw yet; the timecode for DVS, which needs a format of Platter's own and its records;
-  HID controllers, which need a
-  dependency that is not approved; broadcasting, which needs an encoder and a network connection
-  the user starts.
+  broadcasting, which needs an encoder and a network connection the user starts.
+- **HID controllers, in progress.** Mappings name the bits, bytes and words of the reports of a
+  HID device, and Platter lists the HID devices and reads their reports on a thread of their own
+  (`docs/behavior/hid-controllers.md`, `docs/decisions/0044-hid-devices.md`). Still to do:
+  choosing a HID device in the controller manager, learn mode and output to the device.
 
 ### After M5
 

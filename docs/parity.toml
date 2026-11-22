@@ -253,7 +253,7 @@ features = [
   { id = "learn-mode", name = "Learn mode", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter manager; no real MIDI controller tried yet, see ROADMAP.md" },
   { id = "mapping-import-export", name = "Import and export of mappings", milestone = "M3", status = "done", evidence = "cargo test -p platter --bin platter manager; cargo test -p platter-ui-egui --test panels; one mapping per file, see docs/behavior/controllers.md" },
   { id = "midi-mappings", name = "Mappings for third-party MIDI controllers as data files", milestone = "M3", status = "in_progress" },
-  { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "planned" },
+  { id = "hid-controllers", name = "HID controllers with a public or community-documented protocol", milestone = "M5", status = "in_progress" },
 ]
 
 [[area]]
