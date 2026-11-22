@@ -20,6 +20,7 @@ mod lock;
 mod loop_recorder;
 mod looper;
 mod metronome;
+mod midi_clock;
 mod preview;
 mod processor;
 mod recorder;
@@ -48,6 +49,7 @@ pub use input::{INPUT_CHANNELS, InputFeed, InputFrame, InputSource};
 
 pub use lock::Stretcher;
 pub use loop_recorder::{LOOP_BARS, LoopPhase, LoopSource, MAX_LOOP_SECONDS};
+pub use midi_clock::{ClockEvent, ClockMessage, TICKS_PER_BEAT};
 pub use processor::Processor;
 pub use recorder::Recorded;
 pub use shared::{DeckShared, MasterChoice, Shared};
@@ -60,6 +62,10 @@ pub const COMMAND_CAPACITY: usize = 256;
 /// Seconds of the master the queue of the recorder holds, so the disk may fall behind that
 /// long before a frame is dropped: `docs/behavior/recording.md`.
 pub const RECORDER_QUEUE_SECONDS: usize = 4;
+
+/// Messages of the MIDI clock the queue to its sender holds: more than six seconds at the
+/// fastest tempo of the clock.
+const CLOCK_QUEUE: usize = 1_024;
 
 /// The most the key of a deck moves either way, in semitones.
 pub const MAX_KEY_SHIFT: f64 = 12.0;
@@ -419,6 +425,18 @@ pub enum RtCommand {
     Metronome {
         on: bool,
     },
+    /// Starts or stops sending the MIDI clock: `docs/behavior/midi-clock.md`.
+    MidiClock {
+        on: bool,
+    },
+    /// Stop and Start of the MIDI clock again on the next beat.
+    MidiClockRestart,
+    /// The tempo of a clock the master clock follows, and its place in the beat for the next
+    /// frame.
+    ClockFollow {
+        bpm: Bpm,
+        phase: f64,
+    },
     /// Starts or stops sending the master to the recorder, for the recording with this
     /// number.
     Record {
@@ -645,6 +663,9 @@ pub struct ControlEnds {
     /// The writing end of the queue of the input, until the application takes it for the
     /// input stream.
     pub input: Option<InputFeed>,
+    /// The reading end of the queue of the MIDI clock, until the application takes it for
+    /// its sender.
+    pub clock: Option<Consumer<ClockEvent>>,
 }
 
 /// The ends of the queues the processor keeps.
@@ -654,6 +675,7 @@ struct Queues {
     reports: Producer<DeckReport>,
     recorded: Producer<Recorded>,
     input: Consumer<InputFrame>,
+    clock: Producer<ClockEvent>,
 }
 
 /// Builds a processor for `rate`, the ends the control side keeps and the end of the queue of
@@ -668,6 +690,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
         RingBuffer::new(rate.hz() as usize * RECORDER_QUEUE_SECONDS);
     let (input_feed, input) =
         RingBuffer::new((f64::from(rate.hz()) * input::INPUT_QUEUE_SECONDS) as usize);
+    let (clock_out, clock) = RingBuffer::new(CLOCK_QUEUE);
     let shared = Arc::new(Shared::default());
     let processor = Processor::new(
         rate,
@@ -677,6 +700,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
             reports: outgoing_reports,
             recorded: outgoing_recorded,
             input,
+            clock: clock_out,
         },
         Arc::clone(&shared),
     );
@@ -687,6 +711,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
             reports,
             shared,
             input: Some(InputFeed::new(input_feed)),
+            clock: Some(clock),
         },
         recorded,
         processor,

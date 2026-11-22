@@ -4,6 +4,7 @@
 //! system. System exclusive, clock and active sensing messages are ignored at the port.
 
 use std::fmt;
+use std::sync::mpsc::{Receiver, sync_channel};
 
 use midir::{ConnectErrorKind, Ignore, MidiInput, MidiInputConnection};
 
@@ -20,14 +21,17 @@ pub enum PortError {
     NoSuchPort(String),
     /// The input exists but cannot be opened, for instance because another program holds it.
     Busy(String),
+    /// An open port stopped taking messages, usually because its device went away.
+    Gone(String),
 }
 
 impl fmt::Display for PortError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::System => f.write_str("the MIDI system cannot be used"),
-            Self::NoSuchPort(name) => write!(f, "no MIDI input is called `{name}`"),
-            Self::Busy(name) => write!(f, "the MIDI input `{name}` cannot be opened"),
+            Self::NoSuchPort(name) => write!(f, "no MIDI port is called `{name}`"),
+            Self::Busy(name) => write!(f, "the MIDI port `{name}` cannot be opened"),
+            Self::Gone(name) => write!(f, "the MIDI port `{name}` went away"),
         }
     }
 }
@@ -106,5 +110,61 @@ pub fn open(
             _connection: connection,
         },
         messages,
+    ))
+}
+
+/// The clock messages of an open input, with the time each one was received.
+#[derive(Debug)]
+pub struct ClockMessages {
+    queue: Receiver<(f64, u8)>,
+}
+
+impl ClockMessages {
+    /// The messages waiting now, oldest first: the time `stamp` gave as each arrived, and its
+    /// byte (`F8`, `FA`, `FB` or `FC`).
+    pub fn take(&self) -> impl Iterator<Item = (f64, u8)> + '_ {
+        self.queue.try_iter()
+    }
+}
+
+/// Opens the first input called `name` for the MIDI clock it carries: Timing Clock, Start,
+/// Continue and Stop pass, every other message is left out. `stamp` gives the time of each
+/// as it arrives, on the thread of the port; it must return at once. A connection of its own,
+/// so the same input may also be a controller: `docs/behavior/midi-clock.md`.
+pub fn open_clock(
+    name: &str,
+    capacity: usize,
+    stamp: impl Fn() -> f64 + Send + 'static,
+) -> Result<(Input, ClockMessages), PortError> {
+    let mut input = MidiInput::new(CLIENT).map_err(|_| PortError::System)?;
+    input.ignore(Ignore::SysexAndActiveSense);
+    let port = input
+        .ports()
+        .into_iter()
+        .find(|port| input.port_name(port).is_ok_and(|found| found == name))
+        .ok_or_else(|| PortError::NoSuchPort(name.to_owned()))?;
+    let (sender, queue) = sync_channel(capacity.max(1));
+    let connection = input
+        .connect(
+            &port,
+            CLIENT,
+            move |_, bytes, _| {
+                if let [byte @ (0xF8 | 0xFA | 0xFB | 0xFC)] = bytes {
+                    // A full queue drops the message: nobody reads it in time.
+                    let _ = sender.try_send((stamp(), *byte));
+                }
+            },
+            (),
+        )
+        .map_err(|error| match error.kind() {
+            ConnectErrorKind::InvalidPort => PortError::NoSuchPort(name.to_owned()),
+            ConnectErrorKind::Other(_) => PortError::Busy(name.to_owned()),
+        })?;
+    Ok((
+        Input {
+            name: name.to_owned(),
+            _connection: connection,
+        },
+        ClockMessages { queue },
     ))
 }

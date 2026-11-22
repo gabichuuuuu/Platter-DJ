@@ -18,6 +18,7 @@ use super::effects::Effects;
 use super::input::{InputReader, InputSource};
 use super::loop_recorder::{LoopRecorder, LoopSource};
 use super::metronome::Metronome;
+use super::midi_clock::MidiClock;
 use super::preview::PreviewPlayer;
 use super::recorder::Tap;
 use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
@@ -73,6 +74,7 @@ pub struct Processor {
     headphone_limiter: Limiter,
     tone: TestTone,
     metronome: Metronome,
+    midi_clock: MidiClock,
     preview: PreviewPlayer,
     /// Zero mixes inside, one sends each deck to its own pair:
     /// `docs/behavior/external-mixer.md`.
@@ -131,6 +133,7 @@ impl Processor {
             headphone_limiter: Limiter::new(rate),
             tone: TestTone::new(rate),
             metronome: Metronome::new(rate),
+            midi_clock: MidiClock::new(queues.clock),
             preview: PreviewPlayer::new(rate),
             external: parameter(0.0),
             external_eq_gain: parameter(0.0),
@@ -152,6 +155,8 @@ impl Processor {
     /// of both sides of the first pair at half level; further channels are silent. This is
     /// the function the audio callback calls, and the deviceless render calls the same one.
     pub fn process(&mut self, output: &mut [f32], channels: usize) {
+        // The sender of the MIDI clock times the frames by when it sees this change.
+        self.shared.block_frame.set(self.midi_clock.frame());
         self.take_commands();
         self.loop_recorder.prepare();
         self.clock.choose(self.candidates());
@@ -272,6 +277,14 @@ impl Processor {
                 }
             }
             RtCommand::Metronome { on } => self.metronome.set_on(on),
+            RtCommand::MidiClock { on } => self.midi_clock.set_sending(on),
+            RtCommand::MidiClockRestart => self.midi_clock.restart(),
+            RtCommand::ClockFollow { bpm, phase } => {
+                // The count of the clock sent no longer marks the beat: start it again there.
+                if self.clock.follow(bpm, phase) {
+                    self.midi_clock.restart();
+                }
+            }
             RtCommand::Record { on, recording } => self.recorder.set(on, recording),
             RtCommand::LoopRecord => {
                 let bpm = self.clock.pulse().bpm;
@@ -455,6 +468,7 @@ impl Processor {
         let lead = master.and_then(|deck| self.channels[deck.index()].player.lead());
         let pulse = self.clock.tick(lead);
         let click = self.metronome.next(pulse.phase);
+        self.midi_clock.next(pulse.phase);
         self.advance_fade(pulse.bpm);
         self.effects.follow(pulse);
         let input = self.input.next();
@@ -633,6 +647,7 @@ impl Processor {
         let pulse = self.clock.pulse();
         self.shared.master.set(self.clock.master());
         self.shared.clock_bpm.set(pulse.bpm);
+        self.shared.midi_clock.set(self.midi_clock.is_sending());
         self.shared.crossfader.set(self.crossfader_position);
         for (channel, shared) in self.channels.iter().zip(&self.shared.decks) {
             shared.sync.set(channel.player.is_synced());

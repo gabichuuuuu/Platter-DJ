@@ -235,10 +235,78 @@ pub struct Controller {
     pub mapping: PathBuf,
 }
 
-/// The settings of the Input page: docs/behavior/live-input.md.
+/// The most the MIDI clock is sent earlier or later than the audio, in milliseconds.
+pub const MAX_CLOCK_OFFSET_MS: i32 = 50;
+
+/// The MIDI clock that is sent: `docs/behavior/midi-clock.md`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ClockSettings {
+    /// The MIDI output the clock goes to; `None` sends nothing.
+    pub output: Option<String>,
+    /// Milliseconds the clock is sent later (positive) or earlier than the audio is heard.
+    pub offset_ms: i32,
+    /// The clock was being sent when the settings were saved.
+    pub send: bool,
+    /// The MIDI input whose clock the master clock can follow, and whether it follows it.
+    pub input: Option<String>,
+    pub external: bool,
+}
+
+impl ClockSettings {
+    fn read(table: Option<&toml::Table>) -> Self {
+        let Some(table) = table else {
+            return Self::default();
+        };
+        Self {
+            output: table
+                .get("output")
+                .and_then(toml::Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned),
+            offset_ms: table
+                .get("offset_ms")
+                .and_then(toml::Value::as_integer)
+                .and_then(|ms| i32::try_from(ms).ok())
+                .filter(|ms| ms.abs() <= MAX_CLOCK_OFFSET_MS)
+                .unwrap_or(0),
+            send: table
+                .get("send")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false),
+            input: table
+                .get("input")
+                .and_then(toml::Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned),
+            external: table
+                .get("external")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false),
+        }
+    }
+
+    fn write(&self) -> toml::Table {
+        let mut table = toml::Table::new();
+        if let Some(output) = &self.output {
+            table.insert("output".to_owned(), toml::Value::String(output.clone()));
+        }
+        table.insert(
+            "offset_ms".to_owned(),
+            toml::Value::Integer(i64::from(self.offset_ms)),
+        );
+        table.insert("send".to_owned(), toml::Value::Boolean(self.send));
+        if let Some(input) = &self.input {
+            table.insert("input".to_owned(), toml::Value::String(input.clone()));
+        }
+        table.insert("external".to_owned(), toml::Value::Boolean(self.external));
+        table
+    }
+}
+
+/// The settings of the Input page: `docs/behavior/live-input.md`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputSettings {
-    /// Name of the input device; None opens no input.
+    /// Name of the input device; `None` opens no input.
     pub device: Option<String>,
     /// What feeds each of [InputTarget::ALL], in its order.
     pub routes: [Option<InputSource>; 5],
@@ -402,6 +470,8 @@ pub struct Settings {
     pub midi: Vec<Controller>,
     /// The input device, the input routing and the type of each deck.
     pub input: InputSettings,
+    /// The MIDI clock that is sent.
+    pub clock: ClockSettings,
 }
 
 impl Default for Settings {
@@ -451,6 +521,7 @@ impl Default for Settings {
             min_playtime: DEFAULT_PLAYTIME,
             midi: Vec::new(),
             input: InputSettings::default(),
+            clock: ClockSettings::default(),
         }
     }
 }
@@ -691,6 +762,7 @@ impl Settings {
                 })
                 .unwrap_or_default(),
             input: InputSettings::read(table("input")),
+            clock: ClockSettings::read(table("midi_clock")),
         }
     }
 
@@ -893,6 +965,10 @@ impl Settings {
             root.insert("midi".to_owned(), toml::Value::Array(midi));
         }
         root.insert("input".to_owned(), toml::Value::Table(self.input.write()));
+        root.insert(
+            "midi_clock".to_owned(),
+            toml::Value::Table(self.clock.write()),
+        );
         root.to_string()
     }
 
@@ -1003,6 +1079,13 @@ mod tests {
                 device: Some("Line in".to_owned()),
                 aux_level: 0.25,
                 ..super::InputSettings::default()
+            },
+            clock: super::ClockSettings {
+                output: Some("Clock out".to_owned()),
+                offset_ms: 7,
+                send: false,
+                input: None,
+                external: false,
             },
         };
         assert_eq!(Settings::parse(&settings.to_toml()), settings);
@@ -1184,6 +1267,24 @@ min_playtime = {written}
             read.input.routes,
             [None, None, InputSource::parse("5-6"), None, None]
         );
+    }
+
+    /// `docs/behavior/midi-clock.md`: the output, the offset and whether the clock was sent.
+    #[test]
+    fn the_midi_clock_is_kept_and_an_offset_out_of_range_is_zero() {
+        let chosen = Settings {
+            clock: super::ClockSettings {
+                output: Some("Clock out".to_owned()),
+                offset_ms: -12,
+                send: true,
+                input: Some("Clock in".to_owned()),
+                external: true,
+            },
+            ..Settings::default()
+        };
+        assert_eq!(Settings::parse(&chosen.to_toml()).clock, chosen.clock);
+        let read = Settings::parse("[midi_clock]\noutput = \"\"\noffset_ms = 51\nsend = 1\n");
+        assert_eq!(read.clock, super::ClockSettings::default());
     }
 
     #[test]

@@ -171,7 +171,7 @@ pub struct Shared {
     pub loop_bars: Count,
     pub loop_can_undo: Flag,
     pub loop_can_redo: Flag,
-    /// Peak level of each input of the device, linear: docs/behavior/live-input.md.
+    /// Peak level of each input of the device, linear: `docs/behavior/live-input.md`.
     pub input_levels: [AtomicF32; INPUT_CHANNELS],
     /// Times the queue of the input ran dry while it was heard.
     pub input_gaps: Count,
@@ -179,6 +179,11 @@ pub struct Shared {
     pub input_reading: Flag,
     /// The speed the input is read at against the nominal one.
     pub input_ratio: AtomicF64,
+    /// The frames the processor had rendered when its latest block began:
+    /// `docs/decisions/0041-midi-clock.md`.
+    pub block_frame: Count,
+    /// Start of the MIDI clock has gone out and Stop has not.
+    pub midi_clock: Flag,
 }
 
 impl Default for Shared {
@@ -205,6 +210,8 @@ impl Default for Shared {
             input_gaps: Count::default(),
             input_reading: Flag::default(),
             input_ratio: AtomicF64::new(1.0),
+            block_frame: Count::default(),
+            midi_clock: Flag::default(),
         }
     }
 }

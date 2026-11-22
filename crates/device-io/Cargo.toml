@@ -1,6 +1,6 @@
 [package]
 name = "platter-device-io"
-description = "MIDI ports of Platter: lists the inputs of the system and receives their messages"
+description = "MIDI ports of Platter: lists the inputs of the system and receives their messages, and sends the MIDI clock"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -86,7 +86,7 @@ features = [
   { id = "beat-sync-mode", name = "Beat Sync mode", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test sync; cargo test -p platter-ui-egui --test settings_mixer; nobody has listened to it with real tracks yet, see ROADMAP.md" },
   { id = "snap", name = "SNAP", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
   { id = "quantize", name = "QUANTIZE", milestone = "M3", status = "done", evidence = "cargo test -p platter-engine --test snap; cargo test -p platter-ui-egui --test panels" },
-  { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "planned" },
+  { id = "midi-clock", name = "MIDI clock in and out", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --lib midi_clock; cargo test -p platter-engine --test midi_clock --test realtime_memory; cargo test -p platter-ui-egui --test settings_sync; synthesised timings only, not tried with a real MIDI device, see docs/behavior/midi-clock.md" },
   { id = "link", name = "Link compatibility, own implementation", milestone = "M5", status = "planned" },
 ]
 
@@ -284,7 +284,7 @@ features = [
   { id = "recorders", name = "Recorders", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; the Recording page: folder, prefix and split of the mix recorder, overdub decay of the loop recorder; no external source and no latency setting, see docs/behavior/recording.md" },
   { id = "layouts", name = "Layouts", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer --test panels, see docs/behavior/interface.md" },
   { id = "input-routing", name = "Input routing", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input; cargo test -p platter-ui-egui --test settings_input; cargo test -p platter --bins config; on the Input page, single inputs and pairs, no FX Send input yet, not tried with a real device, see docs/behavior/live-input.md" },
-  { id = "external-sync", name = "External sync", milestone = "M5", status = "planned" },
+  { id = "external-sync", name = "External sync", milestone = "M5", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_sync; cargo test -p platter --bins config; the Sync page: MIDI clock out and in, no Link, see docs/behavior/midi-clock.md" },
   { id = "timecode", name = "Timecode", milestone = "M5", status = "planned" },
   { id = "remix", name = "Remix decks", milestone = "M5", status = "planned" },
   { id = "broadcasting", name = "Broadcasting", milestone = "M5", status = "planned" },

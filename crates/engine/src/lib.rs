@@ -10,6 +10,7 @@ mod analyser;
 pub mod command;
 mod control;
 pub mod effects;
+pub mod midi_clock;
 mod peaks;
 mod recorder;
 mod render;

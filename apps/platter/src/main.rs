@@ -10,6 +10,7 @@
 mod app;
 mod background;
 mod capture;
+mod clock_sender;
 mod config;
 mod effects_config;
 mod keeping;

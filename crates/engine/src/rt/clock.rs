@@ -9,6 +9,11 @@ use super::deck::SPEED_RAMP_MS;
 
 /// Tempo of the clock until something sets it.
 pub(super) const INITIAL_BPM: f64 = 120.0;
+/// A clock that follows another one closes a gap in its beat over this long.
+const FOLLOW_MS: f64 = 200.0;
+/// A gap wider than this share of a beat is closed at once: the clock followed has started
+/// again, or the gap is too wide to close unheard.
+const FOLLOW_JUMP: f64 = 0.25;
 
 /// A tempo and a place in the beat: what a synced deck follows.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -51,6 +56,11 @@ pub(super) struct Clock {
     was_live: [bool; DeckId::COUNT],
     /// Minutes one frame of output lasts.
     frame_minutes: f64,
+    /// While the clock follows another one: the share of a beat added to each frame, and
+    /// for how many more frames, to close the gap to its beat.
+    correction: f64,
+    correction_frames: u32,
+    follow_frames: u32,
 }
 
 impl Clock {
@@ -66,6 +76,27 @@ impl Clock {
             master: None,
             was_live: [false; DeckId::COUNT],
             frame_minutes: 1.0 / (60.0 * rate.as_f64()),
+            correction: 0.0,
+            correction_frames: 0,
+            follow_frames: (rate.as_f64() * FOLLOW_MS / 1_000.0) as u32,
+        }
+    }
+
+    /// Takes the tempo of a clock it follows, and where that clock is in its beat for the
+    /// frame that comes next: `docs/behavior/midi-clock.md`, *Following*. The control side
+    /// makes the clock the tempo master first. Returns whether the beat jumped.
+    pub(super) fn follow(&mut self, bpm: Bpm, phase: f64) -> bool {
+        self.bpm = bpm.value();
+        self.pulse.bpm = self.bpm;
+        let gap = (phase - self.pulse.phase + 1.5).rem_euclid(1.0) - 0.5;
+        if gap.abs() > FOLLOW_JUMP || self.follow_frames == 0 {
+            self.pulse.phase = phase.rem_euclid(1.0);
+            self.correction_frames = 0;
+            true
+        } else {
+            self.correction = gap / f64::from(self.follow_frames);
+            self.correction_frames = self.follow_frames;
+            false
         }
     }
 
@@ -160,7 +191,14 @@ impl Clock {
         };
         let phase = match locked {
             Some(phase) => phase,
-            None => (self.pulse.phase + bpm * self.frame_minutes).rem_euclid(1.0),
+            None => {
+                let mut step = bpm * self.frame_minutes;
+                if self.correction_frames > 0 {
+                    self.correction_frames -= 1;
+                    step += self.correction;
+                }
+                (self.pulse.phase + step).rem_euclid(1.0)
+            }
         };
         self.pulse = Pulse { bpm, phase };
         self.pulse
