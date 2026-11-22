@@ -8,9 +8,9 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, CellInfo, CellMode, DeckKind, DeckSnapshot, EffectControls, EffectKind, Key,
-    Mode, PreviewSnapshot, RecorderSnapshot, RemixSnapshot, Snapshot, TrackAnalysis, TrackInfo,
-    Transposed, WaveformPeaks,
+    AnalysedTempo, CellInfo, CellMode, DeckKind, DeckSnapshot, EffectControls, EffectKind,
+    InputSource, InputTarget, Key, Mode, PreviewSnapshot, RecorderSnapshot, RemixSnapshot,
+    Snapshot, TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
@@ -820,6 +820,28 @@ pub fn two_deck_remix() -> Scene {
     let deck = &mut scene.engine.decks[1];
     deck.controls.kind = DeckKind::Remix;
     *deck.remix = remix_grid();
+    scene
+}
+
+/// Deck `deck` a live deck playing inputs 1 and 2, which carry a signal.
+fn make_live(scene: &mut Scene, deck: DeckId) {
+    scene.engine.decks[deck.index()].controls.kind = DeckKind::Live;
+    scene.engine.mixer.input_routes[InputTarget::Deck(deck).index()] = Some(InputSource::Pair(0));
+    scene.engine.input.levels[0] = 0.5;
+    scene.engine.input.levels[1] = 0.4;
+}
+
+/// The four-deck state with deck C a live deck.
+pub fn live_deck() -> Scene {
+    let mut scene = four_decks();
+    make_live(&mut scene, DeckId::C);
+    scene
+}
+
+/// The two-deck state with deck A a live deck.
+pub fn two_deck_live() -> Scene {
+    let mut scene = playing();
+    make_live(&mut scene, DeckId::A);
     scene
 }
 

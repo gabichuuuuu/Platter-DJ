@@ -833,6 +833,36 @@ screen draws it. Behaviour note: `docs/behavior/remix-deck.md`.
 - Names for screen readers and tooltips: "Cell 5 of slot 2: Drums 1", "Empty cell 5 of slot 2", "Mute slot 2", "Punch slot 2",
   "Stop slot 2", "Volume of slot 2", "Quantize of deck A", "Page 2 of deck A".
 
+#### LiveDeck
+
+The face of a deck that plays an input of the audio device (milestone M5). Written on 22 November 2026, with the maintainer's
+approval, from the pattern of the Input page of the preferences; no reference screen draws it. Behaviour note:
+`docs/behavior/live-input.md`.
+
+##### Placement
+
+- A live deck keeps the size and the padding of its deck in both layouts. Its header holds the badge, the name of the input it
+  plays (`In 1-2`, from the Input page) or `No input` in `text-secondary`, and the tag `Live`. No cover, tempo or times.
+- Everything under the header is the live face: a live deck has no overview, sync row, transport, loop row, hotcue pads, advanced
+  panel or tempo column. Its track stays loaded and paused until the deck plays its track again.
+
+##### Anatomy
+
+Rows from the top, `space-5` apart:
+
+- **Input**: `Input` (`label` style, `text-secondary`) and the `Select` of the Input page, 136px wide, with `None` and the inputs and
+  pairs of the device.
+- **Level**: the horizontal `Meter` of the Input page, across the width of the face, 10px high.
+- **Type**: `Type` (`label` style, `text-secondary`) and the segmented choice `Track`, `Live input`, `Remix` of the Input page.
+- **Note**: under them, in `body` style and `text-secondary`, wrapped, "The deck plays its input; its track waits, paused." When the
+  device has no input open: "No input device is open: choose one on the Input page of the preferences."
+
+##### Behaviour
+
+- The `Select` emits `input.routing.set` with the deck as target; the segmented choice emits `deck.type.set`.
+- The meter shows the level of the input routed to the deck before its channel, as on the Input page.
+- Names for screen readers: "Input of deck A", "Level of the input of deck A"; the keys of the type are named by their labels.
+
 ### Mixer
 
 #### Knob

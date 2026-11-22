@@ -162,7 +162,7 @@ Everything known to be missing, unfinished or not yet listened to.
   outputs does not play it, and nobody has listened to it.
 - The input of a device feeds live decks and the auxiliary input, chosen on the Input page of
   the preferences; it has been measured with synthesised signals only, never with a real input
-  device, and the face of a live deck still shows its track (`docs/behavior/live-input.md`).
+  device; a live deck shows its input, its level and its type (`docs/behavior/live-input.md`).
   The send of the effect units returns on outputs 5 and 6.
 - The MIDI clock is sent and followed from the Sync page of the preferences; only synthesised
   timings were measured, never a real MIDI device (`docs/behavior/midi-clock.md`). There is no
