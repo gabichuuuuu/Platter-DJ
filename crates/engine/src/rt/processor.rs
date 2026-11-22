@@ -273,7 +273,8 @@ impl Processor {
             }
             RtCommand::RemixTrigger { deck, at } => {
                 let beat = self.beat;
-                self.channels[deck.index()].grid.trigger(at, beat);
+                let grid = &mut self.channels[deck.index()].grid;
+                grid.trigger(at, beat, &mut self.retired);
             }
             RtCommand::RemixStop { deck, slot } => {
                 let beat = self.beat;

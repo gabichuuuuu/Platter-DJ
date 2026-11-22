@@ -212,8 +212,10 @@ impl RemixPlayer {
         }
     }
 
-    /// Starts a cell on the next boundary after `beat`. An empty cell does nothing.
-    pub(super) fn trigger(&mut self, at: CellId, beat: f64) {
+    /// Starts a cell on the next boundary after `beat`. Another cell its slot plays stops at
+    /// once, with its fade; the same cell plays on until it starts again. An empty cell does
+    /// nothing.
+    pub(super) fn trigger(&mut self, at: CellId, beat: f64, retired: &mut Producer<Retired>) {
         let boundary = self.boundary(beat);
         let Some(slot) = self.slots.get_mut(at.slot) else {
             return;
@@ -224,6 +226,13 @@ impl RemixPlayer {
             .is_none_or(|cell| cell.audio.is_none())
         {
             return;
+        }
+        if slot
+            .playing
+            .as_ref()
+            .is_some_and(|voice| voice.cell != at.cell)
+        {
+            fade_out(slot, retired);
         }
         slot.waiting = Some(Waiting {
             cell: at.cell,

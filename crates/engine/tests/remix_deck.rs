@@ -12,7 +12,9 @@ use std::sync::Arc;
 use common::{RATE, Rig, rate};
 use platter_core::{Bpm, DeckId, SampleRate};
 use platter_engine::command::{Args, Value};
-use platter_engine::{Analyser, CellId, CellMode, Command, DeckKind, Engine, Event, TrackAnalysis};
+use platter_engine::{
+    AnalysedTempo, Analyser, CellId, CellMode, Command, DeckKind, Engine, Event, TrackAnalysis,
+};
 use platter_testkit::files::wav_pcm16;
 use platter_testkit::measure::sine_fit;
 use platter_testkit::signal::{stereo, to_i16};
@@ -28,6 +30,22 @@ impl Analyser for Nothing {
     fn analyse(&self, _: &[f32], _: SampleRate) -> TrackAnalysis {
         TrackAnalysis {
             tempo: None,
+            key: None,
+            loudness: None,
+        }
+    }
+}
+
+/// Finds 125 BPM in every track, so a track deck can be the tempo master.
+struct Steady;
+
+impl Analyser for Steady {
+    fn analyse(&self, _: &[f32], _: SampleRate) -> TrackAnalysis {
+        TrackAnalysis {
+            tempo: Some(AnalysedTempo {
+                bpm: Bpm::new(125.0).unwrap(),
+                first_beat: 0.0,
+            }),
             key: None,
             loudness: None,
         }
@@ -248,6 +266,88 @@ fn a_second_cell_of_the_slot_stops_the_first_one() {
     let tail = &second[second.len() - 4_800..];
     assert!(amplitude(tail, 440.0) < 0.01);
     assert!(amplitude(tail, 1_000.0) > 0.3);
+}
+
+#[test]
+fn the_cell_that_played_stops_when_another_is_triggered_not_on_the_boundary() {
+    let mut rig = remix_rig();
+    load(
+        &mut rig,
+        cell(2, 0),
+        sample_file("at-once-first", &sine(440.0, 1.0)),
+    );
+    load(
+        &mut rig,
+        cell(2, 1),
+        sample_file("at-once-second", &sine(1_000.0, 1.0)),
+    );
+    rig.send(Command::RemixQuantizeSet {
+        deck: A,
+        beats: Some(4),
+    });
+    trigger(&mut rig, cell(2, 0));
+    // The first cell starts on beat 4, at 2 s; the second is triggered at 2.6 s and waits
+    // for beat 8, at 4 s.
+    rig.run(2.6);
+    trigger(&mut rig, cell(2, 1));
+    let waiting = rig.run(1.3);
+    let quiet = &waiting[4_800..waiting.len() - 4_800];
+    assert!(
+        quiet.iter().all(|sample| sample.abs() < 1e-4),
+        "the first cell plays on while the second waits"
+    );
+    let started = rig.run(0.5);
+    assert!(amplitude(&started[started.len() - 4_800..], 1_000.0) > 0.3);
+}
+
+#[test]
+fn a_remix_deck_ignores_the_transport_and_is_never_the_tempo_master() {
+    let (mut engine, processor) = Engine::with_analyser(rate(), Arc::new(Steady));
+    engine.dispatch(Command::MixerAutogainToggle).unwrap();
+    let mut rig = Rig { engine, processor };
+    rig.load(A, common::sine_file("remix-master", 440.0, 10.0, 0.5, RATE));
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.2);
+    assert_eq!(rig.engine.snapshot().clock.master, Some(A));
+    rig.send(Command::DeckTypeSet {
+        deck: A,
+        kind: DeckKind::Remix,
+    });
+    rig.run(0.2);
+    let snapshot = rig.engine.snapshot();
+    assert_eq!(snapshot.clock.master, None);
+    assert!(!snapshot.decks[0].playing);
+    rig.send(Command::DeckPlay { deck: A });
+    rig.run(0.1);
+    assert!(!rig.engine.snapshot().decks[0].playing);
+}
+
+#[test]
+fn loads_and_clears_while_cells_play_give_every_sample_back() {
+    // More swaps than the engine lets wait: a sample that never came back would make it
+    // refuse the next load as busy.
+    let mut rig = remix_rig();
+    rig.send(Command::RemixQuantizeSet {
+        deck: A,
+        beats: None,
+    });
+    let first = sample_file("cycle-a", &sine(440.0, 0.2));
+    let second = sample_file("cycle-b", &sine(660.0, 0.2));
+    // A sample replaced while it plays is the one whose return waits for a fade: one per
+    // cycle, and more cycles than the 256 swaps the engine lets wait.
+    for _ in 0..270 {
+        load(&mut rig, cell(0, 0), first.clone());
+        trigger(&mut rig, cell(0, 0));
+        rig.run(0.01);
+        // Replaced while it plays: the sample goes back once its fade ends.
+        load(&mut rig, cell(0, 0), second.clone());
+        rig.run(0.01);
+        rig.send(Command::RemixCellClear {
+            deck: A,
+            at: cell(0, 0),
+        });
+        rig.run(0.01);
+    }
 }
 
 #[test]
