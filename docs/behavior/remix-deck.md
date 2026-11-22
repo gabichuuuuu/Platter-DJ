@@ -124,7 +124,8 @@ each slot.
   Shift and a press on the cell a slot plays stops the slot, a track dropped on a cell loads into it
   and the context menu of a cell sets its mode, latch or gate and direction, captures from another
   deck and clears it. The tempo and the gain of a cell have no control on the screen yet; they are
-  set by commands.
+  set by commands. An empty cell takes no keyboard focus, so its menu, which offers the captures,
+  opens with the pointer only.
 - **The master clock is the tempo of the deck.** The manual gives a remix deck a tempo of its own and
   sync to the tempo master; Platter's remix deck has no tempo control and follows the clock, which a
   deck that is the tempo master drives. A remix deck is never the tempo master.
