@@ -14,9 +14,10 @@ use common::{RATE, Rig, sine_file};
 use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
 use platter_engine::rt::RECORDER_QUEUE_SECONDS;
 use platter_engine::{
-    Band, BpmScale, ClockMode, Command, CrossfaderCurve, CrossfaderDirection, CrossfaderSide,
-    CueStep, Direction, EffectKind, EqModel, Event, FilterModel, FxRouting, FxUnit, InputSource,
-    InputTarget, LoopSource, MixerMode, MoveMode, Output, SizeStep, SyncMode, UnitMode,
+    Band, BpmScale, CellId, CellMode, ClockMode, Command, CrossfaderCurve, CrossfaderDirection,
+    CrossfaderSide, CueStep, DeckKind, Direction, EffectKind, EqModel, Event, FilterModel,
+    FxRouting, FxUnit, InputSource, InputTarget, LoopSource, MixerMode, MoveMode, Output, SizeStep,
+    SyncMode, UnitMode,
 };
 use platter_testkit::alloc::{CountingAllocator, count};
 
@@ -460,7 +461,7 @@ fn input_commands() -> Vec<Command> {
         },
         Command::DeckTypeSet {
             deck: DeckId::A,
-            live: true,
+            kind: DeckKind::Live,
         },
         Command::InputRoutingSet {
             target: InputTarget::Aux,
@@ -487,7 +488,7 @@ fn input_commands() -> Vec<Command> {
         },
         Command::DeckTypeSet {
             deck: DeckId::A,
-            live: false,
+            kind: DeckKind::Track,
         },
     ]
 }
@@ -677,6 +678,99 @@ fn process_neither_allocates_nor_frees() {
         // Long enough to run past the end of the short track.
         run(&mut rig, 30);
     }
+
+    // A remix deck: cells start, give way to each other, end, and are loaded again or cleared
+    // while they play or fade, so samples go back through the retired queue in every case.
+    rig.send(Command::DeckTypeSet {
+        deck: DeckId::C,
+        kind: DeckKind::Remix,
+    });
+    rig.send(Command::RemixQuantizeSet {
+        deck: DeckId::C,
+        beats: None,
+    });
+    let at = |slot, cell| CellId::new(slot, cell).expect("a cell of the grid");
+    for (slot, cell, hz) in [(0, 0, 330.0), (0, 1, 440.0), (1, 0, 550.0)] {
+        rig.send(Command::RemixCellLoad {
+            deck: DeckId::C,
+            at: at(slot, cell),
+            path: sine_file(&format!("memory-remix-{slot}-{cell}"), hz, 0.3, 0.3, 44_100),
+        });
+    }
+    rig.engine.wait_for_loads();
+    rig.send(Command::RemixCellModeSet {
+        deck: DeckId::C,
+        at: at(1, 0),
+        mode: CellMode::OneShot,
+    });
+    for command in [
+        Command::RemixCellTrigger {
+            deck: DeckId::C,
+            at: at(0, 0),
+        },
+        Command::RemixCellTrigger {
+            deck: DeckId::C,
+            at: at(1, 0),
+        },
+        Command::RemixCellTrigger {
+            deck: DeckId::C,
+            at: at(0, 1),
+        },
+        Command::RemixSlotVolumeSet {
+            deck: DeckId::C,
+            slot: 0,
+            level: 0.5,
+        },
+        Command::RemixSlotMuteToggle {
+            deck: DeckId::C,
+            slot: 0,
+        },
+        Command::RemixSlotMuteToggle {
+            deck: DeckId::C,
+            slot: 0,
+        },
+    ] {
+        rig.send(command);
+        run(&mut rig, 3);
+    }
+    // Cell 2 of slot 1 plays and cell 1 fades: both are replaced, then cleared.
+    rig.send(Command::RemixCellTrigger {
+        deck: DeckId::C,
+        at: at(0, 0),
+    });
+    run(&mut rig, 1);
+    for cell in [0, 1] {
+        rig.send(Command::RemixCellLoad {
+            deck: DeckId::C,
+            at: at(0, cell),
+            path: sine_file(&format!("memory-remix-again-{cell}"), 220.0, 0.2, 0.3, RATE),
+        });
+    }
+    rig.engine.wait_for_loads();
+    run(&mut rig, 5);
+    rig.send(Command::RemixCellTrigger {
+        deck: DeckId::C,
+        at: at(0, 1),
+    });
+    run(&mut rig, 3);
+    for cell in [0, 1] {
+        rig.send(Command::RemixCellClear {
+            deck: DeckId::C,
+            at: at(0, cell),
+        });
+        run(&mut rig, 2);
+    }
+    rig.send(Command::RemixSlotStop {
+        deck: DeckId::C,
+        slot: 1,
+    });
+    // Long enough for the one-shot to end.
+    run(&mut rig, 40);
+    rig.send(Command::DeckTypeSet {
+        deck: DeckId::C,
+        kind: DeckKind::Track,
+    });
+    run(&mut rig, 5);
 
     // Key lock engaged for long enough to hold, with no jump: its pitch shows that the
     // stretch played what was counted.

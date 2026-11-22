@@ -26,18 +26,20 @@ use platter_dsp::stretch::Stretch;
 use crate::analyser::{Analyser, PlatterAnalyser, TrackAnalysis};
 use crate::command::{
     CROSSFADER_STEP, ClockMode, Command, CrossfaderDirection, CueStep, Direction, MAX_BPM_STEP,
-    MAX_CEILING_DB, MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_HEADPHONE_GAIN_DB,
-    MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE, MAX_RELEASE_MS,
-    MAX_SEEK_SECONDS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode,
-    MoveSize, SizeStep, SyncMode,
+    MAX_CEILING_DB, MAX_CELL_GAIN_DB, MAX_CHANNEL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS,
+    MAX_HEADPHONE_GAIN_DB, MAX_KEY_SHIFT, MAX_MARKER_MOVE_SECONDS, MAX_MASTER_GAIN_DB, MAX_NUDGE,
+    MAX_RELEASE_MS, MAX_SEEK_SECONDS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode,
+    MoveMode, MoveSize, SizeStep, SyncMode,
 };
 use crate::effects::{EffectControls, FxUnit, UnitControls};
 use crate::peaks::WaveformPeaks;
 use crate::recorder::{MIN_SPLIT_BYTES, Recorder, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
+use crate::remix::{DecodedSample, RemixControl, RemixSnapshot, decode_sample};
 use crate::rt::{
-    self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckStems, DeckTrack, GridEdit,
-    INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS, LoopEdit, LoopPart, LoopPhase,
-    LoopSource, LoopState, Processor, RtCommand, Span, StemSettings, Stretcher, TrackAudio,
+    self, COMMAND_CAPACITY, CROSSFADER_SIDES, CellId, CellSettings, ControlEnds, CueEdit, DeckKind,
+    DeckStems, DeckTrack, GridEdit, INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS,
+    LoopEdit, LoopPart, LoopPhase, LoopSource, LoopState, Processor, RtCommand, Span, StemSettings,
+    Stretcher, TrackAudio,
 };
 use crate::stretch::TrackStretch;
 use crate::stretch_pool::StretchPool;
@@ -78,6 +80,12 @@ pub enum Event {
     /// The stems of a track could not be played; the track loaded alone.
     StemsFailed {
         deck: DeckId,
+        message: String,
+    },
+    /// The file sent to a cell of a remix deck could not be played there.
+    RemixLoadFailed {
+        deck: DeckId,
+        at: CellId,
         message: String,
     },
     /// The file sent to the preview player could not be read.
@@ -158,9 +166,9 @@ pub struct DeckControls {
     /// The controls of the four stems, in the order of [`Stem::ALL`]. A load puts them back
     /// to their defaults.
     pub stems: [StemSettings; Stem::COUNT],
-    /// The deck plays the input routed to it in the place of its track:
-    /// `docs/behavior/live-input.md`.
-    pub live: bool,
+    /// What the deck plays: its track, the input routed to it (`docs/behavior/live-input.md`)
+    /// or its grid of samples (`docs/behavior/remix-deck.md`).
+    pub kind: DeckKind,
 }
 
 impl Default for DeckControls {
@@ -180,7 +188,7 @@ impl Default for DeckControls {
             move_size: MoveSize::default(),
             move_fine: false,
             stems: [StemSettings::default(); Stem::COUNT],
-            live: false,
+            kind: DeckKind::Track,
         }
     }
 }
@@ -373,6 +381,8 @@ pub struct DeckSnapshot {
     /// How far the beat of the deck is from that of the clock, in beats: negative behind,
     /// positive ahead. A deck without a tempo in its grid has none.
     pub phase: Option<f32>,
+    /// The grid of samples, played while the deck is a remix deck: `docs/behavior/remix-deck.md`.
+    pub remix: Box<RemixSnapshot>,
 }
 
 impl Default for DeckSnapshot {
@@ -403,6 +413,7 @@ impl Default for DeckSnapshot {
             timeline_seconds: None,
             speed: 1.0,
             phase: None,
+            remix: Box::default(),
         }
     }
 }
@@ -554,6 +565,9 @@ struct DeckControl {
     looping: LoopState,
     cues: Cues,
     tap: TapTempo,
+    /// The grid of samples: `docs/behavior/remix-deck.md`. A restart of the engine empties it.
+    /// Boxed, so the engine stays small on the stack of the thread that builds it.
+    remix: Box<RemixControl>,
 }
 
 struct Loaded {
@@ -586,6 +600,12 @@ enum LoadResult {
         deck: DeckId,
         generation: u64,
         analysis: TrackAnalysis,
+    },
+    Remix {
+        deck: DeckId,
+        at: CellId,
+        generation: u64,
+        result: Result<Box<DecodedSample>, String>,
     },
 }
 
@@ -1468,9 +1488,9 @@ impl Engine {
                 self.send(RtCommand::InputRoute { target, source })?;
                 self.mixer.input_routes[target.index()] = source;
             }
-            Command::DeckTypeSet { deck, live } => {
-                self.send(RtCommand::DeckLive { deck, live })?;
-                self.decks[deck.index()].controls.live = live;
+            Command::DeckTypeSet { deck, kind } => {
+                self.send(RtCommand::DeckType { deck, kind })?;
+                self.decks[deck.index()].controls.kind = kind;
             }
             Command::MixerCrossfaderAssign { deck, side } => {
                 self.send(RtCommand::CrossfaderAssign { deck, side })?;
@@ -1546,6 +1566,17 @@ impl Engine {
             | Command::MixerFxAssignToggle { .. }
             | Command::MixerEffectSelect { .. }
             | Command::MixerEffectSet { .. }) => self.dispatch_effects(effect)?,
+            remix @ (Command::RemixCellLoad { .. }
+            | Command::RemixCellClear { .. }
+            | Command::RemixCellTrigger { .. }
+            | Command::RemixCellModeSet { .. }
+            | Command::RemixCellBpmSet { .. }
+            | Command::RemixCellBpmClear { .. }
+            | Command::RemixCellGainSet { .. }
+            | Command::RemixSlotStop { .. }
+            | Command::RemixSlotVolumeSet { .. }
+            | Command::RemixSlotMuteToggle { .. }
+            | Command::RemixQuantizeSet { .. }) => self.dispatch_remix(remix)?,
             // Every other command is handled before this point.
             _ => {}
         }
@@ -1700,6 +1731,152 @@ impl Engine {
         while self.ends.retired.pop().is_ok() {
             self.swaps_in_flight = self.swaps_in_flight.saturating_sub(1);
         }
+    }
+
+    /// Applies a command of a remix deck: `docs/behavior/remix-deck.md`.
+    fn dispatch_remix(&mut self, command: Command) -> Result<(), EngineError> {
+        match command {
+            Command::RemixCellLoad { deck, at, path } => self.start_remix_load(deck, at, path)?,
+            Command::RemixCellClear { deck, at } => {
+                let control = &mut self.decks[deck.index()].remix;
+                // A decode still running for the cell is forgotten.
+                control.generations[at.slot][at.cell] += 1;
+                control.shown.loading[at.slot][at.cell] = false;
+                self.send_effect_swap(RtCommand::RemixLoad {
+                    deck,
+                    at,
+                    audio: None,
+                    settings: CellSettings::default(),
+                })?;
+                self.decks[deck.index()].remix.shown.cells[at.slot][at.cell] = None;
+            }
+            Command::RemixCellTrigger { deck, at } => {
+                self.send(RtCommand::RemixTrigger { deck, at })?;
+            }
+            Command::RemixCellModeSet { deck, at, mode } => {
+                self.update_cell(deck, at, |cell| cell.mode = mode)?;
+            }
+            Command::RemixCellBpmSet { deck, at, bpm } => {
+                self.update_cell(deck, at, |cell| cell.bpm = Some(bpm))?;
+            }
+            Command::RemixCellBpmClear { deck, at } => {
+                self.update_cell(deck, at, |cell| cell.bpm = None)?;
+            }
+            Command::RemixCellGainSet { deck, at, db } => {
+                let db = ValueError::check("db", db, -MAX_CELL_GAIN_DB, MAX_CELL_GAIN_DB)?;
+                self.update_cell(deck, at, |cell| cell.gain_db = db)?;
+            }
+            Command::RemixSlotStop { deck, slot } => {
+                self.send(RtCommand::RemixStop { deck, slot })?;
+            }
+            Command::RemixSlotVolumeSet { deck, slot, level } => {
+                let level = ValueError::check("level", level, 0.0, 1.0)?;
+                self.send(RtCommand::RemixVolume {
+                    deck,
+                    slot,
+                    level: level as f32,
+                })?;
+                self.decks[deck.index()].remix.shown.volume[slot] = level;
+            }
+            Command::RemixSlotMuteToggle { deck, slot } => {
+                let on = !self.decks[deck.index()].remix.shown.muted[slot];
+                self.send(RtCommand::RemixMute { deck, slot, on })?;
+                self.decks[deck.index()].remix.shown.muted[slot] = on;
+            }
+            Command::RemixQuantizeSet { deck, beats } => {
+                self.send(RtCommand::RemixQuantize { deck, beats })?;
+                self.decks[deck.index()].remix.shown.quantize = beats;
+            }
+            // Every other command is handled by `dispatch`.
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Changes how a cell that holds a sample plays; an empty cell is left as it is.
+    fn update_cell(
+        &mut self,
+        deck: DeckId,
+        at: CellId,
+        change: impl FnOnce(&mut crate::remix::CellInfo),
+    ) -> Result<(), EngineError> {
+        let Some(cell) = self.decks[deck.index()].remix.cell(at) else {
+            return Ok(());
+        };
+        let mut changed = cell.clone();
+        change(&mut changed);
+        self.send(RtCommand::RemixSettings {
+            deck,
+            at,
+            settings: changed.settings(),
+        })?;
+        if let Some(cell) = self.decks[deck.index()].remix.cell(at) {
+            *cell = changed;
+        }
+        Ok(())
+    }
+
+    /// Decodes `path` for a cell on a worker thread of its own.
+    fn start_remix_load(
+        &mut self,
+        deck: DeckId,
+        at: CellId,
+        path: PathBuf,
+    ) -> Result<(), EngineError> {
+        let control = &mut self.decks[deck.index()].remix;
+        control.generations[at.slot][at.cell] += 1;
+        let generation = control.generations[at.slot][at.cell];
+        let reports = self.load_reports.clone();
+        let analyser = Arc::clone(&self.analyser);
+        let recall = self.recall.clone();
+        std::thread::Builder::new()
+            .name("platter-sample".to_owned())
+            .spawn(move || {
+                let memory = recall.as_ref().and_then(|recall| recall(&path));
+                let result = decode_sample(&path, memory, analyser.as_ref()).map(Box::new);
+                // The engine may be gone by now; then nobody waits for the result.
+                let _ = reports.send(LoadResult::Remix {
+                    deck,
+                    at,
+                    generation,
+                    result,
+                });
+            })
+            .map_err(EngineError::Worker)?;
+        self.decks[deck.index()].remix.shown.loading[at.slot][at.cell] = true;
+        self.loads_running += 1;
+        Ok(())
+    }
+
+    fn finish_remix(
+        &mut self,
+        deck: DeckId,
+        at: CellId,
+        generation: u64,
+        result: Result<Box<DecodedSample>, String>,
+    ) -> Option<Event> {
+        self.loads_running = self.loads_running.saturating_sub(1);
+        let control = &mut self.decks[deck.index()].remix;
+        if control.generations[at.slot][at.cell] != generation {
+            return None;
+        }
+        control.shown.loading[at.slot][at.cell] = false;
+        let failed = |message: String| Some(Event::RemixLoadFailed { deck, at, message });
+        let sample = match result {
+            Ok(sample) => *sample,
+            Err(message) => return failed(message),
+        };
+        let settings = sample.info.settings();
+        if let Err(error) = self.send_effect_swap(RtCommand::RemixLoad {
+            deck,
+            at,
+            audio: Some(sample.audio),
+            settings,
+        }) {
+            return failed(error.to_string());
+        }
+        self.decks[deck.index()].remix.shown.cells[at.slot][at.cell] = Some(sample.info);
+        None
     }
 
     /// Applies a command of the effect units or of a mixer effect: `docs/behavior/effects.md`.
@@ -2244,6 +2421,12 @@ impl Engine {
                 self.finish_analysis(deck, generation, analysis);
                 return None;
             }
+            LoadResult::Remix {
+                deck,
+                at,
+                generation,
+                result,
+            } => return self.finish_remix(deck, at, generation, result),
         };
         if result.is_err() {
             self.loads_running = self.loads_running.saturating_sub(1);
@@ -2382,6 +2565,15 @@ impl Engine {
                     .filter(|seconds| seconds.is_finite()),
                 speed: published.speed.get(),
                 phase: Some(published.phase.get()).filter(|phase| phase.is_finite()),
+                remix: {
+                    let mut remix = control.remix.shown.clone();
+                    let cell = |code: u64| usize::try_from(code).ok()?.checked_sub(1);
+                    for slot in 0..rt::SLOTS {
+                        remix.playing[slot] = cell(published.remix_playing[slot].get());
+                        remix.waiting[slot] = cell(published.remix_waiting[slot].get());
+                    }
+                    Box::new(remix)
+                },
             }
         };
         Snapshot {
@@ -2487,9 +2679,9 @@ impl DeckControls {
                 settings: self.stems[stem.index()],
             });
         }
-        commands.push(RtCommand::DeckLive {
+        commands.push(RtCommand::DeckType {
             deck,
-            live: self.live,
+            kind: self.kind,
         });
         commands
     }

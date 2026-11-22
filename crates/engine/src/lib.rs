@@ -13,6 +13,7 @@ pub mod effects;
 pub mod midi_clock;
 mod peaks;
 mod recorder;
+mod remix;
 mod render;
 pub mod rt;
 pub mod separation;
@@ -27,9 +28,9 @@ pub use analyser::{
 };
 pub use command::{
     BpmScale, CROSSFADER_STEP, ClockMode, Command, CommandError, CrossfaderDirection, CueStep,
-    Direction, LOOP_SOURCES, MAX_CEILING_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_RELEASE_MS,
-    MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize, SizeStep,
-    SyncMode,
+    Direction, LOOP_SOURCES, MAX_CEILING_DB, MAX_CELL_GAIN_DB, MAX_DRIVE_DB, MAX_FADE_BEATS,
+    MAX_RELEASE_MS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS, MixerMode, MoveMode, MoveSize,
+    SizeStep, SyncMode,
 };
 pub use control::{
     ClockSnapshot, DeckControls, DeckSnapshot, Engine, EngineError, Event, FADER_UNITY,
@@ -49,9 +50,10 @@ pub use platter_stems::{
     WeightsError, install_spleeter, load_spleeter,
 };
 pub use recorder::{MIN_SPLIT_BYTES, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
+pub use remix::{CellInfo, RemixSnapshot};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{
-    INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS, LoopPhase, LoopSource,
-    LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
+    CellId, CellMode, DeckKind, INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS,
+    LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
 };
 pub use wav::WavWriter;

@@ -19,7 +19,7 @@ use platter_device_io::ClockMessages;
 use platter_engine::command::{Args, CommandSpec, SPECS};
 use platter_engine::midi_clock::{ClockFeed, ClockFollower, ClockMessage};
 use platter_engine::{
-    Command, Engine, EngineError, Event, FxUnit, InputFeed, InputTarget, PlatterAnalyser,
+    Command, DeckKind, Engine, EngineError, Event, FxUnit, InputFeed, InputTarget, PlatterAnalyser,
     Processor, Recall, RecordingNames, StemRecall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
@@ -1334,7 +1334,11 @@ impl PlatterApp {
         );
         commands.extend(DeckId::ALL.map(|deck| Command::DeckTypeSet {
             deck,
-            live: input.live[deck.index()],
+            kind: if input.live[deck.index()] {
+                DeckKind::Live
+            } else {
+                DeckKind::Track
+            },
         }));
         for (now, wanted, toggle) in [
             (
@@ -1415,7 +1419,9 @@ impl PlatterApp {
         let kept = InputSettings {
             device: self.settings.input.device.clone(),
             routes: snapshot.mixer.input_routes,
-            live: DeckId::ALL.map(|deck| snapshot.decks[deck.index()].controls.live),
+            // A remix deck is not kept: its grid is not either (`docs/behavior/remix-deck.md`).
+            live: DeckId::ALL
+                .map(|deck| snapshot.decks[deck.index()].controls.kind == DeckKind::Live),
             aux_level: snapshot.mixer.aux_level,
         };
         if kept != self.settings.input {
@@ -2027,6 +2033,17 @@ impl PlatterApp {
                     self.log(
                         Level::Warning,
                         &format!("deck {}: stems: {message}", deck.letter()),
+                    );
+                }
+                Event::RemixLoadFailed { deck, at, message } => {
+                    self.log(
+                        Level::Warning,
+                        &format!(
+                            "deck {}, slot {}, cell {}: {message}",
+                            deck.letter(),
+                            at.slot + 1,
+                            at.cell + 1
+                        ),
                     );
                 }
                 Event::PreviewFailed { message } => {

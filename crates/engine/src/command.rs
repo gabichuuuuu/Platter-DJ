@@ -19,7 +19,10 @@ use platter_dsp::filter::FilterModel;
 
 use crate::effects::{FxRouting, FxUnit, KEYS, KNOBS, UNITS, index_of};
 pub use crate::rt::MAX_KEY_SHIFT;
-use crate::rt::{InputSource, InputTarget, LoopSource, Output};
+use crate::rt::{
+    CELLS as REMIX_CELLS, CellId, CellMode, DeckKind, InputSource, InputTarget, LoopSource, Output,
+    QUANTIZE_BEATS, SLOTS as REMIX_SLOTS,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
@@ -369,10 +372,66 @@ pub enum Command {
     MixerAuxSet {
         level: f64,
     },
-    /// The deck plays the input routed to it, or its track.
+    /// The deck plays its track, the input routed to it or its grid of samples.
     DeckTypeSet {
         deck: DeckId,
-        live: bool,
+        kind: DeckKind,
+    },
+    /// Decodes a file into a cell of the grid of a deck: `docs/behavior/remix-deck.md`.
+    RemixCellLoad {
+        deck: DeckId,
+        at: CellId,
+        path: PathBuf,
+    },
+    RemixCellClear {
+        deck: DeckId,
+        at: CellId,
+    },
+    /// Starts the cell on the next boundary of the quantize.
+    RemixCellTrigger {
+        deck: DeckId,
+        at: CellId,
+    },
+    RemixCellModeSet {
+        deck: DeckId,
+        at: CellId,
+        mode: CellMode,
+    },
+    /// The tempo of the sample of the cell, which it plays at the tempo of the clock from.
+    RemixCellBpmSet {
+        deck: DeckId,
+        at: CellId,
+        bpm: Bpm,
+    },
+    /// The cell plays at its own speed.
+    RemixCellBpmClear {
+        deck: DeckId,
+        at: CellId,
+    },
+    /// Gain of the cell in decibels, before the volume of its slot.
+    RemixCellGainSet {
+        deck: DeckId,
+        at: CellId,
+        db: f64,
+    },
+    /// Stops the cell of a slot on the next boundary.
+    RemixSlotStop {
+        deck: DeckId,
+        slot: usize,
+    },
+    RemixSlotVolumeSet {
+        deck: DeckId,
+        slot: usize,
+        level: f64,
+    },
+    RemixSlotMuteToggle {
+        deck: DeckId,
+        slot: usize,
+    },
+    /// Beats of the boundary the cells start and stop on; `None` starts them at once.
+    RemixQuantizeSet {
+        deck: DeckId,
+        beats: Option<u32>,
     },
     /// The input a deck or the auxiliary input takes; `None` leaves it silent.
     InputRoutingSet {
@@ -654,7 +713,13 @@ const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
-const DECK_TYPES: &[&str] = &["track", "live"];
+const DECK_TYPES: &[&str] = &["track", "live", "remix"];
+const REMIX_SLOT: ParamSpec = number("slot", 1.0, REMIX_SLOTS as f64);
+const REMIX_CELL: ParamSpec = number("cell", 1.0, REMIX_CELLS as f64);
+const CELL_MODES: &[&str] = &["loop", "one_shot"];
+const QUANTIZE_SIZES: &[&str] = &["none", "1", "2", "4", "8", "16"];
+/// The most the gain of a cell moves either way, in decibels.
+pub const MAX_CELL_GAIN_DB: f64 = 12.0;
 const INPUT_TARGETS: &[&str] = &[
     "deck_a", "deck_b", "deck_c", "deck_d", "aux", "recorder", "fx_send",
 ];
@@ -1342,6 +1407,85 @@ pub const SPECS: &[CommandSpec] = &[
         ],
     },
     CommandSpec {
+        id: "remix.cell.load",
+        label: "Load a sample into a cell",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL, path("path")],
+    },
+    CommandSpec {
+        id: "remix.cell.clear",
+        label: "Empty a cell",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.trigger",
+        label: "Start a cell",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.mode.set",
+        label: "Loop or one-shot",
+        params: &[
+            DECK,
+            REMIX_SLOT,
+            REMIX_CELL,
+            ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice(CELL_MODES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "remix.cell.bpm.set",
+        label: "Tempo of a sample",
+        params: &[
+            DECK,
+            REMIX_SLOT,
+            REMIX_CELL,
+            number("bpm", Bpm::MIN, Bpm::MAX),
+        ],
+    },
+    CommandSpec {
+        id: "remix.cell.bpm.clear",
+        label: "Play a sample at its own speed",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.gain.set",
+        label: "Gain of a cell",
+        params: &[
+            DECK,
+            REMIX_SLOT,
+            REMIX_CELL,
+            number("db", -MAX_CELL_GAIN_DB, MAX_CELL_GAIN_DB),
+        ],
+    },
+    CommandSpec {
+        id: "remix.slot.stop",
+        label: "Stop a slot",
+        params: &[DECK, REMIX_SLOT],
+    },
+    CommandSpec {
+        id: "remix.slot.volume.set",
+        label: "Volume of a slot",
+        params: &[DECK, REMIX_SLOT, number("level", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "remix.slot.mute.toggle",
+        label: "Mute a slot",
+        params: &[DECK, REMIX_SLOT],
+    },
+    CommandSpec {
+        id: "remix.quantize.set",
+        label: "Quantize of a remix deck",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "beats",
+                kind: ParamKind::Choice(QUANTIZE_SIZES),
+            },
+        ],
+    },
+    CommandSpec {
         id: "input.routing.set",
         label: "Route an input",
         params: &[
@@ -1918,15 +2062,39 @@ impl Reader<'_> {
         }
     }
 
-    /// Whether `type` names the live type.
-    fn deck_type(&self) -> Result<bool, CommandError> {
-        match self.text("type")? {
-            "track" => Ok(false),
-            "live" => Ok(true),
-            _ => Err(CommandError::Value(ValueError::UnknownChoice {
-                name: "type",
-                expected: "track, live",
-            })),
+    fn deck_type(&self) -> Result<DeckKind, CommandError> {
+        DeckKind::parse(self.text("type")?).ok_or(CommandError::Value(ValueError::UnknownChoice {
+            name: "type",
+            expected: "track, live, remix",
+        }))
+    }
+
+    fn cell(&self) -> Result<CellId, CommandError> {
+        Ok(CellId {
+            slot: self.index("slot", REMIX_SLOTS)?,
+            cell: self.index("cell", REMIX_CELLS)?,
+        })
+    }
+
+    fn cell_mode(&self) -> Result<CellMode, CommandError> {
+        CellMode::parse(self.text("mode")?).ok_or(CommandError::Value(ValueError::UnknownChoice {
+            name: "mode",
+            expected: "loop, one_shot",
+        }))
+    }
+
+    fn quantize(&self) -> Result<Option<u32>, CommandError> {
+        match self.text("beats")? {
+            "none" => Ok(None),
+            name => name
+                .parse()
+                .ok()
+                .filter(|beats| QUANTIZE_BEATS.contains(beats))
+                .map(Some)
+                .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                    name: "beats",
+                    expected: "none, 1, 2, 4, 8, 16",
+                })),
         }
     }
 
@@ -2441,7 +2609,56 @@ impl Command {
             },
             "deck.type.set" => Self::DeckTypeSet {
                 deck: read.deck()?,
-                live: read.deck_type()?,
+                kind: read.deck_type()?,
+            },
+            "remix.cell.load" => Self::RemixCellLoad {
+                deck: read.deck()?,
+                at: read.cell()?,
+                path: PathBuf::from(read.text("path")?),
+            },
+            "remix.cell.clear" => Self::RemixCellClear {
+                deck: read.deck()?,
+                at: read.cell()?,
+            },
+            "remix.cell.trigger" => Self::RemixCellTrigger {
+                deck: read.deck()?,
+                at: read.cell()?,
+            },
+            "remix.cell.mode.set" => Self::RemixCellModeSet {
+                deck: read.deck()?,
+                at: read.cell()?,
+                mode: read.cell_mode()?,
+            },
+            "remix.cell.bpm.set" => Self::RemixCellBpmSet {
+                deck: read.deck()?,
+                at: read.cell()?,
+                bpm: Bpm::new(read.number("bpm")?)?,
+            },
+            "remix.cell.bpm.clear" => Self::RemixCellBpmClear {
+                deck: read.deck()?,
+                at: read.cell()?,
+            },
+            "remix.cell.gain.set" => Self::RemixCellGainSet {
+                deck: read.deck()?,
+                at: read.cell()?,
+                db: read.number("db")?,
+            },
+            "remix.slot.stop" => Self::RemixSlotStop {
+                deck: read.deck()?,
+                slot: read.index("slot", REMIX_SLOTS)?,
+            },
+            "remix.slot.volume.set" => Self::RemixSlotVolumeSet {
+                deck: read.deck()?,
+                slot: read.index("slot", REMIX_SLOTS)?,
+                level: read.number("level")?,
+            },
+            "remix.slot.mute.toggle" => Self::RemixSlotMuteToggle {
+                deck: read.deck()?,
+                slot: read.index("slot", REMIX_SLOTS)?,
+            },
+            "remix.quantize.set" => Self::RemixQuantizeSet {
+                deck: read.deck()?,
+                beats: read.quantize()?,
             },
             "input.routing.set" => Self::InputRoutingSet {
                 target: read.input_target()?,
@@ -2596,6 +2813,17 @@ impl Command {
             Self::MixerExternalMasterVolumeToggle => "mixer.external.master_volume.toggle",
             Self::MixerAuxSet { .. } => "mixer.aux.set",
             Self::DeckTypeSet { .. } => "deck.type.set",
+            Self::RemixCellLoad { .. } => "remix.cell.load",
+            Self::RemixCellClear { .. } => "remix.cell.clear",
+            Self::RemixCellTrigger { .. } => "remix.cell.trigger",
+            Self::RemixCellModeSet { .. } => "remix.cell.mode.set",
+            Self::RemixCellBpmSet { .. } => "remix.cell.bpm.set",
+            Self::RemixCellBpmClear { .. } => "remix.cell.bpm.clear",
+            Self::RemixCellGainSet { .. } => "remix.cell.gain.set",
+            Self::RemixSlotStop { .. } => "remix.slot.stop",
+            Self::RemixSlotVolumeSet { .. } => "remix.slot.volume.set",
+            Self::RemixSlotMuteToggle { .. } => "remix.slot.mute.toggle",
+            Self::RemixQuantizeSet { .. } => "remix.quantize.set",
             Self::InputRoutingSet { .. } => "input.routing.set",
             Self::FxUnitModeSet { .. } => "fx.unit.mode.set",
             Self::FxUnitDryWetSet { .. } => "fx.unit.dry_wet.set",

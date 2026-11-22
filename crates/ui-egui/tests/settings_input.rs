@@ -6,7 +6,7 @@
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::DeckId;
-use platter_engine::Command;
+use platter_engine::{Command, DeckKind};
 use platter_ui_egui::command::{Action, SettingsPage};
 use platter_ui_egui::cx::Control;
 use platter_ui_egui::i18n::Language;
@@ -124,7 +124,7 @@ fn the_type_of_a_deck_is_chosen_on_the_page() {
         engine(stage.click(live_b)),
         [Command::DeckTypeSet {
             deck: DeckId::B,
-            live: true
+            kind: DeckKind::Live
         }]
     );
 }

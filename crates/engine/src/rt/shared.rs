@@ -6,6 +6,7 @@ use platter_core::DeckId;
 
 use super::clock::INITIAL_BPM;
 use super::input::INPUT_CHANNELS;
+use super::remix::SLOTS;
 
 /// A relaxed ordering is enough: each value stands alone and readers only display it.
 const ORDER: Ordering = Ordering::Relaxed;
@@ -114,6 +115,10 @@ pub struct DeckShared {
     /// How far the beat of the deck is from that of the clock, in beats: negative behind,
     /// positive ahead. Not a number while the deck has no beat.
     pub phase: AtomicF32,
+    /// The cell each slot of the grid plays and the one it waits to start, counted from one;
+    /// zero for none: `docs/behavior/remix-deck.md`.
+    pub remix_playing: [Count; SLOTS],
+    pub remix_waiting: [Count; SLOTS],
 }
 
 impl Default for DeckShared {
@@ -136,6 +141,8 @@ impl Default for DeckShared {
             timeline: AtomicF64::new(f64::NAN),
             speed: AtomicF64::new(1.0),
             phase,
+            remix_playing: Default::default(),
+            remix_waiting: Default::default(),
         }
     }
 }
