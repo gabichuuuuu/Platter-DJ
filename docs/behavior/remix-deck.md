@@ -73,6 +73,21 @@ beats of the master clock, a boundary of four beats falls on every fourth beat.
 - **Slot.** A volume from 0 to 1 and a mute, both smoothed. Commands for a cell that holds no
   sample (its mode, tempo or gain) leave it as it is.
 - **Cell gain.** -12 to +12 dB, before the volume of the slot.
+- **Latch and gate.** A cell latches by default: it plays on after its key is released. In gate
+  mode it plays only while the key is held: `remix.cell.release` stops it at once, with the fade,
+  or forgets it while it waits for its boundary. Releasing a latched cell does nothing.
+- **Reverse.** A reversed cell plays its sample backwards, from its end: a one-shot stops at its
+  beginning, a loop goes back to its end. The change takes effect from the next frame.
+- **Punch.** In a punched slot a new loop does not start at its beginning but where it would be had
+  it started on the beat the first cell of that run started on, counted in beats at the tempo of the
+  clock. The run ends when the slot stops or its cell ends. A one-shot always starts at its
+  beginning, as the manual lets a preference ask.
+- **Capture.** `remix.cell.capture` copies part of the track of another deck into a cell, on a
+  worker thread: the loop that is on or, without one, the size of a new loop of that deck from
+  where it plays, at the tempo of its beatgrid. The cell takes that tempo, the name of the track
+  and the loop mode. A deck without a track, or with neither a loop nor a tempo, is refused; a part
+  that runs past the end of the track is cut there. The track is copied as it is, without its
+  stems, its key lock or the effects of its channel.
 
 Every action is a command:
 
@@ -89,10 +104,16 @@ Every action is a command:
 | `remix.slot.stop` | Stops the cell of the slot on the next boundary |
 | `remix.slot.volume.set` | `level` 0 to 1 |
 | `remix.slot.mute.toggle` | Mutes the slot, or lets it be heard again |
+| `remix.cell.trigger_mode.set` | `mode` `latch` or `gate` |
+| `remix.cell.release` | The key of the cell is released: a cell in gate mode stops |
+| `remix.cell.reverse.toggle` | Plays the cell backwards, or forwards again |
+| `remix.cell.capture` | `from`: the deck whose loop is copied into the cell |
+| `remix.slot.punch.toggle` | Switches the punch mode of the slot |
 | `remix.quantize.set` | `beats` `none`, `1`, `2`, `4`, `8` or `16` |
 
-The snapshot holds, for each deck, the name, mode, tempo and gain of each cell, the cell each slot
-plays and the one it waits to start.
+The snapshot holds, for each deck, the name, mode, tempo, gain, trigger mode and direction of each
+cell, the cell each slot plays and the one it waits to start, and the volume, mute and punch of
+each slot.
 
 ## Differences
 
@@ -106,9 +127,9 @@ plays and the one it waits to start.
   manual makes optional with a preference.
 - **Speed follows the tempo, and so does the pitch.** There is no key lock in a slot and no pitch per
   cell yet.
-- **Not yet:** gate mode, reverse, punch mode, the filter, the effect send and the cue of a slot,
-  pages, colours, moving the beatgrid of a cell, capture from a deck or from the loop recorder, and
-  saving or exporting a set. The grid is empty when Platter starts and the type of a remix deck is
+- **Not yet:** the filter, the effect send and the cue of a slot, pages, colours, moving the
+  beatgrid of a cell, capture from the loop recorder, and saving or exporting a set. A capture is
+  a command naming the deck, where the manual drags the title of the deck onto the cell. The grid is empty when Platter starts and the type of a remix deck is
   not kept in the settings: it starts as a track deck. A restart of the engine, on a change of
   audio device, empties the grid too; the deck stays a remix deck.
 - **A boundary counts the beats of the clock**, not bars of a track: with four beats the boundary is

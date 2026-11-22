@@ -9,6 +9,7 @@ use platter_core::{Bpm, SampleRate, TrackMemory};
 use platter_decode::{decode_file, probe_file};
 
 use crate::analyser::Analyser;
+use crate::control::TrackInfo;
 use crate::rt::{CELLS, CellId, CellMode, CellSettings, MAX_SAMPLE_SECONDS, SLOTS, TrackAudio};
 
 /// A cell that holds a sample, as the snapshot shows it.
@@ -21,6 +22,9 @@ pub struct CellInfo {
     pub bpm: Option<Bpm>,
     pub gain_db: f64,
     pub seconds: f64,
+    /// The cell plays only while its key is held.
+    pub gate: bool,
+    pub reverse: bool,
 }
 
 impl CellInfo {
@@ -29,6 +33,8 @@ impl CellInfo {
             mode: self.mode,
             bpm: self.bpm.map(Bpm::value),
             gain: 10f64.powf(self.gain_db / 20.0) as f32,
+            gate: self.gate,
+            reverse: self.reverse,
         }
     }
 }
@@ -45,6 +51,8 @@ pub struct RemixSnapshot {
     pub waiting: [Option<usize>; SLOTS],
     pub volume: [f64; SLOTS],
     pub muted: [bool; SLOTS],
+    /// A new loop of the slot starts where the one before had reached.
+    pub punch: [bool; SLOTS],
     /// Beats of the boundary; none starts the cells at once.
     pub quantize: Option<u32>,
 }
@@ -58,6 +66,7 @@ impl Default for RemixSnapshot {
             waiting: [None; SLOTS],
             volume: [1.0; SLOTS],
             muted: [false; SLOTS],
+            punch: [false; SLOTS],
             quantize: Some(1),
         }
     }
@@ -81,6 +90,55 @@ impl RemixControl {
 pub(crate) struct DecodedSample {
     pub(crate) audio: TrackAudio,
     pub(crate) info: CellInfo,
+}
+
+/// Copies `seconds` of a track from `start` into a sample for a cell, on the worker of the
+/// capture. A part that runs past the end of the track is cut there.
+pub(crate) fn capture_sample(
+    audio: &TrackAudio,
+    info: &TrackInfo,
+    start: f64,
+    seconds: f64,
+    bpm: Option<Bpm>,
+) -> Result<DecodedSample, String> {
+    if !seconds.is_finite() || seconds > MAX_SAMPLE_SECONDS {
+        return Err(format!(
+            "a sample is at most {MAX_SAMPLE_SECONDS:.0} seconds long"
+        ));
+    }
+    let rate = audio.rate();
+    let frames = audio.frames();
+    let first = (start.max(0.0) * rate.as_f64()).round() as usize;
+    let count = (seconds.max(0.0) * rate.as_f64()).round() as usize;
+    let last = first.saturating_add(count).min(frames);
+    let samples = audio.samples().get(first * 2..last * 2).unwrap_or_default();
+    if samples.len() < 4 {
+        return Err("the part to capture is empty".to_owned());
+    }
+    let name = info
+        .tags
+        .title
+        .clone()
+        .filter(|title| !title.trim().is_empty())
+        .or_else(|| {
+            info.path
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+    let seconds = (last - first) as f64 / rate.as_f64();
+    Ok(DecodedSample {
+        audio: TrackAudio::new(rate, samples.to_vec()),
+        info: CellInfo {
+            name: name.into(),
+            mode: CellMode::Loop,
+            bpm,
+            gain_db: 0.0,
+            seconds,
+            gate: false,
+            reverse: false,
+        },
+    })
 }
 
 /// Decodes `path` for a cell, on the worker that loads it. The length the file declares is
@@ -127,6 +185,8 @@ pub(crate) fn decode_sample(
             bpm,
             gain_db: 0.0,
             seconds,
+            gate: false,
+            reverse: false,
         },
     })
 }

@@ -351,6 +351,185 @@ fn loads_and_clears_while_cells_play_give_every_sample_back() {
 }
 
 #[test]
+fn a_cell_in_gate_mode_stops_when_its_key_is_released_and_a_latched_one_plays_on() {
+    let mut rig = remix_rig();
+    load(&mut rig, cell(0, 0), sample_file("gate", &sine(440.0, 1.0)));
+    load(
+        &mut rig,
+        cell(1, 0),
+        sample_file("latch", &sine(1_000.0, 1.0)),
+    );
+    rig.send(Command::RemixQuantizeSet {
+        deck: A,
+        beats: None,
+    });
+    rig.send(Command::RemixCellTriggerModeSet {
+        deck: A,
+        at: cell(0, 0),
+        gate: true,
+    });
+    trigger(&mut rig, cell(0, 0));
+    trigger(&mut rig, cell(1, 0));
+    let held = rig.run(0.3);
+    assert!(amplitude(&held[held.len() - 4_800..], 440.0) > 0.3);
+    for at in [cell(0, 0), cell(1, 0)] {
+        rig.send(Command::RemixCellRelease { deck: A, at });
+    }
+    let released = rig.run(0.3);
+    let tail = &released[released.len() - 4_800..];
+    assert!(amplitude(tail, 440.0) < 1e-3);
+    assert!(amplitude(tail, 1_000.0) > 0.3);
+    let snapshot = rig.engine.snapshot();
+    assert_eq!(snapshot.decks[0].remix.playing, [None, Some(0), None, None]);
+    assert!(snapshot.decks[0].remix.cells[0][0].as_ref().unwrap().gate);
+}
+
+#[test]
+fn a_reversed_cell_plays_its_sample_from_the_end() {
+    let mut rig = remix_rig();
+    // The click is on the first frame: played backwards it comes last.
+    load(&mut rig, cell(0, 0), sample_file("reverse", &click(0.3)));
+    rig.send(Command::RemixQuantizeSet {
+        deck: A,
+        beats: None,
+    });
+    rig.send(Command::RemixCellModeSet {
+        deck: A,
+        at: cell(0, 0),
+        mode: CellMode::OneShot,
+    });
+    rig.send(Command::RemixCellReverseToggle {
+        deck: A,
+        at: cell(0, 0),
+    });
+    rig.run(0.1);
+    trigger(&mut rig, cell(0, 0));
+    let heard = onsets(&rig.run(1.0), 0.1);
+    let length = (0.3 * f64::from(RATE)) as usize;
+    assert_eq!(heard.len(), 1, "{heard:?}");
+    assert!(heard[0].abs_diff(length) <= 300, "{heard:?}");
+}
+
+/// The frame of the first click of a two-beat loop triggered at 0.8 s, on beat 2, after a
+/// cell that started on beat 1 in the same slot.
+fn punched_onset(punch: bool) -> usize {
+    let mut rig = remix_rig();
+    load(
+        &mut rig,
+        cell(0, 0),
+        sample_file("punch-first", &sine(440.0, 1.0)),
+    );
+    load(
+        &mut rig,
+        cell(0, 1),
+        sample_file("punch-second", &click(1.0)),
+    );
+    rig.send(Command::RemixCellBpmSet {
+        deck: A,
+        at: cell(0, 1),
+        bpm: Bpm::new(120.0).unwrap(),
+    });
+    if punch {
+        rig.send(Command::RemixSlotPunchToggle { deck: A, slot: 0 });
+    }
+    rig.run(0.1);
+    trigger(&mut rig, cell(0, 0));
+    let mut out = rig.run(0.7);
+    trigger(&mut rig, cell(0, 1));
+    out.extend(rig.run(2.0));
+    // The first cell is silent from the trigger on: the clicks are the second one's.
+    let start = (0.75 * f64::from(RATE)) as usize;
+    onset(&out[start..], 0.1).unwrap() + start + (0.1 * f64::from(RATE)) as usize
+}
+
+#[test]
+fn in_punch_mode_a_new_loop_starts_where_the_one_before_had_reached() {
+    // Without punch the loop starts at its beginning on beat 2; with it, one beat into
+    // itself, so its click comes on beat 3.
+    let plain = punched_onset(false);
+    let punched = punched_onset(true);
+    assert!(plain.abs_diff(2 * BEAT) <= 8, "{plain}");
+    assert!(punched.abs_diff(3 * BEAT) <= 8, "{punched}");
+}
+
+#[test]
+fn the_loop_size_of_a_deck_is_captured_into_a_cell_with_its_tempo() {
+    let (mut engine, processor) = Engine::with_analyser(rate(), Arc::new(Steady));
+    engine.dispatch(Command::MixerAutogainToggle).unwrap();
+    let mut rig = Rig { engine, processor };
+    assert!(matches!(
+        rig.engine.dispatch(Command::RemixCellCapture {
+            deck: A,
+            at: cell(0, 0),
+            from: DeckId::B,
+        }),
+        Err(platter_engine::EngineError::NothingToCapture)
+    ));
+    rig.load(
+        DeckId::B,
+        common::sine_file("remix-capture", 440.0, 10.0, 0.5, RATE),
+    );
+    // The analysis gives the grid its tempo.
+    rig.run(0.1);
+    rig.engine.wait_for_loads();
+    rig.run(0.1);
+    rig.send(Command::RemixCellCapture {
+        deck: A,
+        at: cell(2, 3),
+        from: DeckId::B,
+    });
+    let events = rig.engine.wait_for_loads();
+    assert!(events.is_empty(), "{events:?}");
+    let info = rig.engine.snapshot().decks[0].remix.cells[2][3]
+        .clone()
+        .unwrap();
+    // Four beats at 125 BPM.
+    assert!((info.seconds - 1.92).abs() < 1e-3, "{}", info.seconds);
+    assert_eq!(info.bpm, Some(Bpm::new(125.0).unwrap()));
+    assert_eq!(&*info.name, "remix-capture");
+    rig.send(Command::MixerCrossfaderSet { position: 0.0 });
+    rig.send(Command::DeckTypeSet {
+        deck: A,
+        kind: DeckKind::Remix,
+    });
+    trigger(&mut rig, cell(2, 3));
+    let out = rig.run(1.5);
+    // The cell follows the tempo of the clock from its own, and its pitch with it.
+    let clock = rig.engine.snapshot().clock.bpm;
+    let hz = 440.0 * clock / 125.0;
+    assert!(amplitude(&out[out.len() - 4_800..], hz) > 0.3, "at {hz} Hz");
+}
+
+#[test]
+fn the_loop_that_is_on_is_captured_whatever_its_length() {
+    let (mut engine, processor) = Engine::with_analyser(rate(), Arc::new(Steady));
+    engine.dispatch(Command::MixerAutogainToggle).unwrap();
+    let mut rig = Rig { engine, processor };
+    rig.load(
+        DeckId::B,
+        common::sine_file("remix-capture-loop", 440.0, 10.0, 0.5, RATE),
+    );
+    rig.send(Command::DeckLoopIn { deck: DeckId::B });
+    rig.send(Command::DeckPlay { deck: DeckId::B });
+    rig.run(1.0);
+    rig.send(Command::DeckLoopOut { deck: DeckId::B });
+    rig.run(0.1);
+    rig.engine.poll();
+    let region = rig.engine.snapshot().decks[1].looping.region.unwrap();
+    rig.send(Command::RemixCellCapture {
+        deck: A,
+        at: cell(0, 0),
+        from: DeckId::B,
+    });
+    rig.engine.wait_for_loads();
+    let info = rig.engine.snapshot().decks[0].remix.cells[0][0]
+        .clone()
+        .unwrap();
+    assert!((info.seconds - region.seconds()).abs() < 1e-3);
+    assert!((info.seconds - 1.92).abs() > 0.1, "{}", info.seconds);
+}
+
+#[test]
 fn cells_of_different_slots_play_together() {
     let mut rig = remix_rig();
     load(

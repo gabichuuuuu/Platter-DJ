@@ -73,6 +73,10 @@ pub struct CellSettings {
     pub bpm: Option<f64>,
     /// Linear, before the volume of the slot.
     pub gain: f32,
+    /// The cell plays only while its key is held, and stops when it is released.
+    pub gate: bool,
+    /// The cell plays its sample backwards.
+    pub reverse: bool,
 }
 
 impl Default for CellSettings {
@@ -81,6 +85,8 @@ impl Default for CellSettings {
             mode: CellMode::Loop,
             bpm: None,
             gain: 1.0,
+            gate: false,
+            reverse: false,
         }
     }
 }
@@ -117,6 +123,11 @@ struct Slot {
     stop_at: Option<Option<f64>>,
     volume: Smoothed,
     mute: Smoothed,
+    /// A new loop starts where the one before had reached in its beats, not at its beginning.
+    punch: bool,
+    /// The beat the latest cell of the slot started on, while the slot plays: what a punched
+    /// cell counts its place from.
+    timeline: Option<f64>,
 }
 
 /// The cell a slot plays and the one it waits to start, for the snapshot.
@@ -144,6 +155,8 @@ impl RemixPlayer {
             stop_at: None,
             volume: Smoothed::new(1.0, rate, FADE_MS),
             mute: Smoothed::new(1.0, rate, FADE_MS),
+            punch: false,
+            timeline: None,
         };
         Self {
             slots: std::array::from_fn(slot),
@@ -260,6 +273,38 @@ impl RemixPlayer {
         }
     }
 
+    pub(super) fn set_punch(&mut self, slot: usize, on: bool) {
+        if let Some(slot) = self.slots.get_mut(slot) {
+            slot.punch = on;
+        }
+    }
+
+    /// The key of a cell is released: a cell in gate mode stops at once, or does not start.
+    pub(super) fn release(&mut self, at: CellId, retired: &mut Producer<Retired>) {
+        let Some(slot) = self.slots.get_mut(at.slot) else {
+            return;
+        };
+        if !slot
+            .cells
+            .get(at.cell)
+            .is_some_and(|cell| cell.settings.gate)
+        {
+            return;
+        }
+        if slot.waiting.is_some_and(|waiting| waiting.cell == at.cell) {
+            slot.waiting = None;
+        }
+        if slot
+            .playing
+            .as_ref()
+            .is_some_and(|voice| voice.cell == at.cell)
+        {
+            slot.stop_at = None;
+            slot.timeline = None;
+            fade_out(slot, retired);
+        }
+    }
+
     pub(super) fn set_mute(&mut self, slot: usize, on: bool) {
         if let Some(slot) = self.slots.get_mut(slot) {
             slot.mute.set(if on { 0.0 } else { 1.0 });
@@ -289,9 +334,21 @@ impl RemixPlayer {
             {
                 slot.waiting = None;
                 fade_out(slot, retired);
+                let position = slot.cells.get(waiting.cell).map_or(0.0, |cell| {
+                    start_position(
+                        cell,
+                        slot.punch.then_some(slot.timeline).flatten(),
+                        beat,
+                        bpm,
+                        engine_rate,
+                    )
+                });
+                if !slot.punch || slot.timeline.is_none() {
+                    slot.timeline = Some(beat);
+                }
                 slot.playing = Some(Voice {
                     cell: waiting.cell,
-                    position: 0.0,
+                    position,
                     gain: Smoothed::new(1.0, rate, FADE_MS),
                     owned: None,
                 });
@@ -300,6 +357,7 @@ impl RemixPlayer {
                 && at.is_none_or(|at| beat >= at)
             {
                 slot.stop_at = None;
+                slot.timeline = None;
                 fade_out(slot, retired);
             }
             let level = slot.volume.advance() * slot.mute.advance();
@@ -311,6 +369,7 @@ impl RemixPlayer {
             }
             if ended {
                 slot.playing = None;
+                slot.timeline = None;
             }
             let mut faded = false;
             if let Some(voice) = &mut slot.fading {
@@ -348,6 +407,46 @@ fn fade_out(slot: &mut Slot, retired: &mut Producer<Retired>) {
     }
 }
 
+/// Frames of the sample a voice moves per frame of the output.
+fn speed(audio: &TrackAudio, settings: CellSettings, bpm: f64, engine_rate: f64) -> f64 {
+    let step = audio.rate().as_f64() / engine_rate;
+    match settings.bpm {
+        Some(own) if own > 0.0 && bpm.is_finite() && bpm > 0.0 => step * bpm / own,
+        _ => step,
+    }
+}
+
+/// Where a cell starts: at its beginning, or its end when it plays backwards; a loop in a
+/// punched slot starts where it would be had it started on `timeline`, the beat the cell
+/// before it started on.
+fn start_position(
+    cell: &Cell,
+    timeline: Option<f64>,
+    beat: f64,
+    bpm: f64,
+    engine_rate: f64,
+) -> f64 {
+    let Some(audio) = cell.audio.as_ref() else {
+        return 0.0;
+    };
+    let end = audio.frames() as f64;
+    let mut position = 0.0;
+    if let Some(from) = timeline
+        && cell.settings.mode == CellMode::Loop
+        && bpm.is_finite()
+        && bpm > 0.0
+        && end > 0.0
+    {
+        let output_frames = (beat - from).max(0.0) * 60.0 / bpm * engine_rate;
+        position = (output_frames * speed(audio, cell.settings, bpm, engine_rate)).rem_euclid(end);
+    }
+    if cell.settings.reverse {
+        (end - 1.0 - position).max(0.0)
+    } else {
+        position
+    }
+}
+
 /// Lets go of a voice, retiring the sample it held.
 fn finish(voice: Voice, retired: &mut Producer<Retired>) {
     if voice.owned.is_some() {
@@ -381,20 +480,23 @@ fn play(
     let second = audio.frame(((frame + 1) % frames) as i64);
     sum[0] += (first[0] + (second[0] - first[0]) * fraction) * gain;
     sum[1] += (first[1] + (second[1] - first[1]) * fraction) * gain;
-    let mut step = audio.rate().as_f64() / engine_rate;
-    if let Some(own) = cell.settings.bpm
-        && own > 0.0
-        && bpm.is_finite()
-        && bpm > 0.0
-    {
-        step *= bpm / own;
-    }
-    voice.position += step;
+    let step = speed(audio, cell.settings, bpm, engine_rate);
     let end = frames as f64;
-    if voice.position >= end {
-        match cell.settings.mode {
-            CellMode::Loop => voice.position %= end,
-            CellMode::OneShot => return true,
+    if cell.settings.reverse {
+        voice.position -= step;
+        if voice.position < 0.0 {
+            match cell.settings.mode {
+                CellMode::Loop => voice.position = voice.position.rem_euclid(end),
+                CellMode::OneShot => return true,
+            }
+        }
+    } else {
+        voice.position += step;
+        if voice.position >= end {
+            match cell.settings.mode {
+                CellMode::Loop => voice.position %= end,
+                CellMode::OneShot => return true,
+            }
         }
     }
     false

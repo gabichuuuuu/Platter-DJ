@@ -503,6 +503,16 @@ pub enum RtCommand {
         deck: DeckId,
         slot: usize,
     },
+    /// The key of a cell is released: a cell in gate mode stops.
+    RemixRelease {
+        deck: DeckId,
+        at: CellId,
+    },
+    RemixPunch {
+        deck: DeckId,
+        slot: usize,
+        on: bool,
+    },
     /// Volume of a slot, 0 to 1.
     RemixVolume {
         deck: DeckId,

@@ -716,6 +716,36 @@ fn process_neither_allocates_nor_frees() {
             deck: DeckId::C,
             at: at(0, 1),
         },
+        Command::RemixSlotPunchToggle {
+            deck: DeckId::C,
+            slot: 0,
+        },
+        Command::RemixCellReverseToggle {
+            deck: DeckId::C,
+            at: at(0, 0),
+        },
+        Command::RemixCellTrigger {
+            deck: DeckId::C,
+            at: at(0, 0),
+        },
+        Command::RemixCellTriggerModeSet {
+            deck: DeckId::C,
+            at: at(0, 0),
+            gate: true,
+        },
+        Command::RemixCellRelease {
+            deck: DeckId::C,
+            at: at(0, 0),
+        },
+        Command::RemixCellTriggerModeSet {
+            deck: DeckId::C,
+            at: at(0, 0),
+            gate: false,
+        },
+        Command::RemixCellTrigger {
+            deck: DeckId::C,
+            at: at(0, 1),
+        },
         Command::RemixSlotVolumeSet {
             deck: DeckId::C,
             slot: 0,

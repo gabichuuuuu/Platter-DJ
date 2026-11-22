@@ -276,6 +276,13 @@ impl Processor {
                 let grid = &mut self.channels[deck.index()].grid;
                 grid.trigger(at, beat, &mut self.retired);
             }
+            RtCommand::RemixRelease { deck, at } => {
+                let grid = &mut self.channels[deck.index()].grid;
+                grid.release(at, &mut self.retired);
+            }
+            RtCommand::RemixPunch { deck, slot, on } => {
+                self.channels[deck.index()].grid.set_punch(slot, on);
+            }
             RtCommand::RemixStop { deck, slot } => {
                 let beat = self.beat;
                 self.channels[deck.index()].grid.stop(slot, beat);
