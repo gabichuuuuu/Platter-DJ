@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(broadcast)* code the mix as an Ogg Opus stream ([#73](https://github.com/gabichuuuuu/Platter-DJ/pull/73))
 - *(ui-egui)* show the input of a live deck in its place ([#71](https://github.com/gabichuuuuu/Platter-DJ/pull/71))
 - *(ui-egui)* show the grid of a remix deck ([#70](https://github.com/gabichuuuuu/Platter-DJ/pull/70))
 - *(engine)* add the remix deck, driven by commands ([#67](https://github.com/gabichuuuuu/Platter-DJ/pull/67))
