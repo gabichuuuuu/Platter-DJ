@@ -260,8 +260,8 @@ features = [
 id = "dvs"
 title = "DVS and live input"
 features = [
-  { id = "timecode", name = "Timecode on vinyl and CD, with an own decoder", milestone = "M5", status = "planned" },
-  { id = "modes", name = "Absolute and relative modes, control zones and tracking modes", milestone = "M5", status = "planned" },
+  { id = "timecode", name = "Timecode on vinyl and CD, with an own decoder", milestone = "later", status = "planned" },
+  { id = "modes", name = "Absolute and relative modes, control zones and tracking modes", milestone = "later", status = "planned" },
   { id = "microphone-live-input", name = "Microphone and live input deck", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input; cargo test -p platter-audio-io --lib; a microphone on one input of a live deck or of the auxiliary input, whose level is on the Input page with no knob on the mixer, not tried with a real device, see docs/behavior/live-input.md" },
 ]
 
@@ -285,7 +285,7 @@ features = [
   { id = "layouts", name = "Layouts", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer --test panels, see docs/behavior/interface.md" },
   { id = "input-routing", name = "Input routing", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input; cargo test -p platter-ui-egui --test settings_input; cargo test -p platter --bins config; on the Input page, single inputs and pairs, for the decks, the auxiliary input, the recorders and the FX Send, not tried with a real device, see docs/behavior/live-input.md" },
   { id = "external-sync", name = "External sync", milestone = "M5", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_sync; cargo test -p platter --bins config; the Sync page: MIDI clock out and in, no Link, see docs/behavior/midi-clock.md" },
-  { id = "timecode", name = "Timecode", milestone = "M5", status = "planned" },
+  { id = "timecode", name = "Timecode", milestone = "later", status = "planned" },
   { id = "remix", name = "Remix decks", milestone = "M5", status = "planned" },
   { id = "broadcasting", name = "Broadcasting", milestone = "M5", status = "planned" },
 ]
