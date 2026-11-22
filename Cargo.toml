@@ -24,10 +24,12 @@ cognitive_complexity = "deny"
 too_many_arguments = "deny"
 
 [workspace.dependencies]
+async-hid = "0.5.3"
 audio_thread_priority = { version = "0.38.0", default-features = false }
 cargo_metadata = "0.23.1"
 cpal = "0.18.2"
 midir = "0.11.1"
+futures-lite = "2.6.1"
 # Compiles libopus with cmake and a C compiler: docs/decisions/0046-broadcast-encoding.md.
 opus = "0.4.0"
 eframe = { version = "0.37.0", default-features = false, features = ["wayland", "wgpu", "x11"] }
