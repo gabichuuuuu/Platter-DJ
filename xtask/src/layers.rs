@@ -59,6 +59,7 @@ const LAYER_TABLE: &[(&str, Layer)] = &[
     ("platter-library", Layer::L1),
     ("platter-control", Layer::L1),
     ("platter-stems", Layer::L1),
+    ("platter-broadcast", Layer::L1),
     ("platter-engine", Layer::L2),
     ("platter-audio-io", Layer::L3),
     ("platter-device-io", Layer::L3),

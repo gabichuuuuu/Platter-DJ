@@ -18,6 +18,7 @@ dependency has no row or a row has no dependency.
 | `eframe` | Opens the window, runs the event loop and puts the frames of egui on the screen through `wgpu` | MIT OR Apache-2.0 | `platter` (the application); its `accesskit` feature stays off (`docs/behavior/interface.md`) | An own window and GPU layer over the system APIs, which would need `unsafe` |
 | `egui` | The interface: layout, input, text and painting | MIT OR Apache-2.0 | `platter-ui-egui`; the widgets and panels use its painter and input, nothing of its stock widgets (`docs/decisions/0013-interface.md`) | Another immediate-mode layer, or an own renderer |
 | `midir` | Lists the MIDI inputs of the system and receives their messages, and sends the MIDI clock to an output: WinMM, CoreMIDI, ALSA | MIT | `platter-device-io`, modules `port` and `output`; none of its types is public (`docs/decisions/0025-midi-ports.md`, `docs/decisions/0041-midi-clock.md`) | Own bindings to each system API, which would need `unsafe` |
+| `opus` | Codes the mix as Opus for broadcasting, with libopus, which `opusic-sys` builds from its source with cmake and a C compiler | MIT OR Apache-2.0; opusic-sys and libopus BSD-3-Clause | `platter-broadcast`, module `stream`; none of its types is public (`docs/decisions/0046-broadcast-encoding.md`) | An own Opus encoder after RFC 6716, a large codec to write and verify |
 | `proptest` | Property tests: damaged files in the decoder, command sequences in the engine, untrusted mappings | MIT OR Apache-2.0 | Tests of `platter-decode`, `platter-engine`, `platter-control` and `platter-library` (not distributed) | Hand-written generators with a fixed seed |
 | `rtrb` | Lock-free single-producer single-consumer queues between the control side and the processor | MIT OR Apache-2.0 | `platter-engine`: `rt` and `control` modules | An own ring buffer, which would need `unsafe` |
 | `rusqlite` | The library file: collection, playlists and history, with the SQLite it compiles (`bundled`) | MIT; libsqlite3-sys MIT, the rest MIT, Apache-2.0 or Zlib | `platter-library`, module `store` (`docs/decisions/0022-library-store.md`) | Another store behind the trait `Library` |
@@ -54,6 +55,7 @@ licence again and read the documentation of the version obtained.
 | Library | rusqlite | 0.43.0 | MIT | M3 | Temporary, behind a project trait |
 | Stems | ort | 2.0.0-rc.15 | MIT OR Apache-2.0 | M4 | ONNX runtime |
 | HID | hidapi | 2.6.7 | MIT | M5 | Access to the HID devices of the system |
+| Broadcasting | opus | 0.4.0 | MIT OR Apache-2.0; libopus BSD-3-Clause | M5 | A perceptual encoder is a large codec to write and verify; chosen by the maintainer on 22 November 2026 (`docs/decisions/0046-broadcast-encoding.md`) |
 | Cover art | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | M3 | JPEG decoding is a large format to write and verify |
 | Cover art | zune-png | 0.5.2 | MIT OR Apache-2.0 OR Zlib | M3 | PNG decoding needs an inflate as well, a large piece to write and verify; it comes from the same family of decoders as zune-jpeg |
 

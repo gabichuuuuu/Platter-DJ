@@ -54,6 +54,15 @@ What the licence asks of Platter:
 - The files are used unmodified. A modified version would have to respect any reserved font
   name.
 
+## Bundled libraries
+
+- From M5 the application links libopus for broadcasting, built from its source: Copyright
+  2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO,
+  Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla and Amazon, under the BSD
+  3-clause licence. A binary that is distributed must come with that notice and licence; the
+  release workflow has to ship the `COPYING` of libopus beside it. Opus is covered by
+  royalty-free patent licences, listed in that file.
+
 ## Open points
 
 | Point | Status |
