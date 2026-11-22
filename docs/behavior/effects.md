@@ -131,9 +131,16 @@ or a unit is unassigned.
 
 - `mixer.fx_assign.toggle` (`deck`, `unit`) puts the channel through the unit, or takes it out.
   The assign keys 1 and 2 of each channel in the M4 screen are these keys.
-- Each unit has a routing (`fx.unit.routing.set`): `insert` (the default) or `post_fader`,
-  set on the Mixer page of the preferences. In external mixer mode *Post fader* is disabled
-  there.
+- Each unit has a routing (`fx.unit.routing.set`): `insert` (the default), `post_fader` or
+  `send`, set on the Mixer page of the preferences. In external mixer mode *Post fader* is
+  disabled there.
+- A unit in `send` routing acts on no channel. In external mixer mode it takes the input
+  routed to the FX Send on the Input page (`input.routing.set` with the target `fx_send`,
+  `docs/behavior/live-input.md`) and returns it on outputs 5 and 6 of the device; several
+  units in send routing chain in the order 1, 2, 3, 4, each with its own dry/wet. In internal
+  mode, or while no unit is in send routing, the return is silent; it fades in and out over
+  the switch time of the units. The send chain of a unit holds its effects whatever its
+  routing, so a unit switched to send is heard at once.
 - Signal path of a channel: gain, equaliser, the units in insert routing it is assigned to,
   filter, fader, pan, the units in post-fader routing it is assigned to, meter. Then the
   crossfader. The manual places the insert just before the filter; in Platter's channel that
@@ -187,9 +194,10 @@ follow the tempo and the beat of the master clock (`docs/behavior/sync.md`).
 
 ## Differences
 
-- **No send routing.** Platter has no input routing until M5 (`docs/parity.toml`, control
-  area), so a unit cannot be fed from an external mixer's send. `insert-send` in
-  `docs/parity.toml` is done with insert and post-fader; send waits for the input routing.
+- **The return of the send is outputs 5 and 6.** The manual returns the send to an output of
+  the interface without saying which; Platter takes the pair after those of the decks in
+  external mixer mode, so the device needs six outputs. A return with no limiter of its own:
+  it carries what the external mixer sent, through the effects.
 - **Units 3 and 4** share the panels of units 1 and 2 through a switch in the panel header,
   as the manual shares them.
 - **No pattern mode**: it is the pattern sequencer of M5.
@@ -217,7 +225,7 @@ The maintainer approved these on 18 November 2026; `docs/design/DESIGN.md` recor
    knobs, two keys and the reset key.
 4. The effect that repeats slices of a bar is named Slicer.
 5. A preference shows two or four units.
-6. No send routing in M4; units are insert or post fader.
+6. Send routing came with the input routing of M5; its return is outputs 5 and 6.
 
 ## Edge cases
 

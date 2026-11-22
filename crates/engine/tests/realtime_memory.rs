@@ -373,6 +373,8 @@ fn commands() -> Vec<Command> {
         Command::ClockMidiRestart,
         Command::ClockSourceSet { external: true },
         Command::ClockSourceSet { external: false },
+        Command::RecorderSourceSet { external: true },
+        Command::RecorderSourceSet { external: false },
         Command::DeckMasterSet { deck: B },
         Command::DeckSyncToggle { deck: A },
         Command::ClockModeSet {
@@ -465,6 +467,24 @@ fn input_commands() -> Vec<Command> {
             source: InputSource::parse("1"),
         },
         Command::MixerAuxSet { level: 0.5 },
+        // The recorders take the input: the mix recorder and a loop of it.
+        Command::InputRoutingSet {
+            target: InputTarget::Recorder,
+            source: InputSource::parse("3-4"),
+        },
+        Command::RecorderSourceSet { external: true },
+        // A unit in send routing takes the FX Send in external mode.
+        Command::InputRoutingSet {
+            target: InputTarget::FxSend,
+            source: InputSource::parse("5-6"),
+        },
+        Command::FxUnitRoutingSet {
+            unit: FxUnit::ALL[1],
+            routing: FxRouting::Send,
+        },
+        Command::LoopRecorderSourceSet {
+            source: LoopSource::External,
+        },
         Command::DeckTypeSet {
             deck: DeckId::A,
             live: false,

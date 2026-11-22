@@ -557,6 +557,10 @@ pub enum Command {
     RecorderToggle,
     /// Closes the file of the recording and goes on in a new one, without losing a frame.
     RecorderCut,
+    /// The mix recorder records the internal mix, or the input routed to the recorders.
+    RecorderSourceSet {
+        external: bool,
+    },
     /// Rec of the loop recorder: waits for the beat and records a pass, or starts or ends an
     /// overdub: `docs/behavior/recording.md`, *Loop recorder*.
     LoopRecorderRecord,
@@ -651,7 +655,10 @@ const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
 const DECK_TYPES: &[&str] = &["track", "live"];
-const INPUT_TARGETS: &[&str] = &["deck_a", "deck_b", "deck_c", "deck_d", "aux"];
+const INPUT_TARGETS: &[&str] = &[
+    "deck_a", "deck_b", "deck_c", "deck_d", "aux", "recorder", "fx_send",
+];
+const RECORDER_SOURCES: &[&str] = &["internal", "external"];
 /// The sources of the input routing, and `none`.
 pub const INPUT_SOURCES: &[&str] = &[
     "none", "1", "2", "3", "4", "5", "6", "7", "8", "1-2", "3-4", "5-6", "7-8",
@@ -661,7 +668,7 @@ const FILTER_MODELS: &[&str] = &["gentle", "steep", "ladder"];
 const UNIT: ParamSpec = number("unit", 1.0, UNITS as f64);
 const FX_SLOT: ParamSpec = number("slot", 1.0, SLOTS as f64);
 const UNIT_MODES: &[&str] = &["group", "single"];
-const ROUTINGS: &[&str] = &["insert", "post_fader"];
+const ROUTINGS: &[&str] = &["insert", "post_fader", "send"];
 /// The effects of a unit, and `none` for an empty place.
 pub const UNIT_EFFECTS: &[&str] = &[
     "none",
@@ -693,7 +700,7 @@ const CLOCK_SOURCES: &[&str] = &["internal", "external"];
 const SYNC_MODES: &[&str] = &["tempo", "beat"];
 
 /// The sources of the loop recorder, by name: the mix, then the decks.
-pub const LOOP_SOURCES: &[&str] = &["master", "a", "b", "c", "d"];
+pub const LOOP_SOURCES: &[&str] = &["master", "a", "b", "c", "d", "external"];
 
 /// Who the tempo master is: `docs/behavior/sync.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1658,6 +1665,14 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "recorder.source.set",
+        label: "Source of the mix recorder",
+        params: &[ParamSpec {
+            name: "source",
+            kind: ParamKind::Choice(RECORDER_SOURCES),
+        }],
+    },
+    CommandSpec {
         id: "recorder.cut",
         label: "Cut the recording into a new file",
         params: &[],
@@ -1810,10 +1825,11 @@ impl Reader<'_> {
     fn loop_source(&self) -> Result<LoopSource, CommandError> {
         match self.text("source")? {
             "master" => Ok(LoopSource::Master),
+            "external" => Ok(LoopSource::External),
             deck => DeckId::parse(deck).map(LoopSource::Deck).map_err(|_| {
                 CommandError::Value(ValueError::UnknownChoice {
                     name: "source",
-                    expected: "master, a, b, c, d",
+                    expected: "master, a, b, c, d, external",
                 })
             }),
         }
@@ -2203,6 +2219,18 @@ impl Command {
             "global.fade_markers.toggle" => Self::GlobalFadeMarkersToggle,
             "recorder.toggle" => Self::RecorderToggle,
             "recorder.cut" => Self::RecorderCut,
+            "recorder.source.set" => Self::RecorderSourceSet {
+                external: match read.text("source")? {
+                    "internal" => false,
+                    "external" => true,
+                    _ => {
+                        return Err(CommandError::Value(ValueError::UnknownChoice {
+                            name: "source",
+                            expected: "internal, external",
+                        }));
+                    }
+                },
+            },
             "loop_recorder.record" => Self::LoopRecorderRecord,
             "loop_recorder.play" => Self::LoopRecorderPlay,
             "loop_recorder.undo" => Self::LoopRecorderUndo,
@@ -2616,6 +2644,7 @@ impl Command {
             Self::GlobalQuantizeToggle => "global.quantize.toggle",
             Self::RecorderToggle => "recorder.toggle",
             Self::RecorderCut => "recorder.cut",
+            Self::RecorderSourceSet { .. } => "recorder.source.set",
             Self::LoopRecorderRecord => "loop_recorder.record",
             Self::LoopRecorderPlay => "loop_recorder.play",
             Self::LoopRecorderUndo => "loop_recorder.undo",

@@ -2405,6 +2405,7 @@ fn effects_section(cx: &mut Cx<'_>, page: Rect, at: f32, view: &View<'_>) {
         texts.get(match routing {
             FxRouting::Insert => "settings.routing_insert",
             FxRouting::PostFader => "settings.routing_post_fader",
+            FxRouting::Send => "settings.routing_send",
         })
     });
     let routing_choices: Vec<Choice<'_>> = FxRouting::ALL
@@ -2412,7 +2413,7 @@ fn effects_section(cx: &mut Cx<'_>, page: Rect, at: f32, view: &View<'_>) {
         .zip(&routing_labels)
         .map(|(routing, label)| Choice {
             label,
-            enabled: !external || *routing == FxRouting::Insert,
+            enabled: !external || *routing != FxRouting::PostFader,
         })
         .collect();
     let mut row_top = top + 50.0;

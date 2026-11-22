@@ -35,7 +35,7 @@ are different devices, or what the meter reads.
 | Command | Effect |
 | --- | --- |
 | `input.device.set` | `device`: the name of an input device, or none to take no input |
-| `input.routing.set` | `target` `deck_a` to `deck_d` or `aux`; `input`: none, one input of the device (`1` to `8`) heard on both sides, or a pair (`1-2`, `3-4`, `5-6`, `7-8`) |
+| `input.routing.set` | `target` `deck_a` to `deck_d`, `aux`, `recorder` or `fx_send`; `input`: none, one input of the device (`1` to `8`) heard on both sides, or a pair (`1-2`, `3-4`, `5-6`, `7-8`) |
 | `deck.type.set` | `type` `track` or `live`: the deck plays its track, or the input routed to it |
 | `mixer.aux.set` | `level` 0 to 1, the volume of the auxiliary input in the master |
 
@@ -75,8 +75,8 @@ are different devices, or what the meter reads.
 
 ## Differences
 
-- **No FX Send input yet.** The send mode of the effect units waits for it
-  (`docs/behavior/effects.md`); it is the next part of the input routing.
+- **The FX Send is a target of the routing**, `fx_send`, for the units in send routing
+  (`docs/behavior/effects.md`); its return goes to outputs 5 and 6 in external mixer mode.
 - **Single inputs as well as pairs**, so a microphone on one input is centred, where the manual
   offers pairs only.
 - **A separate input device**, because the systems Platter runs on often show one interface as
@@ -84,8 +84,10 @@ are different devices, or what the meter reads.
 - **The auxiliary input is a command and a setting of the Input page**, with no knob on the
   mixer yet: the mixer of `docs/design/` has no place for it, which is a question for the
   maintainer. The same holds for the face of a live deck, which still shows its track.
-- **The recorders do not take an input yet**: the external source of the mix recorder and of the
-  loop recorder (`docs/behavior/recording.md`) follow.
+- **The recorders take an input of their own**, the target `recorder` of `input.routing.set`:
+  the external source of the mix recorder (`recorder.source.set`) and of the loop recorder
+  (`External`), `docs/behavior/recording.md`. The loop recorder stays refused in external
+  mixer mode.
 
 ## Edge cases
 

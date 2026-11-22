@@ -163,7 +163,7 @@ Everything known to be missing, unfinished or not yet listened to.
 - The input of a device feeds live decks and the auxiliary input, chosen on the Input page of
   the preferences; it has been measured with synthesised signals only, never with a real input
   device, and the face of a live deck still shows its track (`docs/behavior/live-input.md`).
-  There is no FX Send input yet.
+  The send of the effect units returns on outputs 5 and 6.
 - The MIDI clock is sent and followed from the Sync page of the preferences; only synthesised
   timings were measured, never a real MIDI device (`docs/behavior/midi-clock.md`). There is no
   Link.

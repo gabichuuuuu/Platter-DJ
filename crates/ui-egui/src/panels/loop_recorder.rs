@@ -35,12 +35,13 @@ const PLAY_ICON: f32 = 14.0;
 /// The source selector: wide enough for `Deck A` in both languages.
 const SOURCE_WIDTH: f32 = 72.0;
 
-const SOURCES: [LoopSource; 5] = [
+const SOURCES: [LoopSource; 6] = [
     LoopSource::Master,
     LoopSource::Deck(DeckId::A),
     LoopSource::Deck(DeckId::B),
     LoopSource::Deck(DeckId::C),
     LoopSource::Deck(DeckId::D),
+    LoopSource::External,
 ];
 
 /// The loop recorder in `rect`: its label and source over the size, Rec, play, Undo and the
@@ -161,7 +162,7 @@ pub fn panel(cx: &mut Cx<'_>, rect: Rect, view: &View<'_>) {
     }
 }
 
-/// The name of a source: `Master` or the deck.
+/// The name of a source: `Master`, the deck, or the external input.
 fn source_name(cx: &Cx<'_>, source: LoopSource) -> String {
     match source {
         LoopSource::Master => cx.texts.get("loop_recorder.master").to_owned(),
@@ -169,6 +170,7 @@ fn source_name(cx: &Cx<'_>, source: LoopSource) -> String {
             "loop_recorder.deck",
             &[("deck", &deck.letter().to_string())],
         ),
+        LoopSource::External => cx.texts.get("loop_recorder.external").to_owned(),
     }
 }
 
