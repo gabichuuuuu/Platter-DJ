@@ -207,7 +207,7 @@ pub fn band_colors(theme: &Theme, deck: DeckId) -> [Color32; 3] {
 }
 
 /// The three colours of a deck's own hue, darkest first.
-fn deck_bands(theme: &Theme, deck: DeckId) -> [Color32; 3] {
+pub(crate) fn deck_bands(theme: &Theme, deck: DeckId) -> [Color32; 3] {
     let color = &theme.tokens.color;
     match deck {
         DeckId::A => [color.deck_a_low, color.deck_a, color.deck_a_high],

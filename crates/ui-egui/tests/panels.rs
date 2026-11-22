@@ -13,7 +13,7 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
-use platter_engine::{ClockMode, Command, EffectKind, LoopPhase, MixerMode, UnitMode};
+use platter_engine::{CellId, ClockMode, Command, EffectKind, LoopPhase, MixerMode, UnitMode};
 use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{
@@ -298,6 +298,9 @@ fn states() -> Vec<State> {
     let bands = state("wave-bands", bands, None);
     let stems = state("stem-deck", sample::stem_deck(), None);
     let two_deck_stems = state("two-deck-stems", sample::two_deck_stems(), None);
+    // A remix deck in each layout: deck D of four, deck B of two.
+    let remix = state("remix-deck", sample::remix_deck(), None);
+    let two_deck_remix = state("two-deck-remix", sample::two_deck_remix(), None);
     // The menu of a track with stems, with a folder in the explorer to take stems from.
     let mut stem_entry = sample::playlist();
     stem_entry.browser.explorer = Some(PathBuf::from("Music/Stems/Glasshouse"));
@@ -380,6 +383,8 @@ fn states() -> Vec<State> {
         bands,
         stems,
         two_deck_stems,
+        remix,
+        two_deck_remix,
         stem_entry,
         separate,
         separating,
@@ -1427,6 +1432,17 @@ fn data_of(scene: &Scene) -> BTreeSet<String> {
     data.insert(scene.settings.recording_prefix.clone());
     // The MIDI outputs the Sync page offers for the clock.
     data.extend(scene.settings.clock_outputs.iter().cloned());
+    // The names of the samples in the cells of the remix decks.
+    for deck in &scene.engine.decks {
+        data.extend(
+            deck.remix
+                .cells
+                .iter()
+                .flatten()
+                .flatten()
+                .map(|cell| cell.name.to_string()),
+        );
+    }
     data
 }
 
@@ -2637,4 +2653,221 @@ fn the_parallel_lane_of_a_stem_deck_keeps_its_mute_keys_and_unfolds_its_lanes() 
             "{language:?}"
         );
     }
+}
+
+/// The cells of the remix deck of `state`, in the order they are drawn: slot by slot, from the
+/// top.
+fn remix_cells(stage: &Stage) -> Vec<Control> {
+    stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "remix.cell.trigger")
+        .collect()
+}
+
+#[test]
+fn a_remix_deck_shows_its_grid_in_the_place_of_the_track_controls() {
+    for (name, deck) in [("remix-deck", DeckId::D), ("two-deck-remix", DeckId::B)] {
+        let state = state_named(name);
+        let stage = Stage::new(&state);
+        // Four cells of each of the four slots, and the keys of each slot.
+        assert_eq!(remix_cells(&stage).len(), 16, "{name}");
+        for command in [
+            "remix.slot.mute.toggle",
+            "remix.slot.punch.toggle",
+            "remix.slot.stop",
+            "remix.slot.volume.set",
+        ] {
+            let count = stage
+                .controls()
+                .iter()
+                .filter(|control| control.command == command)
+                .count();
+            assert_eq!(count, 4, "{name}: {command}");
+        }
+        // The other decks keep their transport; the remix deck has none.
+        let plays: Vec<DeckId> = decks_of(&state, "deck.play_pause")
+            .into_iter()
+            .map(|(deck, _)| deck)
+            .collect();
+        assert!(!plays.contains(&deck), "{name}: {plays:?}");
+        assert!(!plays.is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn a_cell_starts_when_pressed_and_is_released_when_let_go() {
+    let mut stage = Stage::new(&state_named("two-deck-remix"));
+    let at = CellId::new(0, 1).unwrap();
+    let centre = remix_cells(&stage)[1].rect.center();
+    stage.pointer(centre, None);
+    assert_eq!(
+        stage.pointer(centre, Some(true)),
+        vec![Action::Engine(Command::RemixCellTrigger {
+            deck: DeckId::B,
+            at
+        })]
+    );
+    assert_eq!(
+        stage.pointer(centre, Some(false)),
+        vec![Action::Engine(Command::RemixCellRelease {
+            deck: DeckId::B,
+            at
+        })]
+    );
+}
+
+#[test]
+fn shift_and_a_press_on_the_cell_a_slot_plays_stop_the_slot() {
+    let mut stage = Stage::new(&state_named("two-deck-remix"));
+    let centre = remix_cells(&stage)[0].rect.center();
+    stage.modifiers = Modifiers::SHIFT;
+    stage.pointer(centre, None);
+    assert_eq!(
+        stage.pointer(centre, Some(true)),
+        vec![Action::Engine(Command::RemixSlotStop {
+            deck: DeckId::B,
+            slot: 0,
+        })]
+    );
+    assert!(stage.pointer(centre, Some(false)).is_empty());
+}
+
+#[test]
+fn an_empty_cell_and_the_stop_of_a_silent_slot_cannot_be_pressed() {
+    let stage = Stage::new(&state_named("two-deck-remix"));
+    let cells = remix_cells(&stage);
+    // Slot 1 holds three samples, slot 4 none on the first page.
+    let enabled: Vec<bool> = cells.iter().map(|cell| cell.enabled).collect();
+    assert_eq!(&enabled[..4], &[true, true, true, false]);
+    assert_eq!(&enabled[12..], &[false; 4]);
+    // Slot 3 neither plays nor waits.
+    assert_eq!(
+        enabled_of(&stage, "remix.slot.stop"),
+        [true, true, false, true]
+    );
+}
+
+fn enabled_of(stage: &Stage, command: &str) -> Vec<bool> {
+    stage
+        .controls()
+        .iter()
+        .filter(|control| control.command == command)
+        .map(|control| control.enabled)
+        .collect()
+}
+
+#[test]
+fn a_page_key_shows_the_next_four_cells_of_each_slot() {
+    let mut stage = Stage::new(&state_named("two-deck-remix"));
+    let pages: Vec<Control> = stage
+        .controls()
+        .into_iter()
+        .filter(|control| control.command == "remix.page.set")
+        .collect();
+    assert_eq!(pages.len(), 4);
+    let second = AppCommand::RemixPageSet {
+        deck: DeckId::B,
+        page: 1,
+    };
+    assert_eq!(
+        stage.click(pages[1].rect.center()),
+        vec![Action::App(second.clone())]
+    );
+    stage.shell.apply(&second);
+    stage.frame(Vec::new());
+    assert_eq!(stage.shell.state.remix_page[DeckId::B.index()], 1);
+    // The pad of slot 4 is cell 6, the second of the second page.
+    let cells = remix_cells(&stage);
+    assert!(cells[13].enabled);
+    let centre = cells[13].rect.center();
+    stage.pointer(centre, None);
+    assert_eq!(
+        stage.pointer(centre, Some(true)),
+        vec![Action::Engine(Command::RemixCellTrigger {
+            deck: DeckId::B,
+            at: CellId::new(3, 5).unwrap(),
+        })]
+    );
+}
+
+#[test]
+fn the_controls_of_a_remix_deck_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for name in ["remix-deck", "two-deck-remix"] {
+            let stage = Stage::with_texts(&state_named(name), Texts::load(language).unwrap());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| control.command.starts_with("remix."))
+                .collect();
+            assert!(controls.len() > 30, "{name}: {}", controls.len());
+            for (index, first) in controls.iter().enumerate() {
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{name}, {language:?}: {} at {:?} overlaps {} at {:?}",
+                        first.command,
+                        first.rect,
+                        second.command,
+                        second.rect,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The context menu of a cell that holds a sample sets its mode, latch or gate and direction,
+/// captures from the other decks and clears it; that of an empty cell only captures.
+#[test]
+fn the_menu_of_a_cell_offers_what_applies_to_it() {
+    let menu_of = |index: usize| {
+        let mut stage = Stage::new(&state_named("two-deck-remix"));
+        let cell = remix_cells(&stage)[index].clone();
+        stage.click_with(cell.rect.center(), PointerButton::Secondary);
+        stage.frame(Vec::new());
+        let commands: Vec<&'static str> = stage
+            .controls()
+            .into_iter()
+            .map(|control| control.command)
+            .collect();
+        (stage, commands)
+    };
+    let (_, full) = menu_of(0);
+    for command in [
+        "remix.cell.mode.set",
+        "remix.cell.trigger_mode.set",
+        "remix.cell.reverse.toggle",
+        "remix.cell.clear",
+    ] {
+        assert!(
+            full.contains(&command),
+            "{command} is not in the menu of a cell"
+        );
+    }
+    // Decks A, C and D: every deck but the remix deck itself.
+    let captures = full
+        .iter()
+        .filter(|command| **command == "remix.cell.capture")
+        .count();
+    assert_eq!(captures, 3);
+
+    let (mut stage, empty) = menu_of(3);
+    assert!(!empty.contains(&"remix.cell.clear"));
+    assert!(!empty.contains(&"remix.cell.mode.set"));
+    let capture = stage
+        .controls()
+        .into_iter()
+        .find(|control| control.command == "remix.cell.capture")
+        .unwrap();
+    assert_eq!(
+        stage.click(capture.rect.center()),
+        vec![Action::Engine(Command::RemixCellCapture {
+            deck: DeckId::B,
+            at: CellId::new(0, 3).unwrap(),
+            from: DeckId::A,
+        })]
+    );
 }

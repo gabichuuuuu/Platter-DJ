@@ -110,8 +110,8 @@ fn the_page_has_a_control_for_each_input_setting() {
     assert_eq!(stage.controls("input.routing.set").len(), 7);
     // The mix or the input, for the mix recorder.
     assert_eq!(stage.controls("recorder.source.set").len(), 2);
-    // Track and Live input, for each deck.
-    assert_eq!(stage.controls("deck.type.set").len(), 8);
+    // Track, Live input and Remix, for each deck.
+    assert_eq!(stage.controls("deck.type.set").len(), 12);
     assert_eq!(stage.controls("mixer.aux.set").len(), 1);
 }
 
@@ -119,12 +119,21 @@ fn the_page_has_a_control_for_each_input_setting() {
 fn the_type_of_a_deck_is_chosen_on_the_page() {
     let mut stage = Stage::new(sample::playing(), Language::English);
     // The second key of deck B: live input.
-    let live_b = stage.controls("deck.type.set")[3].rect.center();
+    let live_b = stage.controls("deck.type.set")[4].rect.center();
     assert_eq!(
         engine(stage.click(live_b)),
         [Command::DeckTypeSet {
             deck: DeckId::B,
             kind: DeckKind::Live
+        }]
+    );
+    // The third key of deck C: remix.
+    let remix_c = stage.controls("deck.type.set")[8].rect.center();
+    assert_eq!(
+        engine(stage.click(remix_c)),
+        [Command::DeckTypeSet {
+            deck: DeckId::C,
+            kind: DeckKind::Remix
         }]
     );
 }

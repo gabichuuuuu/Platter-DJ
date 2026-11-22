@@ -15,7 +15,7 @@ use egui::{
 };
 use platter_core::{Bpm, Cue, CueKind, DeckId, HotcueSlot};
 use platter_engine::{
-    BpmScale, Command, CueStep, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep,
+    BpmScale, Command, CueStep, DeckKind, DeckSnapshot, Direction, MoveMode, MoveSize, SizeStep,
 };
 
 use crate::command::{Action, AppCommand, DeckPage, DeckSize};
@@ -27,6 +27,7 @@ use crate::keys;
 use crate::model::{DeckNotice, View};
 use crate::paint;
 use crate::panels::browser;
+use crate::panels::remix;
 use crate::panels::stems;
 use crate::panels::waveform::{self, deck_color};
 use crate::shell::ViewState;
@@ -71,6 +72,8 @@ const COVER_SIDE: f32 = 54.0;
 /// The height of the header of a full deck, and of a compact one.
 const HEADER_HEIGHT: f32 = 56.0;
 const COMPACT_HEADER_HEIGHT: f32 = 26.0;
+/// The header of a compact remix deck, tall enough for the tempo of the clock over its name.
+const REMIX_COMPACT_HEADER_HEIGHT: f32 = 36.0;
 /// What a compact deck draws under its overview, the advanced panel left out.
 const COMPACT_CONTROLS_HEIGHT: f32 = 192.0;
 /// FLUX and REVERSE beside play, as the reference screen draws them.
@@ -105,12 +108,26 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
     let tokens = &theme.tokens;
     let color = &tokens.color;
     let snapshot = &view.engine.decks[deck.index()];
+    let compact = view.settings.deck_size == DeckSize::Compact;
+    // A remix deck shows its grid in the place of everything under its header.
+    if snapshot.controls.kind == DeckKind::Remix {
+        let header = if compact {
+            REMIX_COMPACT_HEADER_HEIGHT
+        } else {
+            HEADER_HEIGHT
+        };
+        let frame = remix::Frame {
+            padding: tokens.space.s4,
+            header,
+        };
+        remix::deck(cx, rect, deck, view, state, frame);
+        return;
+    }
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, color.surface_panel);
     let inner = rect.shrink(tokens.space.s4);
     drop_target(cx, rect, deck);
 
-    let compact = view.settings.deck_size == DeckSize::Compact;
     let overview = if compact {
         compact_header(
             cx,
@@ -258,6 +275,14 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let snapshot = &view.engine.decks[deck.index()];
+    if snapshot.controls.kind == DeckKind::Remix {
+        let frame = remix::Frame {
+            padding: FOUR_PADDING,
+            header: FOUR_HEADER_HEIGHT,
+        };
+        remix::deck(cx, rect, deck, view, state, frame);
+        return;
+    }
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, tokens.color.surface_panel);
     let inner = rect.shrink(FOUR_PADDING);

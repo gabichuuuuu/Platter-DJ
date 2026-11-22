@@ -61,6 +61,8 @@ pub struct ViewState {
     pub stem_lanes: [bool; DeckId::COUNT],
     /// The page of the advanced panel each deck shows.
     pub deck_page: [DeckPage; DeckId::COUNT],
+    /// The page of the cells each remix deck shows, from 0.
+    pub remix_page: [usize; DeckId::COUNT],
     /// The hotcues of each deck are in the mapping mode: the next one pressed takes the
     /// selected cue.
     pub cue_map: [bool; DeckId::COUNT],
@@ -93,6 +95,7 @@ impl Default for ViewState {
             remaining_large: [true; DeckId::COUNT],
             stem_lanes: [false; DeckId::COUNT],
             deck_page: [DeckPage::default(); DeckId::COUNT],
+            remix_page: [0; DeckId::COUNT],
             cue_map: [false; DeckId::COUNT],
             meters: [MeterMemory::default(); MeterId::ALL.len()],
             browser: BrowserMemory::default(),
@@ -327,6 +330,9 @@ impl Shell {
                 state.remaining_large[deck.index()] ^= true;
             }
             AppCommand::DeckPageSet { deck, page } => state.deck_page[deck.index()] = *page,
+            AppCommand::RemixPageSet { deck, page } => {
+                state.remix_page[deck.index()] = (*page).min(crate::panels::remix::PAGES - 1);
+            }
             AppCommand::DeckCueMapToggle { deck } => state.cue_map[deck.index()] ^= true,
             AppCommand::MixerClipReset { meter } => state.meters[meter.index()].reset_clip(),
             AppCommand::BrowserSearchFocus => state.browser.focus_search = true,

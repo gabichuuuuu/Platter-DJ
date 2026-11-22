@@ -139,11 +139,11 @@ Where it stands:
   and the FX Send fed by an input (`docs/behavior/live-input.md`); the MIDI clock sent and
   followed (`docs/behavior/midi-clock.md`). Measured with synthesised signals only; the checks on
   real equipment are listed under M3.
-- **In progress.** The remix deck, in the engine and driven by commands: four slots of sixteen
-  cells, quantize, loop and one-shot, latch and gate, reverse, punch and capture from a deck
-  (`docs/behavior/remix-deck.md`, `docs/decisions/0042-remix-deck.md`). Still to do: the grid on the
-  screen, which waits for its component in `docs/design/`; key lock, filter, effect send and cue
-  per slot; pages; saving a set; capture from the loop recorder.
+- **In progress.** The remix deck: four slots of sixteen cells, quantize, loop and one-shot, latch
+  and gate, reverse, punch and capture from a deck, with its grid on the screen in four pages
+  (`docs/behavior/remix-deck.md`, `docs/decisions/0042-remix-deck.md`, `RemixGrid` in
+  `docs/design/DESIGN.md`). Still to do: key lock, filter, effect send and cue per slot; saving a
+  set; capture from the loop recorder.
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
   look of the live deck, the auxiliary knob and the keys of the MIDI clock, which `docs/design/`
   does not draw yet; HID controllers, which need a
