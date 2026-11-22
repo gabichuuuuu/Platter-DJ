@@ -392,6 +392,33 @@ pub enum Command {
         deck: DeckId,
         at: CellId,
     },
+    /// The key of the cell is released: a cell in gate mode stops.
+    RemixCellRelease {
+        deck: DeckId,
+        at: CellId,
+    },
+    /// The cell plays on after its key is released (latch), or only while it is held (gate).
+    RemixCellTriggerModeSet {
+        deck: DeckId,
+        at: CellId,
+        gate: bool,
+    },
+    RemixCellReverseToggle {
+        deck: DeckId,
+        at: CellId,
+    },
+    /// Copies the loop of deck `from`, or the size of a new loop from where it plays, into
+    /// the cell.
+    RemixCellCapture {
+        deck: DeckId,
+        at: CellId,
+        from: DeckId,
+    },
+    /// A new loop of the slot starts where the one before had reached in its beats.
+    RemixSlotPunchToggle {
+        deck: DeckId,
+        slot: usize,
+    },
     RemixCellModeSet {
         deck: DeckId,
         at: CellId,
@@ -717,6 +744,7 @@ const DECK_TYPES: &[&str] = &["track", "live", "remix"];
 const REMIX_SLOT: ParamSpec = number("slot", 1.0, REMIX_SLOTS as f64);
 const REMIX_CELL: ParamSpec = number("cell", 1.0, REMIX_CELLS as f64);
 const CELL_MODES: &[&str] = &["loop", "one_shot"];
+const TRIGGER_MODES: &[&str] = &["latch", "gate"];
 const QUANTIZE_SIZES: &[&str] = &["none", "1", "2", "4", "8", "16"];
 /// The most the gain of a cell moves either way, in decibels.
 pub const MAX_CELL_GAIN_DB: f64 = 12.0;
@@ -1420,6 +1448,47 @@ pub const SPECS: &[CommandSpec] = &[
         id: "remix.cell.trigger",
         label: "Start a cell",
         params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.release",
+        label: "Release the key of a cell",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.trigger_mode.set",
+        label: "Latch or gate",
+        params: &[
+            DECK,
+            REMIX_SLOT,
+            REMIX_CELL,
+            ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice(TRIGGER_MODES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "remix.cell.reverse.toggle",
+        label: "Play a cell backwards",
+        params: &[DECK, REMIX_SLOT, REMIX_CELL],
+    },
+    CommandSpec {
+        id: "remix.cell.capture",
+        label: "Capture the loop of a deck into a cell",
+        params: &[
+            DECK,
+            REMIX_SLOT,
+            REMIX_CELL,
+            ParamSpec {
+                name: "from",
+                kind: ParamKind::Deck,
+            },
+        ],
+    },
+    CommandSpec {
+        id: "remix.slot.punch.toggle",
+        label: "Punch mode of a slot",
+        params: &[DECK, REMIX_SLOT],
     },
     CommandSpec {
         id: "remix.cell.mode.set",
@@ -2624,6 +2693,37 @@ impl Command {
                 deck: read.deck()?,
                 at: read.cell()?,
             },
+            "remix.cell.release" => Self::RemixCellRelease {
+                deck: read.deck()?,
+                at: read.cell()?,
+            },
+            "remix.cell.trigger_mode.set" => Self::RemixCellTriggerModeSet {
+                deck: read.deck()?,
+                at: read.cell()?,
+                gate: match read.text("mode")? {
+                    "latch" => false,
+                    "gate" => true,
+                    _ => {
+                        return Err(CommandError::Value(ValueError::UnknownChoice {
+                            name: "mode",
+                            expected: "latch, gate",
+                        }));
+                    }
+                },
+            },
+            "remix.cell.reverse.toggle" => Self::RemixCellReverseToggle {
+                deck: read.deck()?,
+                at: read.cell()?,
+            },
+            "remix.cell.capture" => Self::RemixCellCapture {
+                deck: read.deck()?,
+                at: read.cell()?,
+                from: DeckId::parse(read.text("from")?)?,
+            },
+            "remix.slot.punch.toggle" => Self::RemixSlotPunchToggle {
+                deck: read.deck()?,
+                slot: read.index("slot", REMIX_SLOTS)?,
+            },
             "remix.cell.mode.set" => Self::RemixCellModeSet {
                 deck: read.deck()?,
                 at: read.cell()?,
@@ -2817,6 +2917,11 @@ impl Command {
             Self::RemixCellClear { .. } => "remix.cell.clear",
             Self::RemixCellTrigger { .. } => "remix.cell.trigger",
             Self::RemixCellModeSet { .. } => "remix.cell.mode.set",
+            Self::RemixCellRelease { .. } => "remix.cell.release",
+            Self::RemixCellTriggerModeSet { .. } => "remix.cell.trigger_mode.set",
+            Self::RemixCellReverseToggle { .. } => "remix.cell.reverse.toggle",
+            Self::RemixCellCapture { .. } => "remix.cell.capture",
+            Self::RemixSlotPunchToggle { .. } => "remix.slot.punch.toggle",
             Self::RemixCellBpmSet { .. } => "remix.cell.bpm.set",
             Self::RemixCellBpmClear { .. } => "remix.cell.bpm.clear",
             Self::RemixCellGainSet { .. } => "remix.cell.gain.set",
