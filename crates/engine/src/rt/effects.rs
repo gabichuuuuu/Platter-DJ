@@ -24,15 +24,19 @@ pub enum FxRouting {
     Insert,
     /// After the fader and the pan. Acts as insert in external mixer mode.
     PostFader,
+    /// Outside the channels: fed by the FX Send input and returned to the third pair of
+    /// outputs, in external mixer mode only (`docs/behavior/effects.md`, *Send*).
+    Send,
 }
 
 impl FxRouting {
-    pub const ALL: [Self; 2] = [Self::Insert, Self::PostFader];
+    pub const ALL: [Self; 3] = [Self::Insert, Self::PostFader, Self::Send];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Insert => "insert",
             Self::PostFader => "post_fader",
+            Self::Send => "send",
         }
     }
 
@@ -42,7 +46,7 @@ impl FxRouting {
             .find(|routing| routing.name() == text)
             .ok_or(ValueError::UnknownChoice {
                 name: "routing",
-                expected: "insert, post_fader",
+                expected: "insert, post_fader, send",
             })
     }
 }
@@ -70,6 +74,11 @@ struct Inner {
     values: [UnitValues; UNITS],
     routing: [FxRouting; UNITS],
     channels: [ChannelEffects; DeckId::COUNT],
+    /// The chain of each unit for the FX Send: it holds the unit's effects whatever its
+    /// routing, and is heard only while that routing is send.
+    send: [Chain; UNITS],
+    /// One while a unit is in send routing: the return fades in and out with it.
+    send_gain: Smoothed,
     rate: f64,
     /// Whole beats of the clock since the processor started, and the phase seen last.
     beats: f64,
@@ -91,6 +100,8 @@ impl Effects {
             values: [UnitValues::default(); UNITS],
             routing: [FxRouting::default(); UNITS],
             channels: std::array::from_fn(channel),
+            send: std::array::from_fn(|_| Chain::new(rate)),
+            send_gain: Smoothed::new(0.0, rate, SWITCH_MS),
             rate: rate.as_f64(),
             beats: 0.0,
             last_phase: 0.0,
@@ -108,6 +119,8 @@ impl Effects {
         if let Some(slot) = self.0.routing.get_mut(unit) {
             *slot = routing;
         }
+        let any = self.0.routing.contains(&FxRouting::Send);
+        self.0.send_gain.set(if any { 1.0 } else { 0.0 });
     }
 
     pub(super) fn set_assigned(&mut self, deck: DeckId, unit: usize, on: bool) {
@@ -146,6 +159,50 @@ impl Effects {
         if empty {
             retire(None, retired);
         }
+    }
+
+    /// Puts an effect in a place of the send chain of a unit; as [`Self::place`].
+    pub(super) fn place_send(
+        &mut self,
+        unit: usize,
+        place: Place,
+        effect: Option<Box<platter_dsp::effects::Effect>>,
+        retired: &mut Producer<Retired>,
+    ) {
+        let Some(slot) = self
+            .0
+            .send
+            .get_mut(unit)
+            .and_then(|chain| chain.slot_mut(place))
+        else {
+            retire(effect, retired);
+            return;
+        };
+        let empty = slot.kind().is_none();
+        if let Some(earlier) = slot.replace(effect) {
+            retire(Some(earlier), retired);
+        }
+        if empty {
+            retire(None, retired);
+        }
+    }
+
+    /// The return of the FX Send: `frame` through the units in send routing, in the order
+    /// 1, 2, 3, 4; silence while no unit is in send routing.
+    pub(super) fn process_send(&mut self, frame: Frame) -> Frame {
+        let inner = &mut *self.0;
+        let gain = inner.send_gain.advance();
+        if gain == 0.0 && inner.send_gain.is_settled() {
+            return [0.0; 2];
+        }
+        let tempo = inner.tempo;
+        let mut signal = frame;
+        for unit in 0..UNITS {
+            if inner.routing[unit] == FxRouting::Send {
+                signal = inner.send[unit].process(signal, &inner.values[unit], tempo);
+            }
+        }
+        [signal[0] * gain, signal[1] * gain]
     }
 
     /// Puts an effect behind the mixer effect knob of a channel; as [`Self::place`].
@@ -227,6 +284,11 @@ impl Effects {
 
     /// Sends the effects that have finished fading out back to be freed. Called once a block.
     pub(super) fn collect(&mut self, retired: &mut Producer<Retired>) {
+        for chain in &mut self.0.send {
+            while let Some(effect) = chain.take_finished() {
+                retire(Some(effect), retired);
+            }
+        }
         for channel in &mut self.0.channels {
             for chain in &mut channel.chains {
                 while let Some(effect) = chain.take_finished() {

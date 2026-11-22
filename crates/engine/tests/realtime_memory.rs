@@ -473,6 +473,15 @@ fn input_commands() -> Vec<Command> {
             source: InputSource::parse("3-4"),
         },
         Command::RecorderSourceSet { external: true },
+        // A unit in send routing takes the FX Send in external mode.
+        Command::InputRoutingSet {
+            target: InputTarget::FxSend,
+            source: InputSource::parse("5-6"),
+        },
+        Command::FxUnitRoutingSet {
+            unit: FxUnit::ALL[1],
+            routing: FxRouting::Send,
+        },
         Command::LoopRecorderSourceSet {
             source: LoopSource::External,
         },

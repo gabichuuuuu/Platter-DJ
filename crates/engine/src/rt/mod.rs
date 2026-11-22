@@ -412,6 +412,12 @@ pub enum RtCommand {
         place: Place,
         effect: Option<Box<Effect>>,
     },
+    /// Puts an effect in a place of the send chain of a unit; as [`Self::FxPlace`].
+    FxSendPlace {
+        unit: usize,
+        place: Place,
+        effect: Option<Box<Effect>>,
+    },
     /// Puts an effect behind the mixer effect knob of a channel; as [`Self::FxPlace`].
     MixerEffectPlace {
         deck: DeckId,
@@ -495,16 +501,20 @@ pub enum InputTarget {
     /// The external source of the mix recorder and of the loop recorder:
     /// `docs/behavior/recording.md`.
     Recorder,
+    /// The send of an external mixer, for the effect units in send routing:
+    /// `docs/behavior/effects.md`, *Send*.
+    FxSend,
 }
 
 impl InputTarget {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Deck(DeckId::A),
         Self::Deck(DeckId::B),
         Self::Deck(DeckId::C),
         Self::Deck(DeckId::D),
         Self::Aux,
         Self::Recorder,
+        Self::FxSend,
     ];
 
     /// Its place in [`Self::ALL`].
@@ -513,6 +523,7 @@ impl InputTarget {
             Self::Deck(deck) => deck.index(),
             Self::Aux => DeckId::COUNT,
             Self::Recorder => DeckId::COUNT + 1,
+            Self::FxSend => DeckId::COUNT + 2,
         }
     }
 
@@ -525,6 +536,7 @@ impl InputTarget {
             Self::Deck(DeckId::D) => "deck_d",
             Self::Aux => "aux",
             Self::Recorder => "recorder",
+            Self::FxSend => "fx_send",
         }
     }
 

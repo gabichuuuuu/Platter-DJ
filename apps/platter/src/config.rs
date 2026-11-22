@@ -1250,6 +1250,7 @@ min_playtime = {written}
                     None,
                     InputSource::parse("3"),
                     InputSource::parse("5-6"),
+                    InputSource::parse("7-8"),
                 ],
                 live: [true, false, true, false],
                 aux_level: 0.5,
@@ -1266,7 +1267,15 @@ min_playtime = {written}
         assert_eq!(read.input.live, [false, true, false, false]);
         assert_eq!(
             read.input.routes,
-            [None, None, InputSource::parse("5-6"), None, None, None]
+            [
+                None,
+                None,
+                InputSource::parse("5-6"),
+                None,
+                None,
+                None,
+                None
+            ]
         );
     }
 

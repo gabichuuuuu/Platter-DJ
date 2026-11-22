@@ -106,8 +106,8 @@ fn engine(actions: Vec<Action>) -> Vec<Command> {
 fn the_page_has_a_control_for_each_input_setting() {
     let stage = Stage::new(sample::playing(), Language::English);
     assert_eq!(stage.controls("input.device.set").len(), 1);
-    // Four decks, the auxiliary input and the recorders.
-    assert_eq!(stage.controls("input.routing.set").len(), 6);
+    // Four decks, the auxiliary input, the recorders and the FX Send.
+    assert_eq!(stage.controls("input.routing.set").len(), 7);
     // The mix or the input, for the mix recorder.
     assert_eq!(stage.controls("recorder.source.set").len(), 2);
     // Track and Live input, for each deck.

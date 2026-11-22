@@ -655,7 +655,9 @@ const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
 const DECK_TYPES: &[&str] = &["track", "live"];
-const INPUT_TARGETS: &[&str] = &["deck_a", "deck_b", "deck_c", "deck_d", "aux", "recorder"];
+const INPUT_TARGETS: &[&str] = &[
+    "deck_a", "deck_b", "deck_c", "deck_d", "aux", "recorder", "fx_send",
+];
 const RECORDER_SOURCES: &[&str] = &["internal", "external"];
 /// The sources of the input routing, and `none`.
 pub const INPUT_SOURCES: &[&str] = &[
@@ -666,7 +668,7 @@ const FILTER_MODELS: &[&str] = &["gentle", "steep", "ladder"];
 const UNIT: ParamSpec = number("unit", 1.0, UNITS as f64);
 const FX_SLOT: ParamSpec = number("slot", 1.0, SLOTS as f64);
 const UNIT_MODES: &[&str] = &["group", "single"];
-const ROUTINGS: &[&str] = &["insert", "post_fader"];
+const ROUTINGS: &[&str] = &["insert", "post_fader", "send"];
 /// The effects of a unit, and `none` for an empty place.
 pub const UNIT_EFFECTS: &[&str] = &[
     "none",

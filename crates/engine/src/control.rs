@@ -1830,7 +1830,7 @@ impl Engine {
         effect: Option<EffectKind>,
     ) -> Result<(), EngineError> {
         let decks: Vec<DeckId> = self.effects.decks_of(unit).collect();
-        self.ensure_swap_room(decks.len())?;
+        self.ensure_swap_room(decks.len() + 1)?;
         for deck in decks {
             self.send_effect_swap(RtCommand::FxPlace {
                 deck,
@@ -1839,6 +1839,12 @@ impl Engine {
                 effect: effect.map(|kind| self.build_effect(kind)),
             })?;
         }
+        // The send chain holds the effects of the unit whatever its routing.
+        self.send_effect_swap(RtCommand::FxSendPlace {
+            unit: unit.index(),
+            place,
+            effect: effect.map(|kind| self.build_effect(kind)),
+        })?;
         let keep = self.effects.keep_values;
         self.update_unit(unit, |controls| match place {
             Place::Group(slot) => {
@@ -1901,6 +1907,13 @@ impl Engine {
                 unit: unit.index(),
                 routing: controls.routing,
             })?;
+            for (place, kind) in controls.places() {
+                self.send_effect_swap(RtCommand::FxSendPlace {
+                    unit: unit.index(),
+                    place,
+                    effect: Some(self.build_effect(kind)),
+                })?;
+            }
             for deck in DeckId::ALL {
                 if !self.effects.is_assigned(deck, unit) {
                     continue;

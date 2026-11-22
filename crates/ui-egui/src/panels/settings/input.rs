@@ -124,6 +124,7 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
             ),
             InputTarget::Aux => texts.get("settings.input_aux").to_owned(),
             InputTarget::Recorder => texts.get("settings.input_recorder").to_owned(),
+            InputTarget::FxSend => texts.get("settings.input_fx_send").to_owned(),
         };
         let control = setting_named(cx, page, top, &name);
         let route = mixer.input_routes[target.index()];
@@ -150,6 +151,8 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
             InputTarget::Deck(deck) => deck_type(cx, right, deck, view, &type_choices),
             InputTarget::Aux => aux_level(cx, right, mixer.aux_level),
             InputTarget::Recorder => recorder_source(cx, right, view),
+            // The units that take it are chosen on the Mixer page.
+            InputTarget::FxSend => {}
         }
         selects.push((select, target, name, route));
         top += ROW_STEP;

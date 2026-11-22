@@ -77,6 +77,8 @@ pub struct Processor {
     midi_clock: MidiClock,
     /// The mix recorder records the input routed to the recorders: `docs/behavior/recording.md`.
     recorder_external: bool,
+    /// The return of the FX Send for the frame, for the third pair of outputs.
+    send_return: Frame,
     preview: PreviewPlayer,
     /// Zero mixes inside, one sends each deck to its own pair:
     /// `docs/behavior/external-mixer.md`.
@@ -137,6 +139,7 @@ impl Processor {
             metronome: Metronome::new(rate),
             midi_clock: MidiClock::new(queues.clock),
             recorder_external: false,
+            send_return: [0.0; 2],
             preview: PreviewPlayer::new(rate),
             external: parameter(0.0),
             external_eq_gain: parameter(0.0),
@@ -178,9 +181,13 @@ impl Processor {
                     *first = left;
                     *second = right;
                     rest.fill(0.0);
-                    if let [third, fourth, ..] = rest {
+                    if let [third, fourth, rest @ ..] = rest {
                         *third = pair[0];
                         *fourth = pair[1];
+                        if let [fifth, sixth, ..] = rest {
+                            *fifth = self.send_return[0];
+                            *sixth = self.send_return[1];
+                        }
                     }
                 }
                 [] => {}
@@ -313,6 +320,13 @@ impl Processor {
             } => self
                 .effects
                 .place(deck, unit, place, effect, &mut self.retired),
+            RtCommand::FxSendPlace {
+                unit,
+                place,
+                effect,
+            } => self
+                .effects
+                .place_send(unit, place, effect, &mut self.retired),
             RtCommand::MixerEffectPlace { deck, effect } => {
                 self.effects.mixer_place(deck, effect, &mut self.retired);
             }
@@ -538,6 +552,15 @@ impl Processor {
             LoopSource::External => routed_input(InputTarget::Recorder, &self.routes),
         };
         let (dry, looped) = self.loop_recorder.next(source, pulse.phase);
+        // The units in send routing take the FX Send and return to the third pair, in
+        // external mode only: `docs/behavior/effects.md`, *Send*.
+        self.send_return = if routed {
+            let sent = routed_input(InputTarget::FxSend, &self.routes);
+            let wet = self.effects.process_send(sent);
+            [wet[0] * external, wet[1] * external]
+        } else {
+            [0.0; 2]
+        };
         // The auxiliary input joins after the channels; it is silent in external mode, where
         // the master is not heard: `docs/behavior/live-input.md`.
         let aux = self.aux_level.advance() * (1.0 - external);

@@ -312,3 +312,50 @@ fn the_mix_recorder_takes_its_source_and_keeps_it_for_a_new_engine() {
         Ok(Command::RecorderSourceSet { external: true })
     ));
 }
+
+/// Runs `seconds` of six channels, the device delivering a block before each block.
+fn run_six(rig: &mut Rig, device: &mut Device, seconds: f64) -> Vec<f32> {
+    let blocks = (seconds * f64::from(RATE) / BLOCK as f64).ceil() as usize;
+    let mut out = Vec::with_capacity(blocks * BLOCK * 6);
+    let mut block = vec![0.0f32; BLOCK * 6];
+    for _ in 0..blocks {
+        device.deliver();
+        rig.processor.process(&mut block, 6);
+        out.extend_from_slice(&block);
+    }
+    out
+}
+
+#[test]
+fn a_unit_in_send_routing_returns_the_fx_send_on_the_third_pair_in_external_mode() {
+    use platter_engine::{FxRouting, FxUnit};
+    let mut rig = Rig::new();
+    let mut device = Device::new(rig.engine.take_input_feed().unwrap());
+    route(&mut rig, InputTarget::FxSend, "1-2");
+    let unit = FxUnit::ALL[0];
+    rig.send(Command::FxUnitRoutingSet {
+        unit,
+        routing: FxRouting::Send,
+    });
+    // In internal mode the send is not heard.
+    run_six(&mut rig, &mut device, 0.3);
+    let inside = run_six(&mut rig, &mut device, 0.3);
+    assert!(channel(&inside, 6, 4).iter().all(|sample| *sample == 0.0));
+    rig.send(Command::MixerModeSet {
+        mode: MixerMode::External,
+    });
+    run_six(&mut rig, &mut device, 0.3);
+    let outside = run_six(&mut rig, &mut device, 0.5);
+    let fifth = sine_fit(&channel(&outside, 6, 4), 1_000.0, f64::from(RATE)).amplitude;
+    let sixth = sine_fit(&channel(&outside, 6, 5), 300.0, f64::from(RATE)).amplitude;
+    assert!((fifth - 0.5).abs() < 0.02, "{fifth}");
+    assert!((sixth - 0.25).abs() < 0.02, "{sixth}");
+    // A unit in insert routing returns nothing there.
+    rig.send(Command::FxUnitRoutingSet {
+        unit,
+        routing: FxRouting::Insert,
+    });
+    run_six(&mut rig, &mut device, 0.1);
+    let insert = run_six(&mut rig, &mut device, 0.3);
+    assert!(channel(&insert, 6, 4).iter().all(|sample| *sample == 0.0));
+}
