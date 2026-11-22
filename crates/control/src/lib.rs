@@ -1,6 +1,8 @@
-//! Mappings of Platter: from the messages of MIDI controllers to commands.
+//! Mappings of Platter: from the messages of MIDI controllers and the reports of HID devices to
+//! commands.
 //!
-//! Behaviour note: `docs/behavior/controllers.md`; the choices:
+//! Behaviour notes: `docs/behavior/controllers.md` and `docs/behavior/hid-controllers.md`; the
+//! choices:
 //! `docs/decisions/0024-midi-mappings.md`. This crate does not know the commands of the
 //! engine: it gives identifiers and untyped parameters, which the application turns into
 //! commands and checks when it reads a mapping.
@@ -9,6 +11,9 @@ mod file;
 mod message;
 
 use std::collections::BTreeMap;
+
+/// Longest HID report read; bytes after it are left out.
+pub const MAX_REPORT_BYTES: usize = 1024;
 
 pub use file::{BindingProblem, MAX_BINDINGS, MAX_FILE_BYTES, MappingError};
 pub use message::Message;
@@ -40,6 +45,38 @@ pub enum Control {
     Note { channel: u8, note: u8 },
     ControlChange { channel: u8, number: u8 },
     PitchBend { channel: u8 },
+    Hid(HidControl),
+}
+
+/// A part of the input reports of a HID device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HidControl {
+    /// The report ID; 0 for a device that numbers no report.
+    pub report: u8,
+    /// From 0 at the first byte after the report ID, or at the first byte of a report without one.
+    pub byte: usize,
+    pub part: HidPart,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HidPart {
+    /// One bit of the byte, 0 the lowest.
+    Bit(u8),
+    Byte,
+    /// The byte and the next one, little-endian.
+    Word,
+}
+
+impl HidControl {
+    /// Its value in `data`, the bytes after the report ID; `None` when the report is too short.
+    fn value(self, data: &[u8]) -> Option<u32> {
+        let byte = u32::from(*data.get(self.byte)?);
+        match self.part {
+            HidPart::Bit(bit) => Some((byte >> bit) & 1),
+            HidPart::Byte => Some(byte),
+            HidPart::Word => Some(byte | u32::from(*data.get(self.byte + 1)?) << 8),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +85,9 @@ pub enum Encoding {
     TwosComplement,
     /// Steps up are 65 (one) and above, steps down 63 (one) and below.
     Offset,
+    /// A HID byte that counts up and down and goes round: a step is the difference from the
+    /// previous report.
+    Counter,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,6 +225,8 @@ pub struct Mapper {
     modifiers: [u8; MODIFIERS],
     /// Which buttons acted on their press and are still down.
     down: Vec<bool>,
+    /// The last HID report of each report ID, the ID left out; 0 holds the last report whole.
+    reports: BTreeMap<u8, Vec<u8>>,
 }
 
 impl Mapper {
@@ -194,6 +236,7 @@ impl Mapper {
             mapping,
             modifiers: [0; MODIFIERS],
             down,
+            reports: BTreeMap::new(),
         }
     }
 
@@ -214,94 +257,177 @@ impl Mapper {
             let Some(input) = input_of(binding.control, message) else {
                 continue;
             };
-            let holds = binding
-                .when
-                .iter()
-                .all(|(modifier, value)| before[*modifier] == *value);
-            match &binding.kind {
-                Kind::Button => match input.button() {
-                    Some(true) => {
-                        if self.down[index] || !holds {
-                            continue;
-                        }
-                        self.down[index] = true;
-                        match &binding.action {
-                            Action::Command { command, args, .. } => emits.push(Emit {
-                                command: command.clone(),
-                                args: args.clone(),
-                            }),
-                            Action::Modifier { index, value, .. } => {
-                                self.modifiers[*index] = *value;
-                            }
-                        }
-                    }
-                    Some(false) => {
-                        if !self.down[index] {
-                            continue;
-                        }
-                        self.down[index] = false;
-                        match &binding.action {
-                            Action::Command {
-                                command,
-                                args,
-                                release: Some(release),
-                            } => emits.push(Emit {
-                                command: command.clone(),
-                                args: merged(args, release),
-                            }),
-                            Action::Modifier {
-                                index, hold: true, ..
-                            } => self.modifiers[*index] = 0,
-                            _ => {}
-                        }
-                    }
-                    None => {}
-                },
-                Kind::Fader {
-                    param,
-                    bottom,
-                    top,
-                    invert,
-                } => {
-                    let Some(position) = input.position().filter(|_| holds) else {
-                        continue;
-                    };
-                    let position = if *invert { 1.0 - position } else { position };
-                    emit_with(
-                        &mut emits,
-                        &binding.action,
-                        param,
-                        bottom + position * (top - bottom),
-                    );
-                }
-                Kind::Encoder { target, encoding } => {
-                    let steps = input
-                        .raw()
-                        .filter(|_| holds)
-                        .map_or(0, |value| steps(value, *encoding));
-                    match target {
-                        _ if steps == 0 => {}
-                        Steps::Amount { param, step } => {
-                            emit_with(&mut emits, &binding.action, param, f64::from(steps) * step);
-                        }
-                        Steps::Each { up, down } => {
-                            if let Action::Command { command, args, .. } = &binding.action {
-                                let way = merged(args, if steps > 0 { up } else { down });
-                                let count = (steps.unsigned_abs() as usize).min(MAX_REPEATS);
-                                emits.extend((0..count).map(|_| Emit {
-                                    command: command.clone(),
-                                    args: way.clone(),
-                                }));
-                            }
-                        }
-                    }
-                }
-            }
+            act(
+                binding,
+                input,
+                &mut self.down[index],
+                &mut self.modifiers,
+                before,
+                &mut emits,
+            );
+        }
+        emits
+    }
+
+    /// The commands an input report of a HID device triggers, in the order of the file: each
+    /// binding whose part of the report changed since the last report with the same ID.
+    /// `docs/behavior/hid-controllers.md`.
+    pub fn handle_report(&mut self, report: &[u8]) -> Vec<Emit> {
+        let report = &report[..report.len().min(MAX_REPORT_BYTES)];
+        let id = report.first().copied();
+        let before = self.modifiers;
+        let mut emits = Vec::new();
+        for (index, binding) in self.mapping.bindings.iter().enumerate() {
+            let Control::Hid(control) = binding.control else {
+                continue;
+            };
+            let (key, data) = match (control.report, id) {
+                (0, _) => (0, report),
+                (wanted, Some(id)) if wanted == id => (id, &report[1..]),
+                _ => continue,
+            };
+            let previous = self.reports.get(&key).map(Vec::as_slice);
+            let Some(input) = hid_input(control, &binding.kind, data, previous) else {
+                continue;
+            };
+            act(
+                binding,
+                input,
+                &mut self.down[index],
+                &mut self.modifiers,
+                before,
+                &mut emits,
+            );
+        }
+        // Kept whole for the bindings of report 0, and without its ID for those of its ID.
+        self.reports.insert(0, report.to_vec());
+        if let Some(id) = id.filter(|id| *id != 0) {
+            self.reports.insert(id, report[1..].to_vec());
         }
         emits
     }
 }
 
+/// What one binding does with what its control carries. Conditions are checked against the
+/// modifiers `before` the message or report.
+fn act(
+    binding: &Binding,
+    input: Input,
+    down: &mut bool,
+    modifiers: &mut [u8; MODIFIERS],
+    before: [u8; MODIFIERS],
+    emits: &mut Vec<Emit>,
+) {
+    let holds = binding
+        .when
+        .iter()
+        .all(|(modifier, value)| before[*modifier] == *value);
+    match &binding.kind {
+        Kind::Button => match input.button() {
+            Some(true) => {
+                if *down || !holds {
+                    return;
+                }
+                *down = true;
+                match &binding.action {
+                    Action::Command { command, args, .. } => emits.push(Emit {
+                        command: command.clone(),
+                        args: args.clone(),
+                    }),
+                    Action::Modifier { index, value, .. } => modifiers[*index] = *value,
+                }
+            }
+            Some(false) => {
+                if !*down {
+                    return;
+                }
+                *down = false;
+                match &binding.action {
+                    Action::Command {
+                        command,
+                        args,
+                        release: Some(release),
+                    } => emits.push(Emit {
+                        command: command.clone(),
+                        args: merged(args, release),
+                    }),
+                    Action::Modifier {
+                        index, hold: true, ..
+                    } => modifiers[*index] = 0,
+                    _ => {}
+                }
+            }
+            None => {}
+        },
+        Kind::Fader {
+            param,
+            bottom,
+            top,
+            invert,
+        } => {
+            let Some(position) = input.position().filter(|_| holds) else {
+                return;
+            };
+            let position = if *invert { 1.0 - position } else { position };
+            emit_with(
+                emits,
+                &binding.action,
+                param,
+                bottom + position * (top - bottom),
+            );
+        }
+        Kind::Encoder { target, encoding } => {
+            let steps = if holds { input.steps(*encoding) } else { 0 };
+            match target {
+                _ if steps == 0 => {}
+                Steps::Amount { param, step } => {
+                    emit_with(emits, &binding.action, param, f64::from(steps) * step);
+                }
+                Steps::Each { up, down } => {
+                    if let Action::Command { command, args, .. } = &binding.action {
+                        let way = merged(args, if steps > 0 { up } else { down });
+                        let count = (steps.unsigned_abs() as usize).min(MAX_REPEATS);
+                        emits.extend((0..count).map(|_| Emit {
+                            command: command.clone(),
+                            args: way.clone(),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// What a report carries for a HID control: `None` when the report is too short, when its part
+/// did not change, or for the first report of an encoder counter, which only sets where it is.
+/// An encoder that sends steps acts on every report that carries some.
+fn hid_input(
+    control: HidControl,
+    kind: &Kind,
+    data: &[u8],
+    previous: Option<&[u8]>,
+) -> Option<Input> {
+    let value = control.value(data)?;
+    let old = previous.and_then(|previous| control.value(previous));
+    match kind {
+        Kind::Encoder {
+            encoding: Encoding::Counter,
+            ..
+        } => {
+            // A byte: the difference the short way round, from -128 to 127.
+            let delta = i32::from((value as u8).wrapping_sub(old? as u8) as i8);
+            (delta != 0).then_some(Input::Delta(delta))
+        }
+        Kind::Encoder { .. } => Some(Input::HidByte(value as u8)),
+        // The first report counts as a change from all zeros.
+        _ if old.unwrap_or(0) == value => None,
+        _ => Some(match control.part {
+            HidPart::Bit(_) => Input::HidButton(value == 1),
+            HidPart::Byte => Input::HidByte(value as u8),
+            HidPart::Word => Input::HidWord(value as u16),
+        }),
+    }
+}
 /// Sends the command with `value` in `param`; a value that overflowed to infinity is not sent.
 fn emit_with(emits: &mut Vec<Emit>, action: &Action, param: &str, value: f64) {
     if !value.is_finite() {
@@ -317,37 +443,48 @@ fn emit_with(emits: &mut Vec<Emit>, action: &Action, param: &str, value: f64) {
     }
 }
 
-/// What a message carries for a control.
+/// What a message or a report carries for a control.
 #[derive(Clone, Copy, Debug)]
 enum Input {
     /// A note down or up.
     Note(bool),
     ControlChange(u8),
     PitchBend(u16),
+    /// A bit of a HID report: set or clear.
+    HidButton(bool),
+    HidByte(u8),
+    HidWord(u16),
+    /// The steps of a HID counter since the report before.
+    Delta(i32),
 }
 
 impl Input {
     fn button(self) -> Option<bool> {
         match self {
-            Self::Note(down) => Some(down),
-            Self::ControlChange(value) => Some(value > 0),
-            Self::PitchBend(_) => None,
+            Self::Note(down) | Self::HidButton(down) => Some(down),
+            Self::ControlChange(value) | Self::HidByte(value) => Some(value > 0),
+            Self::PitchBend(_) | Self::HidWord(_) | Self::Delta(_) => None,
         }
     }
 
     /// From 0 to 1.
     fn position(self) -> Option<f64> {
         match self {
-            Self::Note(_) => None,
+            Self::Note(_) | Self::HidButton(_) | Self::Delta(_) => None,
             Self::ControlChange(value) => Some(f64::from(value.min(127)) / 127.0),
             Self::PitchBend(value) => Some(bend_position(value)),
+            Self::HidByte(value) => Some(f64::from(value) / 255.0),
+            Self::HidWord(value) => Some(f64::from(value) / 65_535.0),
         }
     }
 
-    fn raw(self) -> Option<u8> {
+    /// The steps of an encoder: up is positive.
+    fn steps(self, encoding: Encoding) -> i32 {
         match self {
-            Self::ControlChange(value) => Some(value),
-            _ => None,
+            Self::ControlChange(value) => steps(value, encoding),
+            Self::HidByte(value) => byte_steps(value, encoding),
+            Self::Delta(steps) => steps,
+            _ => 0,
         }
     }
 }
@@ -408,5 +545,24 @@ fn steps(value: u8, encoding: Encoding) -> i32 {
             0 | 64 => 0,
             _ => value - 64,
         },
+        Encoding::Counter => 0,
+    }
+}
+
+/// The steps of a HID byte that sends steps: the same encodings as a control change, over eight
+/// bits.
+fn byte_steps(value: u8, encoding: Encoding) -> i32 {
+    let value = i32::from(value);
+    match encoding {
+        Encoding::TwosComplement => match value {
+            1..=127 => value,
+            129..=255 => value - 256,
+            _ => 0,
+        },
+        Encoding::Offset => match value {
+            0 | 128 => 0,
+            _ => value - 128,
+        },
+        Encoding::Counter => 0,
     }
 }
