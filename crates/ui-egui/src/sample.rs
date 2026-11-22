@@ -8,8 +8,9 @@ use std::sync::Arc;
 use platter_core::{Bpm, Cue, CueKind, CueName, DeckId, HotcueSlot, LoopRegion, SampleRate};
 use platter_decode::{Container, Tags};
 use platter_engine::{
-    AnalysedTempo, DeckSnapshot, EffectControls, EffectKind, Key, Mode, PreviewSnapshot,
-    RecorderSnapshot, Snapshot, TrackAnalysis, TrackInfo, Transposed, WaveformPeaks,
+    AnalysedTempo, CellInfo, CellMode, DeckKind, DeckSnapshot, EffectControls, EffectKind, Key,
+    Mode, PreviewSnapshot, RecorderSnapshot, RemixSnapshot, Snapshot, TrackAnalysis, TrackInfo,
+    Transposed, WaveformPeaks,
 };
 use platter_library::{NodeId, SessionId};
 
@@ -764,6 +765,61 @@ pub fn two_deck_stems() -> Scene {
     deck.controls.stems[2].muted = true;
     deck.controls.stems[3].send_on = true;
     deck.controls.stems[3].send = 0.5;
+    scene
+}
+
+/// A grid of samples with every state of a cell: slot 1 plays its first loop, slot 2 waits to
+/// start its second cell and is muted, slot 3 holds a reversed one-shot in gate mode with punch
+/// on, and slot 4 plays a cell of the second page while a file loads into its first cell.
+fn remix_grid() -> RemixSnapshot {
+    let cell = |name: &str, mode, bpm: Option<f64>| {
+        Some(CellInfo {
+            name: Arc::from(name),
+            mode,
+            bpm: bpm.and_then(|bpm| Bpm::new(bpm).ok()),
+            gain_db: 0.0,
+            seconds: 7.7,
+            gate: false,
+            reverse: false,
+        })
+    };
+    let mut remix = RemixSnapshot::default();
+    remix.cells[0][0] = cell("Drum loop 1", CellMode::Loop, Some(125.0));
+    remix.cells[0][1] = cell("Drum loop 2", CellMode::Loop, Some(125.0));
+    remix.cells[0][2] = cell("Fill", CellMode::OneShot, Some(125.0));
+    remix.cells[1][0] = cell("Bass line", CellMode::Loop, Some(124.0));
+    remix.cells[1][1] = cell("Bass line, high", CellMode::Loop, Some(124.0));
+    remix.cells[2][0] = cell("Vocal shot", CellMode::OneShot, None);
+    if let Some(shot) = remix.cells[2][0].as_mut() {
+        shot.gate = true;
+        shot.reverse = true;
+    }
+    remix.cells[3][5] = cell("Pad", CellMode::Loop, Some(126.0));
+    remix.loading[3][0] = true;
+    remix.playing = [Some(0), Some(0), None, Some(5)];
+    remix.waiting = [None, Some(1), None, None];
+    remix.muted[1] = true;
+    remix.punch[2] = true;
+    remix.volume = [1.0, 0.8, 0.6, 0.9];
+    remix.quantize = Some(4);
+    remix
+}
+
+/// The four-deck state with deck D a remix deck playing its grid.
+pub fn remix_deck() -> Scene {
+    let mut scene = four_decks();
+    let deck = &mut scene.engine.decks[3];
+    deck.controls.kind = DeckKind::Remix;
+    *deck.remix = remix_grid();
+    scene
+}
+
+/// The two-deck state with deck B a remix deck playing its grid.
+pub fn two_deck_remix() -> Scene {
+    let mut scene = playing();
+    let deck = &mut scene.engine.decks[1];
+    deck.controls.kind = DeckKind::Remix;
+    *deck.remix = remix_grid();
     scene
 }
 

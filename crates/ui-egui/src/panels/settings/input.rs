@@ -106,6 +106,7 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     let type_labels = [
         texts.get("settings.deck_track"),
         texts.get("settings.deck_live"),
+        texts.get("settings.deck_remix"),
     ];
     let type_choices: Vec<Choice<'_>> = type_labels
         .iter()
@@ -219,8 +220,8 @@ pub(super) fn input_page(cx: &mut Cx<'_>, page: Rect, view: &View<'_>) {
     );
 }
 
-/// Track or live input, for one deck. A remix deck, set by command while its grid has no
-/// place on the screen, shows neither: `docs/behavior/remix-deck.md`.
+/// Track, live input or remix, for one deck: `docs/behavior/live-input.md` and
+/// `docs/behavior/remix-deck.md`.
 fn deck_type(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, choices: &[Choice<'_>]) {
     let kind = view
         .engine
@@ -230,7 +231,7 @@ fn deck_type(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, choices
     let current = match kind {
         DeckKind::Track => Some(0),
         DeckKind::Live => Some(1),
-        DeckKind::Remix => None,
+        DeckKind::Remix => Some(2),
     };
     choice::segmented(
         cx,
@@ -241,10 +242,10 @@ fn deck_type(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, choices
         |index| {
             Action::Engine(Command::DeckTypeSet {
                 deck,
-                kind: if index == 1 {
-                    DeckKind::Live
-                } else {
-                    DeckKind::Track
+                kind: match index {
+                    1 => DeckKind::Live,
+                    2 => DeckKind::Remix,
+                    _ => DeckKind::Track,
                 },
             })
         },

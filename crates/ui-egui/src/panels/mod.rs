@@ -10,6 +10,7 @@ pub mod loop_recorder;
 pub mod maintenance;
 pub mod mixer;
 pub mod recorder;
+pub mod remix;
 pub mod rules;
 pub mod settings;
 pub mod stems;

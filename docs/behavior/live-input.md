@@ -36,7 +36,7 @@ are different devices, or what the meter reads.
 | --- | --- |
 | `input.device.set` | `device`: the name of an input device, or none to take no input |
 | `input.routing.set` | `target` `deck_a` to `deck_d`, `aux`, `recorder` or `fx_send`; `input`: none, one input of the device (`1` to `8`) heard on both sides, or a pair (`1-2`, `3-4`, `5-6`, `7-8`) |
-| `deck.type.set` | `type` `track` or `live`: the deck plays its track, or the input routed to it |
+| `deck.type.set` | `type` `track` or `live`: the deck plays its track, or the input routed to it; `remix` is in `docs/behavior/remix-deck.md` |
 | `mixer.aux.set` | `level` 0 to 1, the volume of the auxiliary input in the master |
 
 - No input is open until the user picks an input device: Platter starts with none, so it asks

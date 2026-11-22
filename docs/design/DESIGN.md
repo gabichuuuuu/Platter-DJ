@@ -123,7 +123,7 @@ Everything below belongs to M4 and M5, after the first public version:
 
 - **Waveform colour modes 2 to 4 (M4).**
 - **Components for M4:** mix and loop recorders. `screens/M4-effects.html` places them; their component sections are written before they are built. Stem lanes have theirs (`StemLanes`). The four-deck layout, the effect units, the effect assignment and the mixer effect have theirs.
-- **Components for M5:** remix deck grid, pattern sequencer, timecode setup.
+- **Components for M5:** pattern sequencer, timecode setup. The remix deck grid has its section (`RemixGrid`).
 - **Icons for M4 and later:** effects, stems, recording and layouts.
 
 ## Icons
@@ -781,6 +781,57 @@ with the maintainer's approval, from what the four-deck layout already draws (`M
   (`deck.stem.send.set`, `deck.stem.filter.toggle`, `deck.stem.filter.set`).
 - The fold key emits `waveform.stem_lanes.toggle` with the deck. Folding is kept per deck for the session, not in the settings.
 - Names for screen readers and tooltips: "Mute drums", "Volume of drums", "Send drums to the effects", "Show the stems of deck A".
+
+#### RemixGrid
+
+The face of a remix deck (milestone M5): four slots of sixteen cells, four cells of each slot at a time, and the controls of each
+slot. Written on 22 November 2026, with the maintainer's approval, from the patterns of `HotcuePads` and `StemLanes`; no reference
+screen draws it. Behaviour note: `docs/behavior/remix-deck.md`.
+
+##### Placement
+
+- A remix deck keeps the size and the padding of its deck in both layouts. Its header holds the badge, the title `Remix deck` with
+  the tag `Remix`, and, where a track deck shows its tempo, the tempo of the master clock in the `tempo` style with `Clock` under it
+  in `readout` style. No cover and no times.
+- Everything under the header is the grid: a remix deck has no overview, sync row, transport, loop row, hotcue pads, advanced
+  panel or tempo column, since it follows the master clock.
+
+##### Anatomy
+
+- **Deck row**, 24px, at the top of the grid: `Quantize` (`label` style, `text-secondary`) and a text `Select` 56px wide (`Off`,
+  `1`, `2`, `4`, `8`, `16`, in beats); at the right the four page keys `1` to `4`, 24 × 24, 2px apart. The page shown is lit with a
+  `text-primary` LED; another page that holds the cell a slot plays is lit with the deck colour.
+- **Slots**: four columns of equal width side by side, `space-2` apart, under the deck row and `space-3` below it. Each column holds,
+  top to bottom, the four cells of the page shown and the slot strip.
+- **Cell**: the width of its column, `radius-lg`, `space-2` apart; the cells share the height the strip leaves, up to 44px each,
+  placed from the top.
+  - Empty: no fill, 1px `line-key` outline, the number of the cell (1 to 16) in `label` style, `text-secondary`, at its left.
+  - Loading: as empty, with `Loading…` in `text-secondary` after the number.
+  - Holding a sample: `surface-control` body, `line-key` outline; the name of the sample in `label` style, `text-primary`, one line
+    with an ellipsis; under it, in `readout` style and `text-secondary`, the mode (`Loop` or `One-shot`), the tempo when the cell has
+    one, and `Gate` and `Rev` when they apply, joined by ` · `.
+  - Playing: `surface-pressed` body and a 3px LED strip (`stroke-led`) along its top edge in the deck colour.
+  - Waiting for its boundary: the LED strip in the darker step of the deck colour (`deck-x-low`). It does not flash.
+- **Slot strip**, 30px, under the cells, `space-2` below them: a row of keys 18px high with the mute key `M` (20 × 18, lit with `text-primary` while muted), the
+  punch key `P` (20 × 18, lit with `text-primary`), the key `Stop` (sized to its label, 18px high; disabled while nothing in the
+  slot plays or waits), all three in `label` style, 2px apart; under the row, 2px apart, the volume bar of `StemLanes` across the
+  width of the slot in a 10px row, filled in `text-secondary` while the slot is muted.
+
+##### Behaviour
+
+- Pressing a cell that holds a sample (pointer, or Space or Enter while it has focus) emits `remix.cell.trigger`; releasing it
+  emits `remix.cell.release`, which stops a cell in gate mode. Shift+press on the cell a slot plays or waits for emits
+  `remix.slot.stop`. Pressing an empty cell does nothing.
+- A track dragged from the browser and released on a cell emits `remix.cell.load` for that cell; released elsewhere on a remix
+  deck it loads nothing.
+- The context menu of a cell (secondary click, or Shift+F10): `Loop` or `One-shot`, `Latch` or `Gate`, `Reverse`, `Capture from
+  deck X` for each of the other decks, and `Clear`. Items that do not apply to an empty cell are left out; an empty cell offers the
+  captures only.
+- The keys of the strip emit `remix.slot.mute.toggle`, `remix.slot.punch.toggle` and `remix.slot.stop`; the volume bar emits
+  `remix.slot.volume.set` (drag, arrows, double click back to the top). The `Select` emits `remix.quantize.set`.
+- The page keys emit `remix.page.set` with the deck and the page. The page is kept per deck for the session, not in the settings.
+- Names for screen readers and tooltips: "Cell 5 of slot 2: Drums 1", "Empty cell 5 of slot 2", "Mute slot 2", "Punch slot 2",
+  "Stop slot 2", "Volume of slot 2", "Quantize of deck A", "Page 2 of deck A".
 
 ### Mixer
 
