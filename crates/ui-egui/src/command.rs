@@ -724,6 +724,11 @@ pub enum AppCommand {
     WaveformStemLanesToggle {
         deck: DeckId,
     },
+    /// Shows a page of the cells of a remix deck, from 0.
+    RemixPageSet {
+        deck: DeckId,
+        page: usize,
+    },
     /// Swaps remaining and elapsed time as the large reading of a deck.
     DeckTimeDisplayToggle {
         deck: DeckId,
@@ -1999,6 +2004,11 @@ pub const APP_SPECS: &[CommandSpec] = &[
         params: &[DECK],
     },
     CommandSpec {
+        id: "remix.page.set",
+        label: "Show a page of the remix cells",
+        params: &[DECK, number("page", 1.0, 4.0)],
+    },
+    CommandSpec {
         id: "deck.time_display.toggle",
         label: "Swap remaining and elapsed time",
         params: &[DECK],
@@ -2561,6 +2571,10 @@ impl AppCommand {
             "waveform.zoom.in" => Self::WaveformZoomIn { deck: read.deck()? },
             "waveform.zoom.out" => Self::WaveformZoomOut { deck: read.deck()? },
             "waveform.stem_lanes.toggle" => Self::WaveformStemLanesToggle { deck: read.deck()? },
+            "remix.page.set" => Self::RemixPageSet {
+                deck: read.deck()?,
+                page: read.index("page")?.saturating_sub(1),
+            },
             "deck.time_display.toggle" => Self::DeckTimeDisplayToggle { deck: read.deck()? },
             "deck.notice.dismiss" => Self::DeckNoticeDismiss { deck: read.deck()? },
             "deck.page.set" => Self::DeckPageSet {
@@ -2713,6 +2727,7 @@ impl AppCommand {
             Self::WaveformZoomIn { .. } => "waveform.zoom.in",
             Self::WaveformZoomOut { .. } => "waveform.zoom.out",
             Self::WaveformStemLanesToggle { .. } => "waveform.stem_lanes.toggle",
+            Self::RemixPageSet { .. } => "remix.page.set",
             Self::DeckTimeDisplayToggle { .. } => "deck.time_display.toggle",
             Self::DeckNoticeDismiss { .. } => "deck.notice.dismiss",
             Self::DeckPageSet { .. } => "deck.page.set",

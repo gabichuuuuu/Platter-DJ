@@ -93,7 +93,7 @@ Every action is a command:
 
 | Command | Effect |
 | --- | --- |
-| `deck.type.set` | `type` `track`, `live` or `remix` |
+| `deck.type.set` | `type` `track`, `live` or `remix`; also chosen on the Input page of the preferences |
 | `remix.cell.load` | `deck`, `slot` 1 to 4, `cell` 1 to 16, `path`: decodes the file into the cell |
 | `remix.cell.clear` | Empties the cell, stopping it first |
 | `remix.cell.trigger` | Starts the cell on the next boundary |
@@ -110,6 +110,7 @@ Every action is a command:
 | `remix.cell.capture` | `from`: the deck whose loop is copied into the cell |
 | `remix.slot.punch.toggle` | Switches the punch mode of the slot |
 | `remix.quantize.set` | `beats` `none`, `1`, `2`, `4`, `8` or `16` |
+| `remix.page.set` | `page` 1 to 4: the four cells of each slot the face shows; kept for the session |
 
 The snapshot holds, for each deck, the name, mode, tempo, gain, trigger mode and direction of each
 cell, the cell each slot plays and the one it waits to start, and the volume, mute and punch of
@@ -117,9 +118,13 @@ each slot.
 
 ## Differences
 
-- **No grid on the screen yet.** The commands run from the command line, the MCP server and
-  controller mappings; the grid waits for its component in `docs/design/`, where it is listed for M5
-  but not yet drawn.
+- **The grid on the screen.** A remix deck shows its grid in the place of everything under its
+  header (`RemixGrid` in `docs/design/DESIGN.md`): four cells of each slot at a time on four pages,
+  the quantize, and the mute, punch, stop and volume of each slot. A cell acts while it is pressed,
+  Shift and a press on the cell a slot plays stops the slot, a track dropped on a cell loads into it
+  and the context menu of a cell sets its mode, latch or gate and direction, captures from another
+  deck and clears it. The tempo and the gain of a cell have no control on the screen yet; they are
+  set by commands.
 - **The master clock is the tempo of the deck.** The manual gives a remix deck a tempo of its own and
   sync to the tempo master; Platter's remix deck has no tempo control and follows the clock, which a
   deck that is the tempo master drives. A remix deck is never the tempo master.
@@ -127,9 +132,9 @@ each slot.
   manual makes optional with a preference.
 - **Speed follows the tempo, and so does the pitch.** There is no key lock in a slot and no pitch per
   cell yet.
-- **Not yet:** the filter, the effect send and the cue of a slot, pages, colours, moving the
+- **Not yet:** the filter, the effect send and the cue of a slot, colours, moving the
   beatgrid of a cell, capture from the loop recorder, and saving or exporting a set. A capture is
-  a command naming the deck, where the manual drags the title of the deck onto the cell. The grid is empty when Platter starts and the type of a remix deck is
+  chosen in the menu of the cell, where the manual drags the title of the deck onto the cell. The grid is empty when Platter starts and the type of a remix deck is
   not kept in the settings: it starts as a track deck. A restart of the engine, on a change of
   audio device, empties the grid too; the deck stays a remix deck.
 - **Punch counts the run, not the loop before.** The manual starts a punched cell from the place

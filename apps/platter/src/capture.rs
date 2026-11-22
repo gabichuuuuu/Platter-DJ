@@ -25,9 +25,9 @@ const GIVE_UP_FRAMES: u32 = 120;
 /// The states that can be captured: one per reference screen of M2, the main window with compact
 /// decks and with four decks, in the layouts Preparation and Browser, with four effect units, the
 /// Decks, Mixer, Recording, Layouts and Library pages of the preferences with the maintenance of
-/// the collection, a playlist and a history shown in the browser, and the details of one track
-/// and of two.
-pub const STATES: [&str; 21] = [
+/// the collection, a playlist and a history shown in the browser, the details of one track
+/// and of two, and a remix deck in each layout.
+pub const STATES: [&str; 23] = [
     "main",
     "compact",
     "four-decks",
@@ -49,6 +49,8 @@ pub const STATES: [&str; 21] = [
     "maintenance",
     "details",
     "details-several",
+    "remix",
+    "remix-four",
 ];
 
 fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
@@ -64,6 +66,8 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
         "layout-preparation" => Some((sample::in_layout(BuiltIn::Preparation), None)),
         "layout-browser" => Some((sample::in_layout(BuiltIn::Browser), None)),
         "four-units" => Some((sample::four_units(), None)),
+        "remix" => Some((sample::two_deck_remix(), None)),
+        "remix-four" => Some((sample::remix_deck(), None)),
         "playlist" | "details" => Some((sample::playlist(), None)),
         "details-several" => {
             let mut scene = sample::playlist();

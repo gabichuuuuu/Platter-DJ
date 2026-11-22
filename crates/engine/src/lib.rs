@@ -54,6 +54,7 @@ pub use remix::{CellInfo, RemixSnapshot};
 pub use render::{MAX_RENDER_SECONDS, RenderError, RenderPlan, RenderReport, TimedCommand, render};
 pub use rt::{
     CellId, CellMode, DeckKind, INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS,
-    LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor, StemSettings,
+    LoopPhase, LoopSource, LoopState, MAX_LOOP_SECONDS, Output, Processor,
+    QUANTIZE_BEATS as REMIX_QUANTIZE_BEATS, StemSettings,
 };
 pub use wav::WavWriter;
