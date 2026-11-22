@@ -58,6 +58,7 @@ changelog_include = [
   "platter-cli",
   "platter-analysis",
   "platter-audio-io",
+  "platter-broadcast",
   "platter-control",
   "platter-core",
   "platter-decode",
@@ -77,4 +78,12 @@ release = false
 
 [[package]]
 name = "platter-testkit"
+release = false
+
+# A crate the last tag does not hold yet: with `git_only`, release-plz looks for each package it
+# releases in the tree of that tag and fails when one is missing. Platter is released through the
+# `platter` package alone, whose changelog takes the commits of this crate; once a tag holds the
+# crate this entry can go.
+[[package]]
+name = "platter-broadcast"
 release = false
