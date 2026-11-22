@@ -135,7 +135,7 @@ microphone, broadcasting to a server the user configures. Compatibility with Abl
 
 Where it stands:
 
-- **Done.** Input routing with live decks, the microphone and the auxiliary input, the recorders
+- **Done.** Input routing with live decks and their face on the screen, the microphone and the auxiliary input, the recorders
   and the FX Send fed by an input (`docs/behavior/live-input.md`); the MIDI clock sent and
   followed (`docs/behavior/midi-clock.md`). Measured with synthesised signals only; the checks on
   real equipment are listed under M3.
@@ -145,7 +145,7 @@ Where it stands:
   `docs/design/DESIGN.md`). Still to do: key lock, filter, effect send and cue per slot; saving a
   set; capture from the loop recorder.
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
-  look of the live deck, the auxiliary knob and the keys of the MIDI clock, which `docs/design/`
+  auxiliary knob and the keys of the MIDI clock, which `docs/design/`
   does not draw yet; broadcasting, which needs an encoder and a network connection the user
   starts.
 - **HID controllers, in progress.** Mappings name the bits, bytes and words of the reports of a

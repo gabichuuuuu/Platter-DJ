@@ -26,8 +26,8 @@ const GIVE_UP_FRAMES: u32 = 120;
 /// decks and with four decks, in the layouts Preparation and Browser, with four effect units, the
 /// Decks, Mixer, Recording, Layouts and Library pages of the preferences with the maintenance of
 /// the collection, a playlist and a history shown in the browser, the details of one track
-/// and of two, and a remix deck in each layout.
-pub const STATES: [&str; 23] = [
+/// and of two, and a remix deck and a live deck in each layout.
+pub const STATES: [&str; 25] = [
     "main",
     "compact",
     "four-decks",
@@ -51,6 +51,8 @@ pub const STATES: [&str; 23] = [
     "details-several",
     "remix",
     "remix-four",
+    "live",
+    "live-four",
 ];
 
 fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
@@ -68,6 +70,8 @@ fn scene_of(state: &str) -> Option<(Scene, Option<SettingsPage>)> {
         "four-units" => Some((sample::four_units(), None)),
         "remix" => Some((sample::two_deck_remix(), None)),
         "remix-four" => Some((sample::remix_deck(), None)),
+        "live" => Some((sample::two_deck_live(), None)),
+        "live-four" => Some((sample::live_deck(), None)),
         "playlist" | "details" => Some((sample::playlist(), None)),
         "details-several" => {
             let mut scene = sample::playlist();
