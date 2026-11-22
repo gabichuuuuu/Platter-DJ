@@ -50,7 +50,7 @@ What the licence asks of Platter:
   licence of Platter does not apply to them.
 - From M2 the application embeds the four files in its binary, unmodified. A binary that is
   distributed must come with the copyright notice and the text of the licence; the release
-  workflow of M3 has to ship `OFL.txt` beside it.
+  workflow ships `OFL.txt` in the folder `licenses` of each archive, as `Geist-OFL.txt`.
 - The files are used unmodified. A modified version would have to respect any reserved font
   name.
 
@@ -60,7 +60,8 @@ What the licence asks of Platter:
   2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO,
   Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla and Amazon, under the BSD
   3-clause licence. A binary that is distributed must come with that notice and licence; the
-  release workflow has to ship the `COPYING` of libopus beside it. Opus is covered by
+  release workflow ships the `COPYING` of the libopus it built in the folder `licenses` of each
+  archive, as `libopus-COPYING.txt`. Opus is covered by
   royalty-free patent licences, listed in that file.
 
 ## Open points
