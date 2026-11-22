@@ -1,9 +1,11 @@
-//! Reading a mapping file: `docs/behavior/controllers.md`, section *The file*.
+//! Reading a mapping file: `docs/behavior/controllers.md`, section *The file*, and the HID
+//! bindings of `docs/behavior/hid-controllers.md`.
 
 use std::fmt;
 
 use crate::{
-    Action, Arg, Args, Binding, Control, Encoding, Kind, MAX_MODIFIER_VALUE, MODIFIERS, Steps,
+    Action, Arg, Args, Binding, Control, Encoding, HidControl, HidPart, Kind, MAX_MODIFIER_VALUE,
+    MAX_REPORT_BYTES, MODIFIERS, Steps,
 };
 
 /// Largest mapping file read.
@@ -33,6 +35,8 @@ pub enum BindingProblem {
     MissingMidi,
     /// `midi` does not name a control.
     BadMidi(String),
+    /// `hid` does not name a part of a report.
+    BadHid(String),
     /// `control` is not `button`, `fader` or `encoder`.
     BadControl(String),
     /// A note can only be a button, and the pitch bend only a fader.
@@ -76,10 +80,14 @@ impl fmt::Display for BindingProblem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotATable => f.write_str("it is not a table"),
-            Self::MissingMidi => f.write_str("`midi` is missing"),
+            Self::MissingMidi => f.write_str("`midi` or `hid` is missing"),
             Self::BadMidi(text) => write!(f, "`{text}` is not a MIDI control"),
+            Self::BadHid(text) => write!(f, "`{text}` is not a part of a HID report"),
             Self::BadControl(text) => write!(f, "`{text}` is not button, fader or encoder"),
-            Self::ControlDoesNotFit => f.write_str("a note is a button and the pitch bend a fader"),
+            Self::ControlDoesNotFit => f.write_str(
+                "a note or a bit is a button, the pitch bend or a word a fader, \
+                 and an encoder a control change or a byte",
+            ),
             Self::MissingCommand => f.write_str("`command` or `modifier` is missing"),
             Self::BadModifier => write!(
                 f,
@@ -93,7 +101,9 @@ impl fmt::Display for BindingProblem {
             Self::NotForThisControl(name) => write!(f, "`{name}` does not apply here"),
             Self::MissingParam => f.write_str("`param`, or `up` and `down`, is missing"),
             Self::BadRange => f.write_str("`range` must be two numbers"),
-            Self::BadEncoding(text) => write!(f, "`{text}` is not 7f-01 or 3f-41"),
+            Self::BadEncoding(text) => {
+                write!(f, "`{text}` is not 7f-01, 3f-41 or, on a HID byte, counter")
+            }
             Self::MissingRelease => f.write_str("a command on hold needs `release`"),
             Self::MixedSteps => {
                 f.write_str("an encoder takes `param` and `step`, or `up` and `down`")
@@ -155,6 +165,30 @@ fn read_control(text: &str) -> Option<Control> {
     }
 }
 
+/// `bit R B N`, `byte R B` or `word R B`: report `R`, byte `B` and bit `N`.
+fn read_hid(text: &str) -> Option<Control> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let (kind, report, byte, bit) = match words.as_slice() {
+        [kind, report, byte] => (*kind, *report, *byte, None),
+        [kind, report, byte, bit] => (*kind, *report, *byte, Some(*bit)),
+        _ => return None,
+    };
+    let report = report.parse::<u8>().ok()?;
+    let byte = byte.parse::<usize>().ok()?;
+    // The bytes of the control must fit in a report with its ID.
+    let room = MAX_REPORT_BYTES - usize::from(report != 0);
+    let (part, width) = match (kind.to_ascii_lowercase().as_str(), bit) {
+        ("bit", Some(bit)) => (
+            HidPart::Bit(bit.parse::<u8>().ok().filter(|bit| *bit < 8)?),
+            1,
+        ),
+        ("byte", None) => (HidPart::Byte, 1),
+        ("word", None) => (HidPart::Word, 2),
+        _ => return None,
+    };
+    (byte + width <= room).then_some(Control::Hid(HidControl { report, byte, part }))
+}
+
 fn read_condition(text: &str) -> Option<(usize, u8)> {
     let (modifier, value) = text.split_once('=')?;
     let modifier = modifier.trim().parse::<usize>().ok()?;
@@ -189,9 +223,9 @@ fn read_args<'a>(
 }
 
 /// Keys of a binding that are not parameters of its command.
-const BINDING_KEYS: [&str; 13] = [
-    "midi", "command", "control", "hold", "release", "when", "param", "range", "invert", "step",
-    "encoding", "up", "down",
+const BINDING_KEYS: [&str; 14] = [
+    "midi", "hid", "command", "control", "hold", "release", "when", "param", "range", "invert",
+    "step", "encoding", "up", "down",
 ];
 const BUTTON_KEYS: [&str; 2] = ["hold", "release"];
 const FADER_KEYS: [&str; 3] = ["param", "range", "invert"];
@@ -213,20 +247,52 @@ fn read_binding(value: &toml::Value) -> Result<Binding, BindingProblem> {
             Some(_) => Err(BindingProblem::BadValue(key.to_owned())),
         }
     };
-    let midi = text("midi")?.ok_or(BindingProblem::MissingMidi)?;
-    let control = read_control(midi).ok_or_else(|| BindingProblem::BadMidi(midi.to_owned()))?;
+    let control = match (text("midi")?, text("hid")?) {
+        (Some(_), Some(_)) => return Err(BindingProblem::NotForThisControl("hid".to_owned())),
+        (Some(midi), None) => {
+            read_control(midi).ok_or_else(|| BindingProblem::BadMidi(midi.to_owned()))?
+        }
+        (None, Some(hid)) => read_hid(hid).ok_or_else(|| BindingProblem::BadHid(hid.to_owned()))?,
+        (None, None) => return Err(BindingProblem::MissingMidi),
+    };
     let declared = text("control")?;
+    let bit = |control| {
+        matches!(
+            control,
+            Control::Hid(HidControl {
+                part: HidPart::Bit(_),
+                ..
+            })
+        )
+    };
+    let word = |control| {
+        matches!(
+            control,
+            Control::Hid(HidControl {
+                part: HidPart::Word,
+                ..
+            })
+        )
+    };
     let kind_name = match (declared, control) {
         (Some(name), _) => name,
         (None, Control::Note { .. }) => "button",
+        (None, control) if bit(control) => "button",
         (None, _) => "fader",
     };
     let fits = match (kind_name, control) {
         ("button", Control::PitchBend { .. }) => false,
-        ("button", _) => true,
+        ("button", control) => !word(control),
         ("fader", Control::Note { .. }) => false,
-        ("fader", _) => true,
+        ("fader", control) => !bit(control),
         ("encoder", Control::ControlChange { .. }) => true,
+        (
+            "encoder",
+            Control::Hid(HidControl {
+                part: HidPart::Byte,
+                ..
+            }),
+        ) => true,
         ("encoder", _) => false,
         (other, _) => return Err(BindingProblem::BadControl(other.to_owned())),
     };
@@ -318,6 +384,7 @@ fn read_binding(value: &toml::Value) -> Result<Binding, BindingProblem> {
             encoding: match text("encoding")? {
                 None | Some("7f-01") => Encoding::TwosComplement,
                 Some("3f-41") => Encoding::Offset,
+                Some("counter") if matches!(control, Control::Hid(_)) => Encoding::Counter,
                 Some(other) => return Err(BindingProblem::BadEncoding(other.to_owned())),
             },
         },
@@ -363,7 +430,9 @@ fn read_modifier(
     if kind_name != "button" {
         return Err(BindingProblem::ControlDoesNotFit);
     }
-    let allowed = ["midi", "control", "hold", "when", "modifier", "value"];
+    let allowed = [
+        "midi", "hid", "control", "hold", "when", "modifier", "value",
+    ];
     if let Some(key) = table.keys().find(|key| !allowed.contains(&key.as_str())) {
         return Err(BindingProblem::NotForThisControl(key.clone()));
     }

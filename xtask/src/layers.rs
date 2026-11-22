@@ -71,8 +71,15 @@ const LAYER_TABLE: &[(&str, Layer)] = &[
 ];
 
 /// Interface and device crates. Nothing below L3 may pull them in, directly or not.
-const DEVICE_AND_UI_CRATES: &[&str] =
-    &["egui", "eframe", "winit", "wgpu", "cpal", "midir", "hidapi"];
+const DEVICE_AND_UI_CRATES: &[&str] = &[
+    "egui",
+    "eframe",
+    "winit",
+    "wgpu",
+    "cpal",
+    "midir",
+    "async-hid",
+];
 
 const REGISTRY_PATH: &str = "docs/dependencies.md";
 

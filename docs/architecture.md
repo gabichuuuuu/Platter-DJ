@@ -32,7 +32,7 @@ from it fails the check.
 
 - A crate depends only on lower layers. Crates of the same layer do not depend on each other;
   in particular, L1 crates are independent.
-- Nothing below L3 pulls in `egui`, `eframe`, `winit`, `wgpu`, `cpal`, `midir` or `hidapi`,
+- Nothing below L3 pulls in `egui`, `eframe`, `winit`, `wgpu`, `cpal`, `midir` or `async-hid`,
   directly or through another dependency.
 - `platter-testkit` appears only as a dev-dependency, and builds on L0 only.
 - No crate depends on `xtask`, and `xtask` depends on no workspace crate.
