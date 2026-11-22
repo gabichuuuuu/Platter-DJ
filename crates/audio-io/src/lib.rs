@@ -1,27 +1,35 @@
-//! Audio output of Platter.
+//! Audio output and input of Platter.
 //!
 //! The audio comes from a source: a function that fills a block of interleaved samples. In
 //! the application that function is the processor of the engine; this crate does not know
 //! it. An [`Output`] calls the source from the callback of a device, or from a clock when
-//! there is no device, and keeps count of how long each call takes.
+//! there is no device, and keeps count of how long each call takes. An [`Input`] hands the
+//! samples of an input device to a sink, the mirror of the source.
 //!
 //! The device library, `cpal`, is confined to the `device` module: none of its types
 //! appears in this interface, so replacing it touches that file only.
 
 mod device;
 mod driver;
+mod input;
 mod null;
 
 use std::fmt;
 use std::sync::Arc;
 
-pub use device::{devices, prepare};
+pub use device::{PreparedInput, devices, input_devices, prepare, prepare_input};
 pub use driver::{OutputDriver, StreamStats};
+pub use input::{InputDriver, MAX_INPUT_CHANNELS};
 pub use null::{ManualStream, silent};
 
 /// The function that produces the audio: it fills interleaved samples for the number of
 /// channels given. It runs on the audio thread and must follow the real-time rules.
 pub type Source = Box<dyn FnMut(&mut [f32], usize) + Send + 'static>;
+
+/// The function that takes the audio of an input: interleaved samples for the number of
+/// channels given. It runs on the thread of the input callback and must follow the real-time
+/// rules: `docs/decisions/0040-audio-input.md`.
+pub type Sink = Box<dyn FnMut(&[f32], usize) + Send + 'static>;
 
 /// Sample rates the settings offer.
 pub const SAMPLE_RATES: [u32; 3] = [44_100, 48_000, 96_000];
@@ -153,6 +161,66 @@ impl fmt::Debug for StartError {
             .field("error", &self.error)
             .field("source_returned", &self.source.is_some())
             .finish()
+    }
+}
+
+/// What the application asks of an input device. The rate and the buffer are those of the
+/// output, so the input keeps its pace: `docs/decisions/0040-audio-input.md`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputRequest {
+    /// Name of the input device, as [`input_devices`] gives it.
+    pub device: String,
+    pub sample_rate: u32,
+    pub buffer_frames: u32,
+}
+
+/// What an open input runs at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputInfo {
+    pub device: String,
+    pub sample_rate: u32,
+    /// Channels of the stream, at most [`MAX_INPUT_CHANNELS`].
+    pub channels: u16,
+    /// Frames per callback as far as the device tells; the request when it does not.
+    pub buffer_frames: u32,
+}
+
+/// An input that could not be started. It hands the sink back, as [`StartError`] does the
+/// source.
+pub struct InputStartError {
+    pub error: AudioError,
+    pub sink: Option<Sink>,
+}
+
+impl fmt::Debug for InputStartError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputStartError")
+            .field("error", &self.error)
+            .field("sink_returned", &self.sink.is_some())
+            .finish()
+    }
+}
+
+/// A running input. It stops when it is dropped.
+pub struct Input {
+    info: InputInfo,
+    stats: Arc<StreamStats>,
+    stream: device::InputStream,
+}
+
+impl Input {
+    pub fn info(&self) -> &InputInfo {
+        &self.info
+    }
+
+    /// The load reading of the input callback, its gaps and whether the device went away.
+    pub fn stats(&self) -> &Arc<StreamStats> {
+        &self.stats
+    }
+
+    /// Stops the input and gives the sink back, to start another input with it.
+    pub fn stop(self) -> Option<Sink> {
+        self.stream.stop().map(InputDriver::into_sink)
     }
 }
 

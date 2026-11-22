@@ -19,7 +19,7 @@ use platter_dsp::filter::FilterModel;
 
 use crate::effects::{FxRouting, FxUnit, KEYS, KNOBS, UNITS, index_of};
 pub use crate::rt::MAX_KEY_SHIFT;
-use crate::rt::{LoopSource, Output};
+use crate::rt::{InputSource, InputTarget, LoopSource, Output};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
@@ -364,6 +364,21 @@ pub enum Command {
     MixerExternalEqGainToggle,
     /// In external mode, lets the master volume act on the decks, or not.
     MixerExternalMasterVolumeToggle,
+    /// Volume of the auxiliary input in the master, `0.0..=1.0`:
+    /// `docs/behavior/live-input.md`.
+    MixerAuxSet {
+        level: f64,
+    },
+    /// The deck plays the input routed to it, or its track.
+    DeckTypeSet {
+        deck: DeckId,
+        live: bool,
+    },
+    /// The input a deck or the auxiliary input takes; `None` leaves it silent.
+    InputRoutingSet {
+        target: InputTarget,
+        source: Option<InputSource>,
+    },
     /// The mode of an effect unit: `docs/behavior/effects.md`.
     FxUnitModeSet {
         unit: FxUnit,
@@ -627,6 +642,12 @@ const CURVES: &[&str] = &["smooth", "linear", "sharp"];
 const SIDES: &[&str] = &["left", "thru", "right"];
 const CROSSFADER_DIRECTIONS: &[&str] = &["left", "right"];
 const MIXER_MODES: &[&str] = &["internal", "external"];
+const DECK_TYPES: &[&str] = &["track", "live"];
+const INPUT_TARGETS: &[&str] = &["deck_a", "deck_b", "deck_c", "deck_d", "aux"];
+/// The sources of the input routing, and `none`.
+pub const INPUT_SOURCES: &[&str] = &[
+    "none", "1", "2", "3", "4", "5", "6", "7", "8", "1-2", "3-4", "5-6", "7-8",
+];
 const EQ_MODELS: &[&str] = &["smooth", "soft", "isolator", "steep"];
 const FILTER_MODELS: &[&str] = &["gentle", "steep", "ladder"];
 const UNIT: ParamSpec = number("unit", 1.0, UNITS as f64);
@@ -1289,6 +1310,36 @@ pub const SPECS: &[CommandSpec] = &[
         params: &[],
     },
     CommandSpec {
+        id: "mixer.aux.set",
+        label: "Auxiliary input volume",
+        params: &[number("level", 0.0, 1.0)],
+    },
+    CommandSpec {
+        id: "deck.type.set",
+        label: "Deck type",
+        params: &[
+            DECK,
+            ParamSpec {
+                name: "type",
+                kind: ParamKind::Choice(DECK_TYPES),
+            },
+        ],
+    },
+    CommandSpec {
+        id: "input.routing.set",
+        label: "Route an input",
+        params: &[
+            ParamSpec {
+                name: "target",
+                kind: ParamKind::Choice(INPUT_TARGETS),
+            },
+            ParamSpec {
+                name: "input",
+                kind: ParamKind::Choice(INPUT_SOURCES),
+            },
+        ],
+    },
+    CommandSpec {
         id: "mixer.crossfader.step",
         label: "Step the crossfader",
         params: &[ParamSpec {
@@ -1824,6 +1875,39 @@ impl Reader<'_> {
         }
     }
 
+    /// Whether `type` names the live type.
+    fn deck_type(&self) -> Result<bool, CommandError> {
+        match self.text("type")? {
+            "track" => Ok(false),
+            "live" => Ok(true),
+            _ => Err(CommandError::Value(ValueError::UnknownChoice {
+                name: "type",
+                expected: "track, live",
+            })),
+        }
+    }
+
+    fn input_target(&self) -> Result<InputTarget, CommandError> {
+        InputTarget::parse(self.text("target")?).ok_or(CommandError::Value(
+            ValueError::UnknownChoice {
+                name: "target",
+                expected: "deck_a, deck_b, deck_c, deck_d, aux",
+            },
+        ))
+    }
+
+    fn input_source(&self) -> Result<Option<InputSource>, CommandError> {
+        match self.text("input")? {
+            "none" => Ok(None),
+            name => InputSource::parse(name)
+                .map(Some)
+                .ok_or(CommandError::Value(ValueError::UnknownChoice {
+                    name: "input",
+                    expected: "none, 1 to 8, 1-2, 3-4, 5-6, 7-8",
+                })),
+        }
+    }
+
     fn mixer_mode(&self) -> Result<MixerMode, CommandError> {
         let text = self.text("mode")?;
         MixerMode::ALL
@@ -2283,6 +2367,17 @@ impl Command {
             },
             "mixer.external.eq_gain.toggle" => Self::MixerExternalEqGainToggle,
             "mixer.external.master_volume.toggle" => Self::MixerExternalMasterVolumeToggle,
+            "mixer.aux.set" => Self::MixerAuxSet {
+                level: read.number("level")?,
+            },
+            "deck.type.set" => Self::DeckTypeSet {
+                deck: read.deck()?,
+                live: read.deck_type()?,
+            },
+            "input.routing.set" => Self::InputRoutingSet {
+                target: read.input_target()?,
+                source: read.input_source()?,
+            },
             "mixer.xfader_assign.set" => Self::MixerCrossfaderAssign {
                 deck: read.deck()?,
                 side: CrossfaderSide::parse(read.text("side")?)?,
@@ -2430,6 +2525,9 @@ impl Command {
             Self::MixerModeSet { .. } => "mixer.mode.set",
             Self::MixerExternalEqGainToggle => "mixer.external.eq_gain.toggle",
             Self::MixerExternalMasterVolumeToggle => "mixer.external.master_volume.toggle",
+            Self::MixerAuxSet { .. } => "mixer.aux.set",
+            Self::DeckTypeSet { .. } => "deck.type.set",
+            Self::InputRoutingSet { .. } => "input.routing.set",
             Self::FxUnitModeSet { .. } => "fx.unit.mode.set",
             Self::FxUnitDryWetSet { .. } => "fx.unit.dry_wet.set",
             Self::FxUnitRoutingSet { .. } => "fx.unit.routing.set",

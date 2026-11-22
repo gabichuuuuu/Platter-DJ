@@ -10,14 +10,15 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::ViewportCommand;
 use platter_audio_io::{
-    AudioError, BUFFER_SIZES, DeviceInfo, DeviceKind, Output, SAMPLE_RATES, Source, StreamRequest,
+    AudioError, BUFFER_SIZES, DeviceInfo, DeviceKind, Input, InputRequest, Output, SAMPLE_RATES,
+    Sink, Source, StreamRequest,
 };
 use platter_core::log::{Level, Logger};
 use platter_core::{DeckId, SampleRate};
 use platter_engine::command::{Args, CommandSpec, SPECS};
 use platter_engine::{
-    Command, Engine, EngineError, Event, FxUnit, PlatterAnalyser, Processor, Recall,
-    RecordingNames, StemRecall, TempoRange,
+    Command, Engine, EngineError, Event, FxUnit, InputFeed, InputTarget, PlatterAnalyser,
+    Processor, Recall, RecordingNames, StemRecall, TempoRange,
 };
 use platter_library::{Library, LibraryError, SqliteLibrary, Timestamp, back_up};
 use platter_mcp::json::Value as McpValue;
@@ -30,15 +31,16 @@ use platter_ui_egui::keymap::{DEFAULT_KEYMAP, Keymap};
 use platter_ui_egui::layout::{Layouts, Row as LayoutRow, Zone};
 use platter_ui_egui::model::{
     AnalysisStatus, AudioProblem, AudioState, AudioView, ControllerManager, ControllerRow,
-    DeckNotice, DeviceView, MidiView, OutputKind, SettingsView, Shown, StreamView, View,
+    DeckNotice, DeviceView, InputState, MidiView, OutputKind, SettingsView, Shown, StreamView,
+    View,
 };
 use platter_ui_egui::played::{MAX_PLAYTIME, MIN_PLAYTIME, PlayClock};
 use platter_ui_egui::shell::{DESIGN_WIDTH, Shell};
 
 use crate::background;
 use crate::config::{
-    self, BACKUP_FOLDER, Controller, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE, MAX_CONTROLLERS,
-    MAX_MUSIC_FOLDERS, SETTINGS_FILE, Settings, TEMPO_RANGE_PERCENTS,
+    self, BACKUP_FOLDER, Controller, InputSettings, KEYMAP_FILE, LIBRARY_FILE, LOG_FILE,
+    MAX_CONTROLLERS, MAX_MUSIC_FOLDERS, SETTINGS_FILE, Settings, TEMPO_RANGE_PERCENTS,
 };
 use crate::keeping::{Keeping, SETTLE};
 use crate::manager::Document;
@@ -89,6 +91,10 @@ const QUIET_LEVEL: f32 = 1e-4;
 
 fn source_of(mut processor: Processor) -> Source {
     Box::new(move |output, channels| processor.process(output, channels))
+}
+
+fn sink_of(mut feed: InputFeed) -> Sink {
+    Box::new(move |samples, channels| feed.push(samples, channels))
 }
 
 fn problem_of(error: &AudioError) -> AudioProblem {
@@ -198,6 +204,14 @@ pub struct PlatterApp {
     problem: Option<AudioProblem>,
     devices: Vec<DeviceInfo>,
     last_device_scan: Instant,
+    /// The input the settings name, while it is open: `docs/behavior/live-input.md`.
+    input: Option<Input>,
+    /// What carries the input to the engine. It goes to each input in turn and comes back
+    /// when that input stops; a new engine gives a new one.
+    input_sink: Option<Sink>,
+    input_problem: Option<AudioProblem>,
+    input_devices: Vec<DeviceInfo>,
+    last_input_scan: Instant,
     browser: FileBrowser,
     notices: [Option<DeckNotice>; DeckId::COUNT],
     /// The window covers the whole screen, as the window last said.
@@ -334,6 +348,11 @@ impl PlatterApp {
             problem: None,
             devices: Vec::new(),
             last_device_scan: Instant::now(),
+            input: None,
+            input_sink: None,
+            input_problem: None,
+            input_devices: Vec::new(),
+            last_input_scan: Instant::now(),
             mcp: None,
             separation,
             browser,
@@ -941,6 +960,9 @@ impl PlatterApp {
         for (path, kept) in self.keeping.flush() {
             self.browser.keep(path, kept);
         }
+        // The input fed the old engine; the new one gives its own.
+        self.close_input();
+        self.input_sink = None;
         let snapshot = self.engine.snapshot();
         let rate = self.settings.sample_rate;
         let (engine, processor) = Engine::with_controls_of(rate_of(rate), &self.engine);
@@ -1012,6 +1034,83 @@ impl PlatterApp {
         }
         self.output = output;
         self.problem = problem;
+        self.open_input();
+    }
+
+    /// Opens the input device of the settings, if one is chosen, at the sample rate and the
+    /// buffer size of the output: `docs/decisions/0040-audio-input.md`.
+    fn open_input(&mut self) {
+        self.input_devices = platter_audio_io::input_devices();
+        self.last_input_scan = Instant::now();
+        self.input_problem = None;
+        let Some(device) = self.settings.input.device.clone() else {
+            return;
+        };
+        let Some(sink) = self
+            .input_sink
+            .take()
+            .or_else(|| self.engine.take_input_feed().map(sink_of))
+        else {
+            // The input of this engine was lost with a stream that did not stop cleanly.
+            self.log(Level::Error, "input: the engine has no input to feed");
+            self.input_problem = Some(AudioProblem::Failed);
+            return;
+        };
+        let (sample_rate, output_frames) = self.output.as_ref().map_or(
+            (self.settings.sample_rate, self.settings.buffer_frames),
+            |output| (output.info().sample_rate, output.info().buffer_frames),
+        );
+        let request = InputRequest {
+            device,
+            sample_rate,
+            buffer_frames: self.settings.buffer_frames,
+        };
+        let prepared = match platter_audio_io::prepare_input(&request) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.log(Level::Warning, &format!("input: {error}"));
+                self.input_sink = Some(sink);
+                self.input_problem = Some(problem_of(&error));
+                return;
+            }
+        };
+        match prepared.start(sink) {
+            Ok(input) => {
+                let info = input.info();
+                let frames = info.buffer_frames.saturating_add(output_frames);
+                if let Err(error) = self.engine.set_input_latency(frames as usize) {
+                    self.log(Level::Warning, &format!("input: {error}"));
+                }
+                self.log(
+                    Level::Info,
+                    &format!(
+                        "input: {} Hz, {} channels, {} frames per buffer",
+                        info.sample_rate, info.channels, info.buffer_frames
+                    ),
+                );
+                self.input = Some(input);
+            }
+            Err(failed) => {
+                self.log(Level::Error, &format!("input: {}", failed.error));
+                self.input_sink = failed.sink;
+                self.input_problem = Some(problem_of(&failed.error));
+            }
+        }
+    }
+
+    /// Stops the input, keeping what carries it to the engine for the next one.
+    fn close_input(&mut self) {
+        if let Some(input) = self.input.take() {
+            self.input_sink = input.stop();
+            if self.input_sink.is_none() {
+                self.log(Level::Warning, "input: the stream did not stop cleanly");
+            }
+        }
+    }
+
+    fn reopen_input(&mut self) {
+        self.close_input();
+        self.open_input();
     }
 
     fn silent(&self, source: Source) -> Option<Output> {
@@ -1027,6 +1126,8 @@ impl PlatterApp {
     /// Stops the output, keeping the processor when the audio system gives it back, and
     /// opens the output again with the current settings.
     fn reopen_audio(&mut self) {
+        // The input opens again with the output, at its rate and buffer size.
+        self.close_input();
         let source = self.output.take().and_then(Output::stop);
         self.open_audio(source);
     }
@@ -1084,6 +1185,20 @@ impl PlatterApp {
         commands.extend(DeckId::ALL.map(|deck| Command::DeckTempoRangeSet {
             deck,
             percent: settings.tempo_range,
+        }));
+        let input = &settings.input;
+        commands.push(Command::MixerAuxSet {
+            level: input.aux_level,
+        });
+        commands.extend(
+            InputTarget::ALL
+                .into_iter()
+                .zip(input.routes)
+                .map(|(target, source)| Command::InputRoutingSet { target, source }),
+        );
+        commands.extend(DeckId::ALL.map(|deck| Command::DeckTypeSet {
+            deck,
+            live: input.live[deck.index()],
         }));
         for (now, wanted, toggle) in [
             (
@@ -1149,6 +1264,24 @@ impl PlatterApp {
         if kept != self.settings {
             self.settings = kept;
             self.save_settings();
+        }
+    }
+
+    /// Keeps the input routing, the type of each deck and the level of the auxiliary input
+    /// as the engine has them; `save` writes the file at once.
+    fn keep_input_settings(&mut self, save: bool) {
+        let snapshot = self.engine.snapshot();
+        let kept = InputSettings {
+            device: self.settings.input.device.clone(),
+            routes: snapshot.mixer.input_routes,
+            live: DeckId::ALL.map(|deck| snapshot.decks[deck.index()].controls.live),
+            aux_level: snapshot.mixer.aux_level,
+        };
+        if kept != self.settings.input {
+            self.settings.input = kept;
+            if save {
+                self.save_settings();
+            }
         }
     }
 
@@ -1220,6 +1353,12 @@ impl PlatterApp {
                 | Command::MasterMaximiserCeilingSet { .. }
                 | Command::MasterMaximiserReleaseSet { .. }
         );
+        // The level of the auxiliary input is a knob: saved at exit, like those of the effects.
+        let input_setting = match command {
+            Command::InputRoutingSet { .. } | Command::DeckTypeSet { .. } => Some(true),
+            Command::MixerAuxSet { .. } => Some(false),
+            _ => None,
+        };
         let id = command.id();
         let effect = id.starts_with("fx.")
             || id.starts_with("mixer.fx_assign")
@@ -1235,6 +1374,9 @@ impl PlatterApp {
         self.engine.dispatch(command)?;
         if mixer_setting {
             self.keep_mixer_settings();
+        }
+        if let Some(save) = input_setting {
+            self.keep_input_settings(save);
         }
         if effect {
             self.settings.effects = crate::effects_config::kept(&self.engine.snapshot().effects);
@@ -1273,7 +1415,16 @@ impl PlatterApp {
                 // The page lists the devices: look for them now, not when it was last open.
                 self.devices = platter_audio_io::devices();
                 self.last_device_scan = Instant::now();
+                self.input_devices = platter_audio_io::input_devices();
+                self.last_input_scan = Instant::now();
                 self.scan_midi();
+            }
+            AppCommand::InputDeviceSet { device } => {
+                if self.settings.input.device != device {
+                    self.settings.input.device = device;
+                    self.save_settings();
+                    self.reopen_input();
+                }
             }
             AppCommand::MidiControllerAdd
             | AppCommand::MidiControllerRemove { .. }
@@ -1718,6 +1869,34 @@ impl PlatterApp {
                 self.reopen_audio();
             }
         }
+        self.watch_input();
+    }
+
+    /// Opens again an input whose stream ended, and the one the settings name when the input
+    /// devices change or the device was only busy.
+    fn watch_input(&mut self) {
+        if self
+            .input
+            .as_ref()
+            .is_some_and(|input| input.stats().is_lost())
+        {
+            // As with the output, try once at once: a stream the system ended while its device
+            // is still there opens again; a device that is gone waits for the list to change.
+            self.log(Level::Warning, "input: the device went away");
+            self.reopen_input();
+            return;
+        }
+        let waiting = self.input.is_none() && self.settings.input.device.is_some();
+        if waiting && self.last_input_scan.elapsed() > DEVICE_RETRY {
+            self.last_input_scan = Instant::now();
+            let devices = platter_audio_io::input_devices();
+            let worth_trying =
+                devices != self.input_devices || self.input_problem == Some(AudioProblem::Busy);
+            self.input_devices = devices;
+            if worth_trying {
+                self.open_input();
+            }
+        }
     }
 
     fn audio_view(&self) -> AudioView {
@@ -1760,6 +1939,25 @@ impl PlatterApp {
                 .collect(),
             sample_rates: SAMPLE_RATES.to_vec(),
             buffer_sizes: BUFFER_SIZES.to_vec(),
+            inputs: self
+                .input_devices
+                .iter()
+                .map(|device| DeviceView {
+                    name: device.name.clone(),
+                    outputs: device.outputs,
+                    inputs: device.inputs,
+                    sample_rates: device.sample_rates.clone(),
+                })
+                .collect(),
+            input: match (&self.input, self.settings.input.device.is_some()) {
+                (Some(input), _) => InputState::Running {
+                    channels: input.info().channels,
+                },
+                (None, false) => InputState::Off,
+                (None, true) => {
+                    InputState::Stopped(self.input_problem.unwrap_or(AudioProblem::Failed))
+                }
+            },
         }
     }
 
@@ -1768,6 +1966,7 @@ impl PlatterApp {
         let arrangement = self.settings.layouts.arrangement();
         SettingsView {
             device: self.settings.device.clone(),
+            input_device: self.settings.input.device.clone(),
             sample_rate: self.settings.sample_rate,
             buffer_frames: self.settings.buffer_frames,
             routing: [

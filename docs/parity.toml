@@ -36,7 +36,7 @@ features = [
   { id = "track-deck", name = "Track deck", milestone = "M2", status = "done", evidence = "cargo test -p platter-ui-egui --test panels; cargo test -p platter-engine --test transport" },
   { id = "stem-deck", name = "Stem deck", milestone = "M4", status = "done", evidence = "cargo test -p platter-engine --test stems; cargo test -p platter-library --test store; cargo test -p platter-ui-egui --test panels; the stems are four files the user attaches until Platter separates tracks, see docs/behavior/stems.md" },
   { id = "remix-deck", name = "Remix deck", milestone = "M5", status = "planned" },
-  { id = "live-input-deck", name = "Live input deck", milestone = "M5", status = "planned" },
+  { id = "live-input-deck", name = "Live input deck", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input --test realtime_memory; cargo test -p platter-ui-egui --test settings_input; the type is chosen on the Input page and the face of the deck shows no live state yet, not tried with a real device, see docs/behavior/live-input.md" },
 ]
 
 [[area]]
@@ -262,7 +262,7 @@ title = "DVS and live input"
 features = [
   { id = "timecode", name = "Timecode on vinyl and CD, with an own decoder", milestone = "M5", status = "planned" },
   { id = "modes", name = "Absolute and relative modes, control zones and tracking modes", milestone = "M5", status = "planned" },
-  { id = "microphone-live-input", name = "Microphone and live input deck", milestone = "M5", status = "planned" },
+  { id = "microphone-live-input", name = "Microphone and live input deck", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input; cargo test -p platter-audio-io --lib; a microphone on one input of a live deck or of the auxiliary input, whose level is on the Input page with no knob on the mixer, not tried with a real device, see docs/behavior/live-input.md" },
 ]
 
 [[area]]
@@ -283,7 +283,7 @@ features = [
   { id = "effects", name = "Effects", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; cargo test -p platter-engine --test effects; on the Mixer page: the number of units, the routing and Keep values; no list of preselected effects, see docs/behavior/effects.md" },
   { id = "recorders", name = "Recorders", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer; the Recording page: folder, prefix and split of the mix recorder, overdub decay of the loop recorder; no external source and no latency setting, see docs/behavior/recording.md" },
   { id = "layouts", name = "Layouts", milestone = "M4", status = "done", evidence = "cargo test -p platter-ui-egui --test settings_mixer --test panels, see docs/behavior/interface.md" },
-  { id = "input-routing", name = "Input routing", milestone = "M5", status = "planned" },
+  { id = "input-routing", name = "Input routing", milestone = "M5", status = "done", evidence = "cargo test -p platter-engine --test live_input; cargo test -p platter-ui-egui --test settings_input; cargo test -p platter --bins config; on the Input page, single inputs and pairs, no FX Send input yet, not tried with a real device, see docs/behavior/live-input.md" },
   { id = "external-sync", name = "External sync", milestone = "M5", status = "planned" },
   { id = "timecode", name = "Timecode", milestone = "M5", status = "planned" },
   { id = "remix", name = "Remix decks", milestone = "M5", status = "planned" },

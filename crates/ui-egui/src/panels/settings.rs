@@ -1,4 +1,4 @@
-//! The preferences dialog: the Audio, General and Mixer pages.
+//! The preferences dialog: the Audio, Input, General and Mixer pages and the others.
 //!
 //! Component: `Select` in `docs/design/DESIGN.md`; placement from
 //! `docs/design/screens/Preferences-audio.html` and `Preferences-general.html`; the Mixer
@@ -30,6 +30,8 @@ use crate::widgets::choice::{self, Choice, SelectSpec};
 use crate::widgets::field;
 use crate::widgets::key::{self, KeySpec, Press};
 use crate::widgets::value::{self, Steps, ValueSpec};
+
+mod input;
 
 pub const DIALOG_SIZE: egui::Vec2 = egui::vec2(880.0, 620.0);
 const NAV_WIDTH: f32 = 200.0;
@@ -156,6 +158,7 @@ pub fn settings(
         );
         let name = texts.get(match entry {
             SettingsPage::Audio => "settings.audio",
+            SettingsPage::Input => "settings.input",
             SettingsPage::General => "settings.general",
             SettingsPage::Decks => "settings.decks",
             SettingsPage::Mixer => "settings.mixer",
@@ -205,6 +208,7 @@ pub fn settings(
     );
     match page {
         SettingsPage::Audio => audio_page(cx, page_rect, view),
+        SettingsPage::Input => input::input_page(cx, page_rect, view),
         SettingsPage::General => general_page(cx, page_rect, view),
         SettingsPage::Keyboard => keyboard_page(cx, page_rect, view, memory),
         SettingsPage::Decks => scrolled(

@@ -144,6 +144,7 @@ const DETAILS_THEN: &[&str] = &["close", "previous", "next"];
 pub enum SettingsPage {
     #[default]
     Audio,
+    Input,
     General,
     Decks,
     Mixer,
@@ -155,8 +156,9 @@ pub enum SettingsPage {
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Audio,
+        Self::Input,
         Self::General,
         Self::Decks,
         Self::Mixer,
@@ -170,6 +172,7 @@ impl SettingsPage {
     pub fn name(self) -> &'static str {
         match self {
             Self::Audio => "audio",
+            Self::Input => "input",
             Self::General => "general",
             Self::Decks => "decks",
             Self::Mixer => "mixer",
@@ -290,6 +293,10 @@ pub enum AppCommand {
     },
     AudioBufferSet {
         frames: u32,
+    },
+    /// The input device; `None` opens no input (`docs/behavior/live-input.md`).
+    InputDeviceSet {
+        device: Option<String>,
     },
     /// Puts one side of an output pair on an output of the device, counted from zero.
     AudioRoutingSet {
@@ -756,6 +763,7 @@ const fn choice(name: &'static str, choices: &'static [&'static str]) -> ParamSp
 
 const PAGES: &[&str] = &[
     "audio",
+    "input",
     "general",
     "decks",
     "mixer",
@@ -1522,6 +1530,14 @@ pub const APP_SPECS: &[CommandSpec] = &[
         }],
     },
     CommandSpec {
+        id: "input.device.set",
+        label: "Set input device",
+        params: &[ParamSpec {
+            name: "device",
+            kind: ParamKind::Text,
+        }],
+    },
+    CommandSpec {
         id: "audio.sample_rate.set",
         label: "Set sample rate",
         params: &[number("hz", 8_000.0, 384_000.0)],
@@ -2222,6 +2238,12 @@ impl AppCommand {
                     device: (!device.is_empty()).then(|| device.to_owned()),
                 }
             }
+            "input.device.set" => {
+                let device = read.text("device")?;
+                Self::InputDeviceSet {
+                    device: (!device.is_empty()).then(|| device.to_owned()),
+                }
+            }
             "audio.sample_rate.set" => Self::AudioSampleRateSet {
                 hz: read.integer("hz")? as u32,
             },
@@ -2554,6 +2576,7 @@ impl AppCommand {
             Self::MidiTargetSet { .. } => "midi.target.set",
             Self::TagWritingSet { .. } => "library.tag_writing.set",
             Self::AudioDeviceSet { .. } => "audio.device.set",
+            Self::InputDeviceSet { .. } => "input.device.set",
             Self::AudioSampleRateSet { .. } => "audio.sample_rate.set",
             Self::AudioBufferSet { .. } => "audio.buffer.set",
             Self::AudioRoutingSet { .. } => "audio.routing.set",

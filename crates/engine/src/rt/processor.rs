@@ -15,6 +15,7 @@ use rtrb::{Consumer, Producer};
 use super::clock::{Candidate, Clock};
 use super::deck::DeckPlayer;
 use super::effects::Effects;
+use super::input::{InputReader, InputSource};
 use super::loop_recorder::{LoopRecorder, LoopSource};
 use super::metronome::Metronome;
 use super::preview::PreviewPlayer;
@@ -23,7 +24,8 @@ use super::strip::{ChannelStrip, PARAMETER_RAMP_MS};
 use super::tick::Tick;
 use super::tone::TestTone;
 use super::{
-    COMMAND_CAPACITY, CROSSFADER_SIDES, DeckReport, Output, Queues, Retired, RtCommand, Shared,
+    COMMAND_CAPACITY, CROSSFADER_SIDES, DeckReport, InputTarget, Output, Queues, Retired,
+    RtCommand, Shared,
 };
 
 /// Channels a device needs for a second pair: the headphones, or deck B in external mode.
@@ -37,6 +39,9 @@ struct Channel {
     /// One while the deck is sent to the headphones, zero otherwise.
     pre_listen: Smoothed,
     tick: Tick,
+    /// One while the deck plays its input in the place of its track:
+    /// `docs/behavior/live-input.md`.
+    live: Smoothed,
 }
 
 pub struct Processor {
@@ -82,6 +87,10 @@ pub struct Processor {
     recorder: Tap,
     /// Boxed with its two buffers, so the processor stays small.
     loop_recorder: Box<LoopRecorder>,
+    input: Box<InputReader>,
+    /// The input each target of the routing takes, in the order of [`InputTarget::ALL`].
+    routes: [Option<InputSource>; InputTarget::ALL.len()],
+    aux_level: Smoothed,
 }
 
 impl Processor {
@@ -96,6 +105,7 @@ impl Processor {
             crossfade: parameter(side.gain(gains)),
             pre_listen: parameter(0.0),
             tick: Tick::new(rate),
+            live: parameter(0.0),
         };
         Self {
             commands: queues.commands,
@@ -129,6 +139,9 @@ impl Processor {
             effects: Effects::new(rate),
             recorder: Tap::new(queues.recorded),
             loop_recorder: Box::new(LoopRecorder::new(rate)),
+            input: Box::new(InputReader::new(rate, queues.input)),
+            routes: [None; InputTarget::ALL.len()],
+            aux_level: parameter(0.0),
         }
     }
 
@@ -146,6 +159,7 @@ impl Processor {
             output.fill(0.0);
             return;
         }
+        self.input.prepare(output.len() / channels);
         let two_pairs = channels >= CHANNELS_WITH_TWO_PAIRS;
         let mut frames = output.chunks_exact_mut(channels);
         for frame in &mut frames {
@@ -190,6 +204,13 @@ impl Processor {
                 let channel = &mut self.channels[deck.index()];
                 channel.player.swap(track, &mut self.retired);
             }
+            // A live deck has no transport: its track stays paused until it is a track deck
+            // again.
+            RtCommand::Play { deck }
+            | RtCommand::TogglePlay { deck }
+            | RtCommand::CueButton { deck, .. }
+            | RtCommand::CupButton { deck, .. }
+                if self.is_live(deck) => {}
             RtCommand::Play { deck } => self.player(deck).set_playing(true),
             RtCommand::Pause { deck } => self.player(deck).set_playing(false),
             RtCommand::TogglePlay { deck } => self.player(deck).toggle_playing(),
@@ -197,6 +218,16 @@ impl Processor {
             RtCommand::CueGoto { deck } => self.player(deck).goto_cue(),
             RtCommand::CueButton { deck, pressed } => self.player(deck).cue_button(pressed),
             RtCommand::CupButton { deck, pressed } => self.player(deck).cup_button(pressed),
+            RtCommand::DeckLive { deck, live } => {
+                if live {
+                    self.player(deck).set_playing(false);
+                }
+                let target = if live { 1.0 } else { 0.0 };
+                self.channels[deck.index()].live.set(target);
+            }
+            RtCommand::InputRoute { target, source } => self.routes[target.index()] = source,
+            RtCommand::AuxLevel { level } => self.aux_level.set(level),
+            RtCommand::InputLatency { frames } => self.input.set_latency(frames),
             RtCommand::Seek { deck, seconds } => self.player(deck).seek_seconds(seconds),
             RtCommand::Tempo { deck, ratio } => {
                 // The clock sets the speed of a deck that follows it.
@@ -276,9 +307,23 @@ impl Processor {
     }
 
     fn candidates(&self) -> [Candidate; DeckId::COUNT] {
-        self.channels
-            .each_ref()
-            .map(|channel| channel.player.candidate())
+        self.channels.each_ref().map(|channel| {
+            // A live deck has no tempo, so it is never the tempo master.
+            let candidate = channel.player.candidate();
+            if channel.live.target() > 0.0 {
+                Candidate {
+                    eligible: false,
+                    live: false,
+                    ..candidate
+                }
+            } else {
+                candidate
+            }
+        })
+    }
+
+    fn is_live(&self, deck: DeckId) -> bool {
+        self.channels[deck.index()].live.target() > 0.0
     }
 
     fn apply_mixer(&mut self, command: RtCommand) {
@@ -412,6 +457,10 @@ impl Processor {
         let click = self.metronome.next(pulse.phase);
         self.advance_fade(pulse.bpm);
         self.effects.follow(pulse);
+        let input = self.input.next();
+        let routed_input = |target: InputTarget, routes: &[Option<InputSource>]| {
+            routes[target.index()].map_or([0.0; 2], |source| source.take(&input))
+        };
         let effects = &mut self.effects;
         let channels = DeckId::ALL.into_iter().zip(&mut self.channels);
         for (index, (deck, channel)) in channels.enumerate() {
@@ -419,7 +468,16 @@ impl Processor {
             let clock = (master != Some(deck)).then_some(pulse);
             channel.player.follow(clock, self.keep_beat);
             let stems = channel.player.has_stems();
-            let next = channel.player.next(&mut self.retired);
+            let mut next = channel.player.next(&mut self.retired);
+            let live = channel.live.advance();
+            if live > 0.0 {
+                let heard = routed_input(InputTarget::Deck(deck), &self.routes);
+                for ((sent, around), heard) in next.sent.iter_mut().zip(&mut next.around).zip(heard)
+                {
+                    *sent = *sent * (1.0 - live) + heard * live;
+                    *around *= 1.0 - live;
+                }
+            }
             let played = [0, 1].map(|side| next.sent[side] + next.around[side]);
             let strip = channel.strip.process(next, stems, |stage, frame| {
                 effects.process(deck, stage, frame, metered_outside)
@@ -461,7 +519,14 @@ impl Processor {
             LoopSource::Deck(deck) => before_faders[deck.index()],
         };
         let (dry, looped) = self.loop_recorder.next(source, pulse.phase);
-        let mix = [mix[0] * dry + looped[0], mix[1] * dry + looped[1]];
+        // The auxiliary input joins after the channels; it is silent in external mode, where
+        // the master is not heard: `docs/behavior/live-input.md`.
+        let aux = self.aux_level.advance() * (1.0 - external);
+        let heard = routed_input(InputTarget::Aux, &self.routes);
+        let mix = [
+            mix[0] * dry + looped[0] + heard[0] * aux,
+            mix[1] * dry + looped[1] + heard[1] * aux,
+        ];
         let tone = self.tone.next(Output::Master);
         // The test tone comes after the maximiser, so its drive does not change its level.
         let maximised = self.maximiser.process([mix[0] * gain, mix[1] * gain]);
@@ -620,6 +685,12 @@ impl Processor {
             .set(u64::from(looper.fitting_bars(pulse.bpm)));
         self.shared.loop_can_undo.set(looper.can_undo());
         self.shared.loop_can_redo.set(looper.can_redo());
+        for (shared, level) in self.shared.input_levels.iter().zip(self.input.levels()) {
+            shared.set(level);
+        }
+        self.shared.input_gaps.set(self.input.gaps());
+        self.shared.input_reading.set(self.input.is_reading());
+        self.shared.input_ratio.set(self.input.ratio());
     }
 }
 

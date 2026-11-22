@@ -334,6 +334,11 @@ fn states() -> Vec<State> {
             Some(SettingsPage::Audio),
         ),
         state(
+            "preferences-input",
+            sample::playing(),
+            Some(SettingsPage::Input),
+        ),
+        state(
             "preferences-general",
             sample::playing(),
             Some(SettingsPage::General),

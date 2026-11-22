@@ -36,8 +36,8 @@ use crate::peaks::WaveformPeaks;
 use crate::recorder::{MIN_SPLIT_BYTES, Recorder, RecorderSnapshot, RecordingNames, SPLIT_BYTES};
 use crate::rt::{
     self, COMMAND_CAPACITY, CROSSFADER_SIDES, ControlEnds, CueEdit, DeckStems, DeckTrack, GridEdit,
-    LOOP_BARS, LoopEdit, LoopPart, LoopPhase, LoopSource, LoopState, Processor, RtCommand, Span,
-    StemSettings, Stretcher, TrackAudio,
+    INPUT_CHANNELS, InputFeed, InputSource, InputTarget, LOOP_BARS, LoopEdit, LoopPart, LoopPhase,
+    LoopSource, LoopState, Processor, RtCommand, Span, StemSettings, Stretcher, TrackAudio,
 };
 use crate::stretch::TrackStretch;
 use crate::stretch_pool::StretchPool;
@@ -158,6 +158,9 @@ pub struct DeckControls {
     /// The controls of the four stems, in the order of [`Stem::ALL`]. A load puts them back
     /// to their defaults.
     pub stems: [StemSettings; Stem::COUNT],
+    /// The deck plays the input routed to it in the place of its track:
+    /// `docs/behavior/live-input.md`.
+    pub live: bool,
 }
 
 impl Default for DeckControls {
@@ -177,6 +180,7 @@ impl Default for DeckControls {
             move_size: MoveSize::default(),
             move_fine: false,
             stems: [StemSettings::default(); Stem::COUNT],
+            live: false,
         }
     }
 }
@@ -210,6 +214,11 @@ pub struct MixerControls {
     pub external_eq_gain: bool,
     /// In external mode, the master volume acts on the decks.
     pub external_master_volume: bool,
+    /// Volume of the auxiliary input in the master, `0.0..=1.0`.
+    pub aux_level: f64,
+    /// The input each target of the routing takes, in the order of [`InputTarget::ALL`]:
+    /// `docs/behavior/live-input.md`.
+    pub input_routes: [Option<InputSource>; InputTarget::ALL.len()],
 }
 
 impl Default for MixerControls {
@@ -229,6 +238,8 @@ impl Default for MixerControls {
             mode: MixerMode::Internal,
             external_eq_gain: false,
             external_master_volume: false,
+            aux_level: 0.0,
+            input_routes: [None; InputTarget::ALL.len()],
         }
     }
 }
@@ -408,6 +419,31 @@ pub struct Snapshot {
     pub maximiser_gain: f32,
     pub recorder: RecorderSnapshot,
     pub loop_recorder: LoopRecorderSnapshot,
+    pub input: InputSnapshot,
+}
+
+/// What the processor reads of the input device: `docs/behavior/live-input.md`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InputSnapshot {
+    /// Peak level of each input, linear.
+    pub levels: [f32; INPUT_CHANNELS],
+    /// Times the input ran dry while it was heard.
+    pub gaps: u64,
+    /// The input is heard; false while it fills, at the start or after a gap.
+    pub reading: bool,
+    /// The speed the input is read at, against the nominal one.
+    pub ratio: f64,
+}
+
+impl Default for InputSnapshot {
+    fn default() -> Self {
+        Self {
+            levels: [0.0; INPUT_CHANNELS],
+            gaps: 0,
+            reading: false,
+            ratio: 1.0,
+        }
+    }
 }
 
 /// What the interface shows of the loop recorder: `docs/behavior/recording.md`, *Loop
@@ -673,6 +709,19 @@ impl Engine {
     /// The frames key lock asked while playing that its workers had not rendered in time.
     pub fn key_lock_starved(&self) -> usize {
         self.stretch_pool.as_ref().map_or(0, |pool| pool.starved())
+    }
+
+    /// Takes the writing end of the queue of the input, for the sink of the input stream:
+    /// `docs/decisions/0040-audio-input.md`. There is one per engine; it is `None` once
+    /// taken.
+    pub fn take_input_feed(&mut self) -> Option<InputFeed> {
+        self.ends.input.take()
+    }
+
+    /// Tells the reader of the input the delay to keep, in frames: the buffer of the input
+    /// plus that of the output.
+    pub fn set_input_latency(&mut self, frames: usize) -> Result<(), EngineError> {
+        self.send(RtCommand::InputLatency { frames })
     }
 
     /// Sets where each load finds the grid and the cues kept for its track.
@@ -1329,6 +1378,21 @@ impl Engine {
                 external_master_volume: !self.mixer.external_master_volume,
                 ..self.mixer.clone()
             })?,
+            Command::MixerAuxSet { level } => {
+                let level = ValueError::check("level", level, 0.0, 1.0)?;
+                self.send(RtCommand::AuxLevel {
+                    level: level as f32,
+                })?;
+                self.mixer.aux_level = level;
+            }
+            Command::InputRoutingSet { target, source } => {
+                self.send(RtCommand::InputRoute { target, source })?;
+                self.mixer.input_routes[target.index()] = source;
+            }
+            Command::DeckTypeSet { deck, live } => {
+                self.send(RtCommand::DeckLive { deck, live })?;
+                self.decks[deck.index()].controls.live = live;
+            }
             Command::MixerCrossfaderAssign { deck, side } => {
                 self.send(RtCommand::CrossfaderAssign { deck, side })?;
                 self.mixer.crossfader_sides[deck.index()] = side;
@@ -2261,6 +2325,12 @@ impl Engine {
                 can_undo: shared.loop_can_undo.get(),
                 can_redo: shared.loop_can_redo.get(),
             },
+            input: InputSnapshot {
+                levels: shared.input_levels.each_ref().map(|level| level.get()),
+                gaps: shared.input_gaps.get(),
+                reading: shared.input_reading.get(),
+                ratio: shared.input_ratio.get(),
+            },
             load_marker: self.load_marker,
             fade_markers: self.fade_markers,
             preview: PreviewSnapshot {
@@ -2322,6 +2392,10 @@ impl DeckControls {
                 settings: self.stems[stem.index()],
             });
         }
+        commands.push(RtCommand::DeckLive {
+            deck,
+            live: self.live,
+        });
         commands
     }
 }
@@ -2365,8 +2439,15 @@ impl MixerControls {
             },
             self.maximiser.command(),
             self.external(),
+            RtCommand::AuxLevel {
+                level: self.aux_level as f32,
+            },
         ];
-        assigns.into_iter().chain(rest)
+        let routes = InputTarget::ALL.map(|target| RtCommand::InputRoute {
+            target,
+            source: self.input_routes[target.index()],
+        });
+        assigns.into_iter().chain(rest).chain(routes)
     }
 }
 

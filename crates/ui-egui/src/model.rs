@@ -72,7 +72,18 @@ pub enum AudioState {
     Stopped(AudioProblem),
 }
 
-/// An output device, for the settings.
+/// The input of the audio: `docs/behavior/live-input.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputState {
+    /// No input device is chosen.
+    Off,
+    /// The input runs with this many channels.
+    Running { channels: u16 },
+    /// The input device chosen cannot be opened.
+    Stopped(AudioProblem),
+}
+
+/// An audio device, for the settings.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceView {
     pub name: String,
@@ -89,6 +100,9 @@ pub struct AudioView {
     /// Sample rates and buffer sizes the settings offer.
     pub sample_rates: Vec<u32>,
     pub buffer_sizes: Vec<u32>,
+    /// The input devices of the system.
+    pub inputs: Vec<DeviceView>,
+    pub input: InputState,
 }
 
 impl AudioView {
@@ -110,6 +124,8 @@ impl AudioView {
 pub struct SettingsView {
     /// Name of the chosen device; `None` is the default device of the system.
     pub device: Option<String>,
+    /// Name of the chosen input device; None opens no input.
+    pub input_device: Option<String>,
     pub sample_rate: u32,
     pub buffer_frames: u32,
     /// Output of the device for master left, master right, headphones left and right.

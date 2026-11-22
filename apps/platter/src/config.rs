@@ -9,10 +9,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use platter_audio_io::{BUFFER_SIZES, Routing, SAMPLE_RATES};
+use platter_core::DeckId;
 use platter_engine::{
-    CrossfaderCurve, EffectControls, EqModel, FilterModel, MAX_CEILING_DB, MAX_DRIVE_DB,
-    MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB, MIN_FADE_BEATS, MIN_RELEASE_MS,
-    MaximiserControls, MixerMode, SyncMode, TempoRange,
+    CrossfaderCurve, EffectControls, EqModel, FilterModel, InputSource, InputTarget,
+    MAX_CEILING_DB, MAX_DRIVE_DB, MAX_FADE_BEATS, MAX_RELEASE_MS, MIN_CEILING_DB, MIN_FADE_BEATS,
+    MIN_RELEASE_MS, MaximiserControls, MixerMode, SyncMode, TempoRange,
 };
 use platter_ui_egui::collection::TagWriting;
 use platter_ui_egui::command::{
@@ -234,6 +235,87 @@ pub struct Controller {
     pub mapping: PathBuf,
 }
 
+/// The settings of the Input page: docs/behavior/live-input.md.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputSettings {
+    /// Name of the input device; None opens no input.
+    pub device: Option<String>,
+    /// What feeds each of [InputTarget::ALL], in its order.
+    pub routes: [Option<InputSource>; 5],
+    /// The decks of the live type, by [DeckId::index](platter_core::DeckId::index).
+    pub live: [bool; 4],
+    /// The volume of the auxiliary input, 0 to 1.
+    pub aux_level: f64,
+}
+
+impl Default for InputSettings {
+    fn default() -> Self {
+        Self {
+            device: None,
+            routes: [None; 5],
+            live: [false; 4],
+            aux_level: 0.0,
+        }
+    }
+}
+
+impl InputSettings {
+    fn read(table: Option<&toml::Table>) -> Self {
+        let defaults = Self::default();
+        let Some(table) = table else {
+            return defaults;
+        };
+        let text =
+            |table: Option<&toml::Table>, name: &str| table?.get(name)?.as_str().map(str::to_owned);
+        let routing = table.get("routing").and_then(toml::Value::as_table);
+        let decks = table.get("live").and_then(toml::Value::as_array);
+        Self {
+            device: text(Some(table), "device").filter(|name| !name.is_empty()),
+            routes: InputTarget::ALL.map(|target| {
+                text(routing, target.name()).and_then(|name| InputSource::parse(&name))
+            }),
+            live: DeckId::ALL.map(|deck| {
+                let wanted = InputTarget::Deck(deck).name();
+                decks.is_some_and(|decks| decks.iter().any(|name| name.as_str() == Some(wanted)))
+            }),
+            aux_level: table
+                .get("aux_level")
+                .and_then(|value| {
+                    value
+                        .as_float()
+                        .or_else(|| value.as_integer().map(|whole| whole as f64))
+                })
+                .filter(|level| (0.0..=1.0).contains(level))
+                .unwrap_or(defaults.aux_level),
+        }
+    }
+
+    fn write(&self) -> toml::Table {
+        let mut table = toml::Table::new();
+        if let Some(device) = &self.device {
+            table.insert("device".to_owned(), toml::Value::String(device.clone()));
+        }
+        table.insert("aux_level".to_owned(), toml::Value::Float(self.aux_level));
+        let mut routing = toml::Table::new();
+        for (target, source) in InputTarget::ALL.iter().zip(self.routes) {
+            if let Some(source) = source {
+                routing.insert(
+                    target.name().to_owned(),
+                    toml::Value::String(source.name().to_owned()),
+                );
+            }
+        }
+        table.insert("routing".to_owned(), toml::Value::Table(routing));
+        let live = DeckId::ALL
+            .into_iter()
+            .filter(|deck| self.live[deck.index()])
+            .map(|deck| toml::Value::String(InputTarget::Deck(deck).name().to_owned()))
+            .collect();
+        table.insert("live".to_owned(), toml::Value::Array(live));
+        table
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub language: Language,
@@ -318,6 +400,8 @@ pub struct Settings {
     /// MIDI controllers, until the controller manager lets the user choose them
     /// (`docs/behavior/controllers.md`, section *In the application*).
     pub midi: Vec<Controller>,
+    /// The input device, the input routing and the type of each deck.
+    pub input: InputSettings,
 }
 
 impl Default for Settings {
@@ -366,6 +450,7 @@ impl Default for Settings {
             roots: Vec::new(),
             min_playtime: DEFAULT_PLAYTIME,
             midi: Vec::new(),
+            input: InputSettings::default(),
         }
     }
 }
@@ -605,6 +690,7 @@ impl Settings {
                         .collect()
                 })
                 .unwrap_or_default(),
+            input: InputSettings::read(table("input")),
         }
     }
 
@@ -806,6 +892,7 @@ impl Settings {
         if !midi.is_empty() {
             root.insert("midi".to_owned(), toml::Value::Array(midi));
         }
+        root.insert("input".to_owned(), toml::Value::Table(self.input.write()));
         root.to_string()
     }
 
@@ -836,7 +923,9 @@ mod tests {
     use std::path::PathBuf;
 
     use platter_audio_io::Routing;
-    use platter_engine::{CrossfaderCurve, EqModel, FilterModel, MixerMode, SyncMode, TempoRange};
+    use platter_engine::{
+        CrossfaderCurve, EqModel, FilterModel, InputSource, MixerMode, SyncMode, TempoRange,
+    };
     use platter_ui_egui::collection::TagWriting;
     use platter_ui_egui::command::{DeckLayout, DeckSize, EffectUnits, ListColumn, WaveColour};
     use platter_ui_egui::i18n::Language;
@@ -910,6 +999,11 @@ mod tests {
                     mapping: PathBuf::from("mappings").join("pad.toml"),
                 },
             ],
+            input: super::InputSettings {
+                device: Some("Line in".to_owned()),
+                aux_level: 0.25,
+                ..super::InputSettings::default()
+            },
         };
         assert_eq!(Settings::parse(&settings.to_toml()), settings);
         assert_eq!(
@@ -1059,6 +1153,39 @@ min_playtime = {written}
     }
 
     /// `docs/behavior/recording.md`, *Preferences*, and its edge cases.
+    /// `docs/behavior/live-input.md`: the input device, the routing and the type of each deck
+    /// are kept; what the file cannot give is no input.
+    #[test]
+    fn the_input_settings_are_kept_and_a_value_they_cannot_take_is_left_out() {
+        let chosen = Settings {
+            input: super::InputSettings {
+                device: Some("Interface ñ".to_owned()),
+                routes: [
+                    InputSource::parse("1-2"),
+                    None,
+                    InputSource::parse("8"),
+                    None,
+                    InputSource::parse("3"),
+                ],
+                live: [true, false, true, false],
+                aux_level: 0.5,
+            },
+            ..Settings::default()
+        };
+        assert_eq!(Settings::parse(&chosen.to_toml()).input, chosen.input);
+        let read = Settings::parse(
+            "[input]\ndevice = \"\"\naux_level = 1.5\nlive = [\"deck_b\", \"aux\", 3]\n\
+             [input.routing]\ndeck_a = \"2-3\"\naux = \"9\"\ndeck_c = \"5-6\"\n",
+        );
+        assert_eq!(read.input.device, None);
+        assert_eq!(read.input.aux_level, 0.0);
+        assert_eq!(read.input.live, [false, true, false, false]);
+        assert_eq!(
+            read.input.routes,
+            [None, None, InputSource::parse("5-6"), None, None]
+        );
+    }
+
     #[test]
     fn the_preferences_of_the_recorder_are_kept_and_cleaned() {
         let chosen = Settings {

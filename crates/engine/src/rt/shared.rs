@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use platter_core::DeckId;
 
 use super::clock::INITIAL_BPM;
+use super::input::INPUT_CHANNELS;
 
 /// A relaxed ordering is enough: each value stands alone and readers only display it.
 const ORDER: Ordering = Ordering::Relaxed;
@@ -170,6 +171,14 @@ pub struct Shared {
     pub loop_bars: Count,
     pub loop_can_undo: Flag,
     pub loop_can_redo: Flag,
+    /// Peak level of each input of the device, linear: docs/behavior/live-input.md.
+    pub input_levels: [AtomicF32; INPUT_CHANNELS],
+    /// Times the queue of the input ran dry while it was heard.
+    pub input_gaps: Count,
+    /// The input is heard; false while its queue fills, at the start or after a gap.
+    pub input_reading: Flag,
+    /// The speed the input is read at against the nominal one.
+    pub input_ratio: AtomicF64,
 }
 
 impl Default for Shared {
@@ -192,6 +201,10 @@ impl Default for Shared {
             loop_bars: Count::default(),
             loop_can_undo: Flag::default(),
             loop_can_redo: Flag::default(),
+            input_levels: Default::default(),
+            input_gaps: Count::default(),
+            input_reading: Flag::default(),
+            input_ratio: AtomicF64::new(1.0),
         }
     }
 }

@@ -15,6 +15,7 @@
 mod clock;
 mod deck;
 mod effects;
+mod input;
 mod lock;
 mod loop_recorder;
 mod looper;
@@ -43,6 +44,7 @@ use platter_dsp::filter::FilterModel;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 pub use effects::{FxRouting, UNITS};
+pub use input::{INPUT_CHANNELS, InputFeed, InputFrame, InputSource};
 
 pub use lock::Stretcher;
 pub use loop_recorder::{LOOP_BARS, LoopPhase, LoopSource, MAX_LOOP_SECONDS};
@@ -442,6 +444,65 @@ pub enum RtCommand {
     LoopDecay {
         decay: f32,
     },
+    /// The deck plays the input routed to it in the place of its track, or its track:
+    /// `docs/behavior/live-input.md`.
+    DeckLive {
+        deck: DeckId,
+        live: bool,
+    },
+    /// The input a target of the routing takes; `None` leaves it silent.
+    InputRoute {
+        target: InputTarget,
+        source: Option<InputSource>,
+    },
+    /// Volume of the auxiliary input in the master, linear.
+    AuxLevel {
+        level: f32,
+    },
+    /// The delay the reader of the input keeps, in frames: an input and an output buffer.
+    InputLatency {
+        frames: usize,
+    },
+}
+
+/// What the input routing feeds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputTarget {
+    Deck(DeckId),
+    Aux,
+}
+
+impl InputTarget {
+    pub const ALL: [Self; 5] = [
+        Self::Deck(DeckId::A),
+        Self::Deck(DeckId::B),
+        Self::Deck(DeckId::C),
+        Self::Deck(DeckId::D),
+        Self::Aux,
+    ];
+
+    /// Its place in [`Self::ALL`].
+    pub fn index(self) -> usize {
+        match self {
+            Self::Deck(deck) => deck.index(),
+            Self::Aux => DeckId::COUNT,
+        }
+    }
+
+    /// The name commands and settings use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Deck(DeckId::A) => "deck_a",
+            Self::Deck(DeckId::B) => "deck_b",
+            Self::Deck(DeckId::C) => "deck_c",
+            Self::Deck(DeckId::D) => "deck_d",
+            Self::Aux => "aux",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|target| target.name() == name)
+    }
 }
 
 /// An edit of a beatgrid. The ones that need a place use the play position.
@@ -581,6 +642,9 @@ pub struct ControlEnds {
     pub retired: Consumer<Retired>,
     pub reports: Consumer<DeckReport>,
     pub shared: Arc<Shared>,
+    /// The writing end of the queue of the input, until the application takes it for the
+    /// input stream.
+    pub input: Option<InputFeed>,
 }
 
 /// The ends of the queues the processor keeps.
@@ -589,6 +653,7 @@ struct Queues {
     retired: Producer<Retired>,
     reports: Producer<DeckReport>,
     recorded: Producer<Recorded>,
+    input: Consumer<InputFrame>,
 }
 
 /// Builds a processor for `rate`, the ends the control side keeps and the end of the queue of
@@ -601,6 +666,8 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
     let (outgoing_reports, reports) = RingBuffer::new(REPORT_CAPACITY);
     let (outgoing_recorded, recorded) =
         RingBuffer::new(rate.hz() as usize * RECORDER_QUEUE_SECONDS);
+    let (input_feed, input) =
+        RingBuffer::new((f64::from(rate.hz()) * input::INPUT_QUEUE_SECONDS) as usize);
     let shared = Arc::new(Shared::default());
     let processor = Processor::new(
         rate,
@@ -609,6 +676,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
             retired: outgoing,
             reports: outgoing_reports,
             recorded: outgoing_recorded,
+            input,
         },
         Arc::clone(&shared),
     );
@@ -618,6 +686,7 @@ pub fn channel(rate: SampleRate) -> (ControlEnds, Consumer<Recorded>, Processor)
             retired,
             reports,
             shared,
+            input: Some(InputFeed::new(input_feed)),
         },
         recorded,
         processor,

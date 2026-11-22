@@ -81,6 +81,13 @@ shortcuts of the decks and the mixer rest.
 - With a device of two outputs the headphone routing and the headphone test tone are
   disabled and the page says why.
 
+### Input
+
+The input device, the input routing of each deck and of the auxiliary input, the type of each
+deck and the level of the auxiliary input (`input.device.set`, `input.routing.set`,
+`deck.type.set`, `mixer.aux.set`), with a meter beside each route. The page and what the
+input does are in `docs/behavior/live-input.md`. M5 adds it.
+
 ### General
 
 | Setting | Command | Notes |
@@ -182,7 +189,7 @@ Platter keeps its files in a folder of its own inside the configuration folder o
 
 | File | Content |
 | --- | --- |
-| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Decks, Mixer, Recording and Library pages, the folder the file selector showed last and its extra roots |
+| `settings.toml` | Language, tooltips, audio device, sample rate, buffer size, routing, crossfader curve, the settings of the Input, Decks, Mixer, Recording and Library pages, the folder the file selector showed last and its extra roots |
 | `library.sqlite` | The collection, playlists, history, preparation list and favourites (`docs/behavior/library.md`) |
 | `Backup/library-*.sqlite` | The 20 newest copies of the library, one made each time it opens changed since the last copy (`docs/behavior/library.md`, *Backups*) |
 | `keymap.toml` | The keyboard shortcuts (`docs/behavior/keyboard.md`) |

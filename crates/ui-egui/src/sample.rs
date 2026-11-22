@@ -20,7 +20,7 @@ use crate::keymap::Keymap;
 use crate::keys::KeyNotation;
 use crate::model::{
     AnalysisStatus, AudioProblem, AudioState, AudioView, BindingRow, BrowserView, Clock,
-    CollectionView, ControlType, ControllerManager, ControllerRow, DeviceView, FileRow,
+    CollectionView, ControlType, ControllerManager, ControllerRow, DeviceView, FileRow, InputState,
     MaintenanceOutcome, MidiView, OutputKind, PlaylistRow, RowKind, SessionRow, SettingsView,
     StreamView, TrackRow, TreeRow, View,
 };
@@ -447,12 +447,20 @@ fn audio(state: AudioState) -> AudioView {
         }],
         sample_rates: vec![44_100, 48_000, 96_000],
         buffer_sizes: vec![64, 128, 256, 512, 1_024],
+        inputs: vec![DeviceView {
+            name: "USB audio interface".to_owned(),
+            outputs: 0,
+            inputs: 4,
+            sample_rates: vec![44_100, 48_000, 96_000],
+        }],
+        input: InputState::Running { channels: 4 },
     }
 }
 
 fn settings() -> SettingsView {
     SettingsView {
         device: Some("USB audio interface".to_owned()),
+        input_device: Some("USB audio interface".to_owned()),
         sample_rate: 48_000,
         buffer_frames: 256,
         routing: [0, 1, 2, 3],
@@ -841,10 +849,13 @@ pub fn startup() -> Scene {
         },
         audio: AudioView {
             devices: Vec::new(),
+            inputs: Vec::new(),
+            input: InputState::Off,
             ..audio(AudioState::Stopped(AudioProblem::NoDevice))
         },
         settings: SettingsView {
             device: None,
+            input_device: None,
             ..settings()
         },
         // Nothing is selected yet when Platter starts.
