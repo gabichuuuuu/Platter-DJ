@@ -6,7 +6,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{RATE, Rig, sine_file};
@@ -214,15 +214,23 @@ fn closing_finishes_the_file_while_the_device_plays() {
     } = rig;
     engine.dispatch(Command::RecorderToggle).unwrap();
     let playing = AtomicBool::new(true);
+    let blocks = AtomicUsize::new(0);
     let events = std::thread::scope(|scope| {
         scope.spawn(|| {
             let mut block = vec![0.0f32; 256 * 2];
             while playing.load(Ordering::Relaxed) {
                 processor.process(&mut block, 2);
+                blocks.fetch_add(1, Ordering::Relaxed);
                 std::thread::sleep(Duration::from_millis(2));
             }
         });
-        std::thread::sleep(Duration::from_millis(50));
+        // Some blocks reach the recording before it is stopped, however slow the machine:
+        // a fixed wait left the file empty on a busy runner.
+        let deadline = Instant::now() + WAIT;
+        while blocks.load(Ordering::Relaxed) < 20 {
+            assert!(Instant::now() < deadline, "the device did not play");
+            std::thread::sleep(Duration::from_millis(2));
+        }
         let events = engine.finish_recording(WAIT);
         playing.store(false, Ordering::Relaxed);
         events
