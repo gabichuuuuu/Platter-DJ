@@ -17,8 +17,8 @@ has the count of `main`. Do not edit the table by hand.
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
 | M4 | 31 | 31 | 0 | 0 |
-| M5 | 15 | 5 | 1 | 9 |
-| Later | 1 | 0 | 0 | 1 |
+| M5 | 11 | 5 | 1 | 5 |
+| Later | 5 | 0 | 0 | 5 |
 | Total | 162 | 148 | 4 | 10 |
 
 First complete version (M0 to M3): 112 of 115 features done.
@@ -128,9 +128,10 @@ Decisions already taken for this milestone:
 
 ### M5. Extras
 
-DVS with an own timecode and decoder, remix decks, a pattern sequencer with own sounds, HID
-controllers, MIDI clock, compatibility with Ableton Link as an own implementation, live input and
-microphone, broadcasting to a server the user configures.
+Remix decks, a pattern sequencer with own sounds, HID controllers, MIDI clock, live input and
+microphone, broadcasting to a server the user configures. Compatibility with Ableton Link
+(`docs/decisions/0043-link-later.md`) and DVS with an own timecode
+(`docs/decisions/0045-timecode-later.md`) left M5.
 
 Where it stands:
 
@@ -145,14 +146,19 @@ Where it stands:
   set; capture from the loop recorder.
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
   auxiliary knob and the keys of the MIDI clock, which `docs/design/`
-  does not draw yet; the timecode for DVS, which needs a format of Platter's own and its records;
-  Link, whose only detailed description is code under the GPL; HID controllers, which need a
+  does not draw yet; HID controllers, which need a
   dependency that is not approved; broadcasting, which needs an encoder and a network connection
   the user starts.
 
 ### After M5
 
 Hosting third-party CLAP plugins.
+
+Compatibility with Ableton Link as an own implementation, once the protocol has a public
+description that is not code under the GPL (`docs/decisions/0043-link-later.md`).
+
+DVS: timecode records and CDs with a signal of Platter's own and its decoder, with the absolute and
+relative modes (`docs/decisions/0045-timecode-later.md`).
 
 Replacing external dependencies with project code, piece by piece, as the maintainer decides
 (`docs/dependencies.md`). With it, audio output below the device period on Windows through
