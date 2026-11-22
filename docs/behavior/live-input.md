@@ -83,7 +83,9 @@ are different devices, or what the meter reads.
   an input device and an output device.
 - **The auxiliary input is a command and a setting of the Input page**, with no knob on the
   mixer yet: the mixer of `docs/design/` has no place for it, which is a question for the
-  maintainer. The same holds for the face of a live deck, which still shows its track.
+  maintainer. A live deck shows its input in the place of its track (`LiveDeck` in
+  `docs/design/DESIGN.md`): the input it plays, its level and the type of the deck, which can be
+  set back to a track there.
 - **The recorders take an input of their own**, the target `recorder` of `input.routing.set`:
   the external source of the mix recorder (`recorder.source.set`) and of the loop recorder
   (`External`), `docs/behavior/recording.md`. The loop recorder stays refused in external

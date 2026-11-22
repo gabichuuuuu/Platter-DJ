@@ -13,7 +13,9 @@ use std::sync::Arc;
 use egui::epaint::{ClippedShape, ColorMode, Shape};
 use egui::{Color32, Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
 use platter_core::{CueKind, DeckId, HotcueSlot, Stem};
-use platter_engine::{CellId, ClockMode, Command, EffectKind, LoopPhase, MixerMode, UnitMode};
+use platter_engine::{
+    CellId, ClockMode, Command, DeckKind, EffectKind, LoopPhase, MixerMode, UnitMode,
+};
 use platter_library::{MAX_RULES, NodeId, SessionId};
 use platter_ui_egui::command::NewItem;
 use platter_ui_egui::command::{
@@ -301,6 +303,9 @@ fn states() -> Vec<State> {
     // A remix deck in each layout: deck D of four, deck B of two.
     let remix = state("remix-deck", sample::remix_deck(), None);
     let two_deck_remix = state("two-deck-remix", sample::two_deck_remix(), None);
+    // A live deck in each layout: deck C of four, deck A of two.
+    let live = state("live-deck", sample::live_deck(), None);
+    let two_deck_live = state("two-deck-live", sample::two_deck_live(), None);
     // The menu of a track with stems, with a folder in the explorer to take stems from.
     let mut stem_entry = sample::playlist();
     stem_entry.browser.explorer = Some(PathBuf::from("Music/Stems/Glasshouse"));
@@ -385,6 +390,8 @@ fn states() -> Vec<State> {
         two_deck_stems,
         remix,
         two_deck_remix,
+        live,
+        two_deck_live,
         stem_entry,
         separate,
         separating,
@@ -2870,4 +2877,67 @@ fn the_menu_of_a_cell_offers_what_applies_to_it() {
             from: DeckId::A,
         })]
     );
+}
+
+#[test]
+fn a_live_deck_shows_its_input_in_the_place_of_the_track_controls() {
+    for (name, deck) in [("live-deck", DeckId::C), ("two-deck-live", DeckId::A)] {
+        let state = state_named(name);
+        let plays: Vec<DeckId> = decks_of(&state, "deck.play_pause")
+            .into_iter()
+            .map(|(deck, _)| deck)
+            .collect();
+        assert!(!plays.contains(&deck), "{name}: {plays:?}");
+        assert!(!plays.is_empty(), "{name}");
+        // Its type: track, live input or remix; the first key plays its track again.
+        let stage = Stage::new(&state);
+        let types: Vec<Control> = stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == "deck.type.set")
+            .collect();
+        assert_eq!(types.len(), 3, "{name}");
+        let mut stage = Stage::new(&state);
+        assert_eq!(
+            stage.click(types[0].rect.center()),
+            vec![Action::Engine(Command::DeckTypeSet {
+                deck,
+                kind: DeckKind::Track,
+            })],
+            "{name}"
+        );
+        let inputs = stage
+            .controls()
+            .into_iter()
+            .filter(|control| control.command == "input.routing.set")
+            .count();
+        assert_eq!(inputs, 1, "{name}");
+    }
+}
+
+#[test]
+fn the_controls_of_a_live_deck_do_not_overlap_in_either_language() {
+    for language in Language::ALL {
+        for name in ["live-deck", "two-deck-live"] {
+            let stage = Stage::with_texts(&state_named(name), Texts::load(language).unwrap());
+            let controls: Vec<Control> = stage
+                .controls()
+                .into_iter()
+                .filter(|control| {
+                    control.command == "deck.type.set" || control.command == "input.routing.set"
+                })
+                .collect();
+            for (index, first) in controls.iter().enumerate() {
+                for second in &controls[index + 1..] {
+                    let shared = first.rect.intersect(second.rect);
+                    assert!(
+                        shared.width() < 0.5 || shared.height() < 0.5,
+                        "{name}, {language:?}: {} overlaps {}",
+                        first.command,
+                        second.command,
+                    );
+                }
+            }
+        }
+    }
 }

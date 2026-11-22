@@ -27,6 +27,7 @@ use crate::keys;
 use crate::model::{DeckNotice, View};
 use crate::paint;
 use crate::panels::browser;
+use crate::panels::live;
 use crate::panels::remix;
 use crate::panels::stems;
 use crate::panels::waveform::{self, deck_color};
@@ -109,19 +110,20 @@ pub fn deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, state: &
     let color = &tokens.color;
     let snapshot = &view.engine.decks[deck.index()];
     let compact = view.settings.deck_size == DeckSize::Compact;
-    // A remix deck shows its grid in the place of everything under its header.
-    if snapshot.controls.kind == DeckKind::Remix {
-        let header = if compact {
+    // A remix deck shows its grid, and a live deck its input, in the place of everything
+    // under its header.
+    let frame = || remix::Frame {
+        padding: tokens.space.s4,
+        header: if compact {
             REMIX_COMPACT_HEADER_HEIGHT
         } else {
             HEADER_HEIGHT
-        };
-        let frame = remix::Frame {
-            padding: tokens.space.s4,
-            header,
-        };
-        remix::deck(cx, rect, deck, view, state, frame);
-        return;
+        },
+    };
+    match snapshot.controls.kind {
+        DeckKind::Remix => return remix::deck(cx, rect, deck, view, state, frame()),
+        DeckKind::Live => return live::deck(cx, rect, deck, view, frame()),
+        DeckKind::Track => {}
     }
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, color.surface_panel);
@@ -275,13 +277,14 @@ pub fn four_deck(cx: &mut Cx<'_>, rect: Rect, deck: DeckId, view: &View<'_>, sta
     let theme = cx.theme;
     let tokens = &theme.tokens;
     let snapshot = &view.engine.decks[deck.index()];
-    if snapshot.controls.kind == DeckKind::Remix {
-        let frame = remix::Frame {
-            padding: FOUR_PADDING,
-            header: FOUR_HEADER_HEIGHT,
-        };
-        remix::deck(cx, rect, deck, view, state, frame);
-        return;
+    let frame = || remix::Frame {
+        padding: FOUR_PADDING,
+        header: FOUR_HEADER_HEIGHT,
+    };
+    match snapshot.controls.kind {
+        DeckKind::Remix => return remix::deck(cx, rect, deck, view, state, frame()),
+        DeckKind::Live => return live::deck(cx, rect, deck, view, frame()),
+        DeckKind::Track => {}
     }
     cx.painter()
         .rect_filled(rect, CornerRadius::ZERO, tokens.color.surface_panel);

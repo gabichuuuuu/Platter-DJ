@@ -17,9 +17,9 @@ has the count of `main`. Do not edit the table by hand.
 | M2 | 30 | 30 | 0 | 0 |
 | M3 | 76 | 73 | 3 | 0 |
 | M4 | 31 | 31 | 0 | 0 |
-| M5 | 15 | 0 | 0 | 15 |
+| M5 | 15 | 5 | 1 | 9 |
 | Later | 1 | 0 | 0 | 1 |
-| Total | 162 | 143 | 3 | 16 |
+| Total | 162 | 148 | 4 | 10 |
 
 First complete version (M0 to M3): 112 of 115 features done.
 
@@ -134,7 +134,7 @@ microphone, broadcasting to a server the user configures.
 
 Where it stands:
 
-- **Done.** Input routing with live decks, the microphone and the auxiliary input, the recorders
+- **Done.** Input routing with live decks and their face on the screen, the microphone and the auxiliary input, the recorders
   and the FX Send fed by an input (`docs/behavior/live-input.md`); the MIDI clock sent and
   followed (`docs/behavior/midi-clock.md`). Measured with synthesised signals only; the checks on
   real equipment are listed under M3.
@@ -144,7 +144,7 @@ Where it stands:
   `docs/design/DESIGN.md`). Still to do: key lock, filter, effect send and cue per slot; saving a
   set; capture from the loop recorder.
 - **Waiting for a decision of the maintainer.** The pattern sequencer and its own sounds, and the
-  look of the live deck, the auxiliary knob and the keys of the MIDI clock, which `docs/design/`
+  auxiliary knob and the keys of the MIDI clock, which `docs/design/`
   does not draw yet; the timecode for DVS, which needs a format of Platter's own and its records;
   Link, whose only detailed description is code under the GPL; HID controllers, which need a
   dependency that is not approved; broadcasting, which needs an encoder and a network connection
